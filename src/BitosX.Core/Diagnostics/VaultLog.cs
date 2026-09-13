@@ -1,4 +1,5 @@
 using BitosX.Core.Domain;
+using BitosX.Core.Services;
 using Microsoft.Extensions.Logging;
 
 namespace BitosX.Core.Diagnostics;
@@ -24,6 +25,9 @@ public static partial class VaultLog
 
     [LoggerMessage(EventId = 1004, EventName = "vault_locked", Level = LogLevel.Information, Message = "Vault locked.")]
     public static partial void VaultLocked(ILogger logger);
+
+    [LoggerMessage(EventId = 1010, EventName = "vault_auto_locked", Level = LogLevel.Information, Message = "Vault auto-locked ({Reason}).")]
+    public static partial void VaultAutoLocked(ILogger logger, AutoLockReason reason);
 
     [LoggerMessage(EventId = 1005, EventName = "vault_saved", Level = LogLevel.Information, Message = "Vault saved.")]
     public static partial void VaultSaved(ILogger logger);

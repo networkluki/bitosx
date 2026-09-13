@@ -7,10 +7,12 @@ using BitosX.App.ViewModels;
 using BitosX.Core.Generation;
 using BitosX.Core.Security;
 using BitosX.Core.Services;
+using BitosX.Core.Settings;
 using BitosX.Core.Storage;
 using BitosX.Crypto;
 using BitosX.Platform.Clipboard;
 using BitosX.Platform.SecureStorage;
+using BitosX.Platform.Session;
 using BitosX.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -43,10 +45,21 @@ public static class ServiceConfiguration
         services.AddSingleton<IPasswordGenerator, PasswordGenerator>();
         services.AddSingleton<ISecurityAnalyzer, SecurityAnalyzer>();
 
+        // Settings (non-secret preferences, stored separately from the vault)
+        services.AddSingleton<IAppSettingsStore>(_ => FileAppSettingsStore.CreateDefault());
+        services.AddSingleton(sp => sp.GetRequiredService<IAppSettingsStore>().Load());
+        services.AddSingleton(TimeProvider.System);
+
         // Platform
         services.AddSingleton<IClipboardAccessor>(_ => new AvaloniaClipboardAccessor(GetMainWindowClipboard));
         services.AddSingleton<IClipboardService, ClipboardService>();
         services.AddSingleton<ISecureStorage, UnavailableSecureStorage>();
+        services.AddSingleton<ISystemSessionEvents>(_ =>
+            OperatingSystem.IsWindows() ? new WindowsSystemSessionEvents() : new NullSystemSessionEvents());
+
+        // Auto-lock (policy in Core, Avalonia glue in the App)
+        services.AddSingleton<AutoLockController>();
+        services.AddSingleton<AutoLockService>();
 
         // API (local-only abstraction)
         services.AddSingleton<IBitosXApiClient, LocalOnlyApiClient>();

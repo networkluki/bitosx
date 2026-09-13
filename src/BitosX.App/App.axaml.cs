@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using BitosX.App.Services;
 using BitosX.App.ViewModels;
 using BitosX.App.Views;
 using BitosX.Core.Diagnostics;
@@ -30,10 +31,14 @@ public partial class App : Application
             MainWindowViewModel viewModel = _services.GetRequiredService<MainWindowViewModel>();
             var window = new MainWindow { DataContext = viewModel };
 
+            AutoLockService autoLock = _services.GetRequiredService<AutoLockService>();
+            autoLock.Attach(window);
+
             window.Opened += async (_, _) => await viewModel.InitializeAsync().ConfigureAwait(true);
             desktop.MainWindow = window;
             desktop.ShutdownRequested += (_, _) =>
             {
+                autoLock.Dispose();
                 viewModel.Dispose();
                 _services?.Dispose();
             };

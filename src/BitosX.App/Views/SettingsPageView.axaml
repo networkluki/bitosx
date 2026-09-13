@@ -23,6 +23,34 @@
             </Border>
 
             <Border Classes="card">
+                <StackPanel Spacing="12">
+                    <TextBlock Text="Auto-lock" Classes="h2" />
+
+                    <CheckBox IsChecked="{Binding AutoLockOnInactivity}"
+                              Content="Lock automatically after a period of inactivity" />
+                    <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center"
+                                IsEnabled="{Binding AutoLockOnInactivity}">
+                        <TextBlock Text="Lock after" VerticalAlignment="Center" />
+                        <NumericUpDown Value="{Binding InactivityMinutes}" Minimum="1" Maximum="1440"
+                                       Increment="1" FormatString="0" Width="120" />
+                        <TextBlock Text="minutes of no activity in BitosX" VerticalAlignment="Center" Classes="muted" />
+                    </StackPanel>
+
+                    <CheckBox IsChecked="{Binding LockOnMinimize}"
+                              Content="Lock when the window is minimized" />
+
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Workstation lock" Classes="muted" FontSize="12" />
+                        <TextBlock Text="{Binding SessionLockSupport}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="System sleep / suspend" Classes="muted" FontSize="12" />
+                        <TextBlock Text="{Binding SuspendSupport}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
                 <StackPanel Spacing="10">
                     <TextBlock Text="Security" Classes="h2" />
                     <StackPanel Spacing="2">
