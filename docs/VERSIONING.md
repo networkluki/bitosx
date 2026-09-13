@@ -38,5 +38,7 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.1.0`** — the encrypted local vault baseline. The first release tag will be `v0.1.0-local-vault`
-(held until manual GUI verification passes; see [RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)).
+**`0.2.0`** — automatic vault locking (tag `v0.2.0-auto-lock`; Windows manually verified). Builds on
+the `0.1.0` encrypted local vault baseline (tag `v0.1.0-local-vault`). The encrypted vault on-disk
+format is unchanged (still v1). See [AUTO_LOCK.md](AUTO_LOCK.md) and
+[RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md).
