@@ -50,7 +50,7 @@ tools/
   BitosX.KdfBenchmark     Diagnostic-only Argon2id unlock-latency benchmark (not shipped)
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
-  VERIFICATION.md
+  VERIFICATION.md  VERSIONING.md
 ```
 
 `BitosX.Core` and `BitosX.Crypto` do not depend on Avalonia.
