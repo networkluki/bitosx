@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="780" d:DesignHeight="680"
+             x:Class="BitosX.App.Views.SettingsPageView"
+             x:DataType="vm:SettingsPageViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="16" MaxWidth="640" HorizontalAlignment="Left">
+            <TextBlock Text="Settings" Classes="h1" />
+
+            <Border Classes="card">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Vault" Classes="h2" />
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Vault file location" Classes="muted" FontSize="12" />
+                        <SelectableTextBlock Text="{Binding VaultLocation}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Content="🔒 Lock now" Command="{Binding LockVaultCommand}" HorizontalAlignment="Left" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Security" Classes="h2" />
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Key derivation" Classes="muted" FontSize="12" />
+                        <TextBlock Text="{Binding KdfDescription}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Encryption" Classes="muted" FontSize="12" />
+                        <TextBlock Text="{Binding AlgorithmDescription}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Clipboard" Classes="muted" FontSize="12" />
+                        <TextBlock Text="{Binding ClipboardClearDescription}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Server integration" Classes="muted" FontSize="12" />
+                        <TextBlock Text="{Binding ServerIntegrationDescription}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="About" Classes="h2" />
+                    <TextBlock Text="{Binding AppVersion, StringFormat='BitosX version {0}'}" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="This is the local-vault milestone. No data leaves your device." />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

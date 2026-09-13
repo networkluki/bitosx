@@ -1,0 +1,102 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="BitosX.App.App"
+             xmlns:local="using:BitosX.App"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Resources>
+        <!-- BitosX dark palette -->
+        <Color x:Key="BitosXBackground">#0E1116</Color>
+        <Color x:Key="BitosXSurface">#171B22</Color>
+        <Color x:Key="BitosXSurfaceAlt">#1E2430</Color>
+        <Color x:Key="BitosXBorder">#2A313C</Color>
+        <Color x:Key="BitosXAccent">#5B8DEF</Color>
+        <Color x:Key="BitosXAccentAlt">#22D3A8</Color>
+        <Color x:Key="BitosXText">#E6EAF0</Color>
+        <Color x:Key="BitosXTextMuted">#97A0AD</Color>
+        <Color x:Key="BitosXDanger">#F87171</Color>
+        <Color x:Key="BitosXWarning">#FBBF24</Color>
+        <Color x:Key="BitosXSuccess">#34D399</Color>
+
+        <SolidColorBrush x:Key="BitosXBackgroundBrush" Color="{StaticResource BitosXBackground}" />
+        <SolidColorBrush x:Key="BitosXSurfaceBrush" Color="{StaticResource BitosXSurface}" />
+        <SolidColorBrush x:Key="BitosXSurfaceAltBrush" Color="{StaticResource BitosXSurfaceAlt}" />
+        <SolidColorBrush x:Key="BitosXBorderBrush" Color="{StaticResource BitosXBorder}" />
+        <SolidColorBrush x:Key="BitosXAccentBrush" Color="{StaticResource BitosXAccent}" />
+        <SolidColorBrush x:Key="BitosXAccentAltBrush" Color="{StaticResource BitosXAccentAlt}" />
+        <SolidColorBrush x:Key="BitosXTextBrush" Color="{StaticResource BitosXText}" />
+        <SolidColorBrush x:Key="BitosXTextMutedBrush" Color="{StaticResource BitosXTextMuted}" />
+        <SolidColorBrush x:Key="BitosXDangerBrush" Color="{StaticResource BitosXDanger}" />
+        <SolidColorBrush x:Key="BitosXWarningBrush" Color="{StaticResource BitosXWarning}" />
+        <SolidColorBrush x:Key="BitosXSuccessBrush" Color="{StaticResource BitosXSuccess}" />
+    </Application.Resources>
+
+    <Application.Styles>
+        <FluentTheme />
+
+        <!-- Card container -->
+        <Style Selector="Border.card">
+            <Setter Property="Background" Value="{StaticResource BitosXSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource BitosXBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="20" />
+        </Style>
+
+        <!-- Headings -->
+        <Style Selector="TextBlock.h1">
+            <Setter Property="FontSize" Value="26" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource BitosXTextBrush}" />
+        </Style>
+        <Style Selector="TextBlock.h2">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource BitosXTextBrush}" />
+        </Style>
+        <Style Selector="TextBlock.muted">
+            <Setter Property="Foreground" Value="{StaticResource BitosXTextMutedBrush}" />
+        </Style>
+        <Style Selector="TextBlock.error">
+            <Setter Property="Foreground" Value="{StaticResource BitosXDangerBrush}" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+
+        <!-- Accent (primary) button -->
+        <Style Selector="Button.accent">
+            <Setter Property="Background" Value="{StaticResource BitosXAccentBrush}" />
+            <Setter Property="Foreground" Value="#0B1220" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Padding" Value="16,10" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#6E9BF2" />
+        </Style>
+
+        <!-- Navigation button -->
+        <Style Selector="Button.nav">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{StaticResource BitosXTextMutedBrush}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="Padding" Value="14,10" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="FontSize" Value="14" />
+        </Style>
+        <Style Selector="Button.nav:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="{StaticResource BitosXSurfaceAltBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource BitosXTextBrush}" />
+        </Style>
+        <Style Selector="Button.nav.selected">
+            <Setter Property="Background" Value="{StaticResource BitosXSurfaceAltBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource BitosXTextBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Application.Styles>
+</Application>

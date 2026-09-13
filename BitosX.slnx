@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BitosX.ApiClient/BitosX.ApiClient.csproj" />
+    <Project Path="src/BitosX.App/BitosX.App.csproj" />
+    <Project Path="src/BitosX.Core/BitosX.Core.csproj" />
+    <Project Path="src/BitosX.Crypto/BitosX.Crypto.csproj" />
+    <Project Path="src/BitosX.Platform/BitosX.Platform.csproj" />
+    <Project Path="src/BitosX.Storage/BitosX.Storage.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BitosX.Core.Tests/BitosX.Core.Tests.csproj" />
+    <Project Path="tests/BitosX.Crypto.Tests/BitosX.Crypto.Tests.csproj" />
+    <Project Path="tests/BitosX.Platform.Tests/BitosX.Platform.Tests.csproj" />
+    <Project Path="tests/BitosX.Storage.Tests/BitosX.Storage.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/BitosX.KdfBenchmark/BitosX.KdfBenchmark.csproj" />
+  </Folder>
+</Solution>

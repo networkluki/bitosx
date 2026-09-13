@@ -1,0 +1,39 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="680"
+             x:Class="BitosX.App.Views.CreateVaultView"
+             x:DataType="vm:CreateVaultViewModel">
+
+    <Border Classes="card" Width="440" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Spacing="14">
+            <TextBlock Text="BitosX" Classes="h1" HorizontalAlignment="Center" />
+            <TextBlock Text="Create your secure local vault" Classes="muted" HorizontalAlignment="Center" />
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Master password" />
+                <TextBox Text="{Binding MasterPassword}" PasswordChar="●" PlaceholderText="At least 8 characters" />
+            </StackPanel>
+
+            <StackPanel Spacing="6">
+                <TextBlock Text="Confirm master password" />
+                <TextBox Text="{Binding ConfirmPassword}" PasswordChar="●" />
+            </StackPanel>
+
+            <TextBlock Text="{Binding StrengthText}" Classes="muted"
+                       IsVisible="{Binding StrengthText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+            <TextBlock Text="{Binding ErrorMessage}" Classes="error"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+            <Button Content="Create Vault" Classes="accent" HorizontalAlignment="Stretch"
+                    Command="{Binding CreateCommand}" IsEnabled="{Binding !IsBusy}" />
+
+            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                       Text="Your master password is never stored or transmitted. If you forget it, the vault cannot be recovered." />
+        </StackPanel>
+    </Border>
+</UserControl>

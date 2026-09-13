@@ -1,0 +1,78 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="780" d:DesignHeight="680"
+             x:Class="BitosX.App.Views.SecurityPageView"
+             x:DataType="vm:SecurityPageViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="16">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="Security Center" Classes="h1" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="Re-run checks" Classes="accent" Command="{Binding AnalyzeCommand}" />
+            </Grid>
+
+            <TextBlock Text="{Binding SummaryText}" Classes="muted" />
+            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                       Text="All checks run locally on this device. No passwords or vault contents are uploaded anywhere." />
+
+            <Border Classes="card">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Reused passwords" Classes="h2" />
+                    <ItemsControl ItemsSource="{Binding ReusedPasswords}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,2" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="None" Classes="muted" IsVisible="{Binding !ReusedPasswords.Count}" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Weak passwords" Classes="h2" />
+                    <ItemsControl ItemsSource="{Binding WeakPasswords}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,2" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="None" Classes="muted" IsVisible="{Binding !WeakPasswords.Count}" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Duplicate entries" Classes="h2" />
+                    <ItemsControl ItemsSource="{Binding DuplicateEntries}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,2" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="None" Classes="muted" IsVisible="{Binding !DuplicateEntries.Count}" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Insecure (HTTP) URLs" Classes="h2" />
+                    <ItemsControl ItemsSource="{Binding InsecureUrls}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="0,2" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="None" Classes="muted" IsVisible="{Binding !InsecureUrls.Count}" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

@@ -1,0 +1,89 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="780" d:DesignHeight="680"
+             x:Class="BitosX.App.Views.VaultPageView"
+             x:DataType="vm:VaultPageViewModel"
+             x:Name="Root">
+
+    <Panel>
+        <DockPanel Margin="24">
+            <!-- Header -->
+            <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
+                <TextBlock Grid.Column="0" Text="Vault" Classes="h1" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="+ Add Login" Classes="accent"
+                        Command="{Binding AddLoginCommand}" />
+            </Grid>
+
+            <TextBox DockPanel.Dock="Top" Text="{Binding SearchText}" PlaceholderText="Search by name, username, or URL"
+                     Margin="0,0,0,12" />
+
+            <TextBlock DockPanel.Dock="Top" Text="{Binding StatusMessage}" Classes="muted" Margin="0,0,0,8"
+                       IsVisible="{Binding StatusMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+            <TextBlock DockPanel.Dock="Top" Classes="muted" Margin="0,20,0,0"
+                       Text="No logins yet. Click “Add Login” to create your first entry."
+                       IsVisible="{Binding IsEmpty}" />
+
+            <ScrollViewer>
+                <ItemsControl ItemsSource="{Binding Items}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:LoginItemViewModel">
+                            <Border Classes="card" Margin="0,0,0,10" Padding="16,12">
+                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                    <!-- Favorite -->
+                                    <Button Grid.Column="0" Content="{Binding FavoriteGlyph}" Background="Transparent"
+                                            Foreground="{StaticResource BitosXWarningBrush}" FontSize="18" Padding="6"
+                                            VerticalAlignment="Top"
+                                            Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).ToggleFavoriteCommand}"
+                                            CommandParameter="{Binding}" ToolTip.Tip="Toggle favorite" />
+
+                                    <!-- Details -->
+                                    <StackPanel Grid.Column="1" Spacing="3" Margin="8,0">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" />
+                                        <TextBlock Text="{Binding Username}" Classes="muted" FontSize="13"
+                                                   IsVisible="{Binding Username, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                                        <TextBlock Text="{Binding PrimaryUrl}" Classes="muted" FontSize="12"
+                                                   IsVisible="{Binding PrimaryUrl, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                                        <SelectableTextBlock Text="{Binding DisplayedPassword}" FontFamily="Cascadia Code,Consolas,monospace"
+                                                             FontSize="13" Margin="0,3,0,0" />
+                                    </StackPanel>
+
+                                    <!-- Actions -->
+                                    <WrapPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button Content="{Binding PasswordToggleGlyph}" Margin="4,2"
+                                                IsVisible="{Binding HasPassword}"
+                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).TogglePasswordVisibilityCommand}"
+                                                CommandParameter="{Binding}" />
+                                        <Button Content="Copy user" Margin="4,2"
+                                                IsVisible="{Binding Username, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
+                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CopyUsernameCommand}"
+                                                CommandParameter="{Binding}" />
+                                        <Button Content="Copy pass" Margin="4,2"
+                                                IsVisible="{Binding HasPassword}"
+                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CopyPasswordCommand}"
+                                                CommandParameter="{Binding}" />
+                                        <Button Content="Edit" Margin="4,2"
+                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).EditLoginCommand}"
+                                                CommandParameter="{Binding}" />
+                                        <Button Content="Delete" Margin="4,2" Foreground="{StaticResource BitosXDangerBrush}"
+                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).DeleteLoginCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </WrapPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </DockPanel>
+
+        <!-- Editor overlay -->
+        <Border Background="#B3000000" IsVisible="{Binding IsEditorOpen}">
+            <ContentControl Content="{Binding Editor}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </Border>
+    </Panel>
+</UserControl>

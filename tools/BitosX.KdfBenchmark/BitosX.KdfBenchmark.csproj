@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Diagnostic-only console tool. Measures real Argon2id key-derivation latency for the
+    production profile so unlock latency can be evaluated per device. Not a product feature
+    and not part of the shipped application; excluded from the test suite by design.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Console diagnostic tool: user-facing string localization analyzers do not apply. -->
+    <NoWarn>$(NoWarn);CA1303</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BitosX.Crypto\BitosX.Crypto.csproj" />
+  </ItemGroup>
+
+</Project>

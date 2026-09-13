@@ -1,0 +1,16 @@
+# Normalize line endings: Git stores text with LF and checks out native line endings.
+* text=auto
+
+# Explicit text types
+*.cs      text
+*.axaml   text
+*.csproj  text
+*.slnx    text
+*.props   text
+*.md      text
+*.json    text
+*.manifest text
+
+# Binary types (never normalize)
+*.ico     binary
+*.png     binary

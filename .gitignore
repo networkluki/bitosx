@@ -1,0 +1,39 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+artifacts/
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# .NET
+project.lock.json
+*.nuget.props
+*.nuget.targets
+
+# Test / coverage results
+[Tt]est[Rr]esults/
+coverage/
+*.coverage
+*.trx
+
+# BitosX vault files must never be committed
+*.bitosx
+*.bitosx.tmp
+vault.bitosx*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets (must never be committed)
+*.pfx
+*.snk
+secrets.json
+appsettings.*.local.json

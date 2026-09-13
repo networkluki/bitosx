@@ -1,0 +1,13 @@
+<Project>
+  <!-- Inherit the repository-wide settings, then relax naming rules for tests. -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <PropertyGroup>
+    <!--
+      CA1707 (no underscores in member names) conflicts with the standard, intentional
+      Method_Scenario_Expectation naming convention for xUnit tests. It is a naming-style
+      analyzer, not a security or correctness rule, so it is disabled for test projects only.
+    -->
+    <NoWarn>$(NoWarn);CA1707</NoWarn>
+  </PropertyGroup>
+</Project>

@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="460" d:DesignHeight="560"
+             x:Class="BitosX.App.Views.LoginEditorView"
+             x:DataType="vm:LoginEditorViewModel">
+
+    <Border Classes="card" Width="460">
+        <StackPanel Spacing="12">
+            <TextBlock Text="{Binding Title}" Classes="h2" />
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="Name *" />
+                <TextBox Text="{Binding Name}" PlaceholderText="e.g. GitHub" />
+            </StackPanel>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="Username" />
+                <TextBox Text="{Binding Username}" />
+            </StackPanel>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="Password" />
+                <Grid ColumnDefinitions="*,Auto,Auto">
+                    <TextBox Grid.Column="0" Text="{Binding Password}" PasswordChar="●"
+                             RevealPassword="{Binding IsPasswordVisible}" />
+                    <Button Grid.Column="1" Content="👁" Margin="6,0,0,0"
+                            Command="{Binding TogglePasswordVisibilityCommand}" ToolTip.Tip="Show/hide" />
+                    <Button Grid.Column="2" Content="Generate" Margin="6,0,0,0"
+                            Command="{Binding GeneratePasswordCommand}" />
+                </Grid>
+            </StackPanel>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="URLs (one per line)" />
+                <TextBox Text="{Binding UrlsText}" AcceptsReturn="True" Height="66"
+                         PlaceholderText="https://example.com" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <StackPanel Spacing="5">
+                <TextBlock Text="Notes" />
+                <TextBox Text="{Binding Notes}" AcceptsReturn="True" Height="66" TextWrapping="Wrap" />
+            </StackPanel>
+
+            <CheckBox Content="Favorite" IsChecked="{Binding Favorite}" />
+
+            <TextBlock Text="{Binding ErrorMessage}" Classes="error"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
+                <Button Content="Cancel" Command="{Binding CancelCommand}" />
+                <Button Content="Save" Classes="accent" Command="{Binding SaveCommand}" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</UserControl>

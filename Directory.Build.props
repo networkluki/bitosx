@@ -1,0 +1,16 @@
+<Project>
+  <!--
+    Shared build settings for all BitosX projects.
+    Security analyzers and nullable reference types are enabled solution-wide;
+    warnings are kept visible (never suppressed) per the project security policy.
+  -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>Recommended</AnalysisMode>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>
