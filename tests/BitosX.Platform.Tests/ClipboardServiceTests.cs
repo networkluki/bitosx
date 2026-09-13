@@ -55,6 +55,23 @@ public sealed class ClipboardServiceTests
     }
 
     [Fact]
+    public async Task Clear_UsesPlatformClearOperation_NotEmptyStringSet()
+    {
+        // Regression (found in manual GUI verification on Windows): clearing by setting an empty
+        // string does NOT reliably clear the real clipboard, leaving copied secrets in place. The
+        // service must clear via the platform's dedicated ClearAsync operation.
+        var accessor = new FakeClipboardAccessor();
+        using var service = Create(accessor, LongDelay);
+
+        await service.CopySecretAsync("secret"); // SetCount == 1
+        await service.ClearIfUnchangedAsync();
+
+        Assert.Equal(1, accessor.ClearCount); // cleared via ClearAsync
+        Assert.Equal(1, accessor.SetCount);   // no extra SetText("") used to clear
+        Assert.Null(accessor.Content);
+    }
+
+    [Fact]
     public async Task ClearIfUnchanged_WhenUnchanged_Clears()
     {
         var accessor = new FakeClipboardAccessor();

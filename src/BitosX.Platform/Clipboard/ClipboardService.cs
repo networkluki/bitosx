@@ -71,7 +71,9 @@ public sealed class ClipboardService : IClipboardService, IDisposable
         string? current = await _accessor.GetTextAsync(cancellationToken).ConfigureAwait(false);
         if (string.Equals(current, expected, StringComparison.Ordinal))
         {
-            await _accessor.SetTextAsync(string.Empty, cancellationToken).ConfigureAwait(false);
+            // Clear via the platform clear operation. Setting an empty string does not reliably
+            // remove clipboard content on Windows, which left copied secrets on the clipboard.
+            await _accessor.ClearAsync(cancellationToken).ConfigureAwait(false);
         }
 
         lock (_gate)

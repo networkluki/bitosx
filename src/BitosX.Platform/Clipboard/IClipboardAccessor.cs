@@ -12,4 +12,11 @@ public interface IClipboardAccessor
 
     /// <summary>Reads the current clipboard text, or <see langword="null"/> if unavailable.</summary>
     Task<string?> GetTextAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Clears the clipboard using the platform's dedicated clear operation. This is preferred over
+    /// setting an empty string, which does not reliably remove clipboard content on all platforms
+    /// (notably Windows).
+    /// </summary>
+    Task ClearAsync(CancellationToken cancellationToken = default);
 }

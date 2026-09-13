@@ -13,6 +13,7 @@ internal sealed class FakeClipboardAccessor : IClipboardAccessor
 
     public int SetCount { get; private set; }
     public int GetCount { get; private set; }
+    public int ClearCount { get; private set; }
 
     /// <summary>When set, the next <see cref="SetTextAsync"/> throws this exception.</summary>
     public Exception? ThrowOnNextSet { get; set; }
@@ -65,5 +66,16 @@ internal sealed class FakeClipboardAccessor : IClipboardAccessor
             GetCount++;
             return Task.FromResult(_content);
         }
+    }
+
+    public Task ClearAsync(CancellationToken cancellationToken = default)
+    {
+        lock (_gate)
+        {
+            _content = null;
+            ClearCount++;
+        }
+
+        return Task.CompletedTask;
     }
 }
