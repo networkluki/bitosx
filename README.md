@@ -10,6 +10,8 @@ and stays on the local device.
 
 - Create a local vault protected by a master password (Argon2id + AES-256-GCM).
 - Unlock / lock the vault; incorrect passwords are rejected.
+- Automatic locking: inactivity timeout (configurable), workstation lock and system suspend
+  (Windows), and optional lock-on-minimize. See [docs/AUTO_LOCK.md](docs/AUTO_LOCK.md).
 - Add, edit, delete, favorite, and search login items.
 - Copy username / password to the clipboard with an automatic timed clear.
 - Show/hide passwords (hidden by default).
@@ -50,7 +52,7 @@ tools/
   BitosX.KdfBenchmark     Diagnostic-only Argon2id unlock-latency benchmark (not shipped)
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
-  VERIFICATION.md  VERSIONING.md
+  VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md
 ```
 
 `BitosX.Core` and `BitosX.Crypto` do not depend on Avalonia.

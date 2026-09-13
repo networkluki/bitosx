@@ -32,6 +32,11 @@ It describes the current **local vault** milestone. No marketing claims are made
   unlocked; only encrypted data is written to disk.
 - **Shoulder-surfing of stored passwords in the UI.** Passwords are masked by default and shown
   only on explicit request.
+- **An unlocked vault left unattended.** BitosX locks automatically on inactivity, on workstation
+  lock and system suspend (where the OS reliably reports them — currently Windows), and optionally
+  on minimize. This shrinks the window of exposure but does not eliminate it: while unlocked and in
+  use, decrypted contents are in memory. See [AUTO_LOCK.md](AUTO_LOCK.md) for the platform support
+  and verification status (OS-event detection on Linux/macOS is **NOT VERIFIED / unsupported**).
 
 ## What BitosX does NOT protect against
 

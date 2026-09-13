@@ -47,6 +47,22 @@ actually confirmed is marked `NOT VERIFIED`.
 | **End-to-end GUI behavior (create/unlock/edit/copy/lock/persist)** | **MANUALLY VERIFIED (2026-09-13)** | All 17 checklist steps passed; corroborated by on-disk checks (vault created, no plaintext leak, add/edit/delete persisted). |
 | Secure erasure of secrets held as managed `string` | NOT VERIFIED (not achievable) | Documented limitation in `SECURITY_MODEL.md`. |
 
+## Automatic locking (milestone after v0.1.0) — verified 2026-09-13
+
+Full detail and the A1–A8 checklist live in [AUTO_LOCK.md](AUTO_LOCK.md). Summary:
+
+| Item | Status |
+|---|---|
+| Auto-lock policy + settings persistence | AUTOMATED TESTED (`AutoLockControllerTests`, `AppSettingsTests`, `FileAppSettingsStoreTests`) |
+| Inactivity lock, activity-resets, background-does-not-reset (Windows) | MANUALLY VERIFIED (2026-09-13) — A2–A4 |
+| Settings persistence across restart (Windows) | MANUALLY VERIFIED (2026-09-13) — A1 |
+| Lock on minimize (Windows) | MANUALLY VERIFIED (2026-09-13) — A5 |
+| Workstation lock (Win+L) / suspend-resume (Windows) | MANUALLY VERIFIED (2026-09-13) — A6, A7 (no exceptions in app output) |
+| Post-lock security state (Windows) | MANUALLY VERIFIED (2026-09-13) — A8 |
+| Linux/macOS session-lock & suspend detection | **NOT VERIFIED / UNSUPPORTED** (intentionally not implemented) |
+
+Production default inactivity timeout is **15 minutes** (configurable; 1 minute valid for testing).
+
 ## Clipboard auto-clear defect (found in manual GUI verification, 2026-09-13 — FIXED)
 
 Manual step 11 revealed that after copying a value, the clipboard was **not** cleared when the
