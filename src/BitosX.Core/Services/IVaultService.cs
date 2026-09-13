@@ -42,6 +42,14 @@ public interface IVaultService
     /// <summary>Locks the vault, clearing decrypted contents and key material from memory.</summary>
     void Lock();
 
+    /// <summary>
+    /// Changes the master password by re-wrapping the existing vault key under a new key derived
+    /// from <paramref name="newPassword"/>. The vault key and encrypted content are unchanged.
+    /// Requires the vault to be unlocked and the correct <paramref name="currentPassword"/>; a wrong
+    /// current password throws and leaves the stored vault untouched.
+    /// </summary>
+    Task ChangeMasterPasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default);
+
     /// <summary>Adds a login item and persists the vault.</summary>
     Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default);
 

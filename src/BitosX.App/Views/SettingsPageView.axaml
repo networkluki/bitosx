@@ -52,6 +52,20 @@
 
             <Border Classes="card">
                 <StackPanel Spacing="10">
+                    <TextBlock Text="Change master password" Classes="h2" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="Re-protects your existing vault with a new password. The vault contents are not re-encrypted and no data is lost." />
+                    <TextBox PasswordChar="●" PlaceholderText="Current password" Text="{Binding CurrentPassword}" />
+                    <TextBox PasswordChar="●" PlaceholderText="New password" Text="{Binding NewPassword}" />
+                    <TextBox PasswordChar="●" PlaceholderText="Confirm new password" Text="{Binding ConfirmPassword}" />
+                    <Button Content="Change password" Command="{Binding ChangeMasterPasswordCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding ChangePasswordStatus}" TextWrapping="Wrap" Classes="muted"
+                               IsVisible="{Binding ChangePasswordStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="10">
                     <TextBlock Text="Security" Classes="h2" />
                     <StackPanel Spacing="2">
                         <TextBlock Text="Key derivation" Classes="muted" FontSize="12" />

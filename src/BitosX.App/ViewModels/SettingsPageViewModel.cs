@@ -40,6 +40,18 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
     [ObservableProperty]
     public partial bool LockOnMinimize { get; set; }
 
+    [ObservableProperty]
+    public partial string CurrentPassword { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string NewPassword { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string ConfirmPassword { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string? ChangePasswordStatus { get; set; }
+
     public SettingsPageViewModel(
         IVaultService vaultService,
         FileLocalVaultStorage storage,
@@ -106,4 +118,45 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
 
     [RelayCommand]
     private void LockVault() => _vaultService.Lock();
+
+    [RelayCommand]
+    private async Task ChangeMasterPasswordAsync()
+    {
+        ChangePasswordStatus = null;
+
+        if (!string.Equals(NewPassword, ConfirmPassword, StringComparison.Ordinal))
+        {
+            ChangePasswordStatus = "The new password and its confirmation do not match.";
+            return;
+        }
+
+        try
+        {
+            await _vaultService.ChangeMasterPasswordAsync(CurrentPassword, NewPassword).ConfigureAwait(true);
+            CurrentPassword = string.Empty;
+            NewPassword = string.Empty;
+            ConfirmPassword = string.Empty;
+            ChangePasswordStatus = "Master password changed.";
+        }
+        catch (VaultAuthenticationException)
+        {
+            ChangePasswordStatus = "The current password is incorrect.";
+        }
+        catch (BitosXCryptographicException)
+        {
+            ChangePasswordStatus = "The vault could not be processed. The master password was not changed.";
+        }
+        catch (ArgumentException ex)
+        {
+            ChangePasswordStatus = ex.Message;
+        }
+        catch (InvalidOperationException ex)
+        {
+            ChangePasswordStatus = ex.Message;
+        }
+        catch (IOException)
+        {
+            ChangePasswordStatus = "Could not save the vault. The master password was not changed.";
+        }
+    }
 }

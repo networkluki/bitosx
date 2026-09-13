@@ -29,6 +29,12 @@ public static partial class VaultLog
     [LoggerMessage(EventId = 1010, EventName = "vault_auto_locked", Level = LogLevel.Information, Message = "Vault auto-locked ({Reason}).")]
     public static partial void VaultAutoLocked(ILogger logger, AutoLockReason reason);
 
+    [LoggerMessage(EventId = 1011, EventName = "master_password_changed", Level = LogLevel.Information, Message = "Master password changed.")]
+    public static partial void MasterPasswordChanged(ILogger logger);
+
+    [LoggerMessage(EventId = 1012, EventName = "master_password_change_failed", Level = LogLevel.Warning, Message = "Master password change failed.")]
+    public static partial void MasterPasswordChangeFailed(ILogger logger);
+
     [LoggerMessage(EventId = 1005, EventName = "vault_saved", Level = LogLevel.Information, Message = "Vault saved.")]
     public static partial void VaultSaved(ILogger logger);
 

@@ -132,6 +132,76 @@ public sealed class VaultCryptor
             ciphertext);
     }
 
+    /// <summary>
+    /// Changes the master password by re-wrapping the SAME vault key under a key-encryption key
+    /// derived from <paramref name="newPassword"/> and a fresh salt. The vault content is NOT
+    /// re-encrypted: the content nonce and ciphertext are carried over unchanged (the content's
+    /// associated data depends only on the format version and algorithm, not on the salt or KDF
+    /// parameters). The current password is verified by authenticating the existing wrapped key, so
+    /// a wrong password throws <see cref="VaultAuthenticationException"/> before anything new is
+    /// produced. The vault key is not rotated and the KDF cost parameters are preserved; only the
+    /// salt, key-wrap nonce, and wrapped key change.
+    /// </summary>
+    public EncryptedVault ChangeMasterPassword(
+        EncryptedVault current,
+        ReadOnlySpan<byte> currentPassword,
+        ReadOnlySpan<byte> newPassword)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ValidateFormat(current);
+
+        byte[] oldKek = _keyDerivation.DeriveKey(currentPassword, current.Salt, current.KdfParameters);
+        byte[]? vaultKey = null;
+        byte[]? newKek = null;
+        try
+        {
+            byte[] currentAad = BuildKeyWrapAad(current.Version, current.KdfParameters, current.Salt);
+            // Authenticated unwrap; a wrong current password fails closed here, before any change.
+            vaultKey = _cipher.Decrypt(oldKek, current.KeyWrapNonce, current.EncryptedVaultKey, currentAad);
+
+            // Fresh salt and key-wrap nonce; keep the vault's existing KDF cost parameters.
+            byte[] newSalt = SecureRandom.GetBytes(CryptoConstants.SaltSizeBytes);
+            newKek = _keyDerivation.DeriveKey(newPassword, newSalt, current.KdfParameters);
+
+            byte[] newKeyWrapNonce = SecureRandom.GetBytes(CryptoConstants.NonceSizeBytes);
+            byte[] newKeyWrapAad = BuildKeyWrapAad(current.Version, current.KdfParameters, newSalt);
+            byte[] newEncryptedVaultKey = _cipher.Encrypt(newKek, newKeyWrapNonce, vaultKey, newKeyWrapAad);
+
+            // Self-check: the freshly wrapped key must unwrap back to exactly the same vault key,
+            // so an unusable vault can never be produced/persisted.
+            byte[] check = _cipher.Decrypt(newKek, newKeyWrapNonce, newEncryptedVaultKey, newKeyWrapAad);
+            try
+            {
+                if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(check, vaultKey))
+                {
+                    throw new BitosXCryptographicException("Master password change self-check failed.");
+                }
+            }
+            finally
+            {
+                CryptoBuffers.Wipe(check);
+            }
+
+            // Content carried over unchanged (same vault key; content AAD is independent of salt/KDF).
+            return new EncryptedVault(
+                current.Version,
+                current.Kdf,
+                current.KdfParameters,
+                newSalt,
+                current.Algorithm,
+                newKeyWrapNonce,
+                newEncryptedVaultKey,
+                current.ContentNonce,
+                current.Ciphertext);
+        }
+        finally
+        {
+            CryptoBuffers.Wipe(oldKek);
+            CryptoBuffers.Wipe(newKek);
+            CryptoBuffers.Wipe(vaultKey);
+        }
+    }
+
     private static void ValidateFormat(EncryptedVault encrypted)
     {
         if (encrypted.Version != CryptoConstants.FormatVersion)

@@ -159,6 +159,52 @@ public sealed class VaultService : IVaultService
         VaultLog.VaultLocked(_logger);
     }
 
+    public async Task ChangeMasterPasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(currentPassword);
+        ValidateMasterPassword(newPassword);
+
+        if (_state != VaultState.Unlocked)
+        {
+            throw new InvalidOperationException("The vault must be unlocked to change the master password.");
+        }
+
+        if (string.Equals(currentPassword, newPassword, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("The new master password must be different from the current password.", nameof(newPassword));
+        }
+
+        // Read the current on-disk vault; re-wrapping carries its content over unchanged.
+        EncryptedVault current = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+        byte[] currentBytes = Encoding.UTF8.GetBytes(currentPassword);
+        byte[] newBytes = Encoding.UTF8.GetBytes(newPassword);
+        EncryptedVault reWrapped;
+        try
+        {
+            // Verifies the current password (authenticated unwrap) and produces a re-wrapped vault.
+            reWrapped = _cryptor.ChangeMasterPassword(current, currentBytes, newBytes);
+        }
+        catch (BitosXCryptographicException)
+        {
+            VaultLog.MasterPasswordChangeFailed(_logger);
+            throw;
+        }
+        finally
+        {
+            CryptoBuffers.Wipe(currentBytes);
+            CryptoBuffers.Wipe(newBytes);
+        }
+
+        // Atomic write; on failure the previous vault (old password) is left intact.
+        await _storage.WriteAsync(reWrapped, cancellationToken).ConfigureAwait(false);
+
+        // Only after successful persistence: adopt the new header so later saves use the new wrapping.
+        // The retained vault key and decrypted contents are unchanged.
+        _header = reWrapped.Header;
+        VaultLog.MasterPasswordChanged(_logger);
+    }
+
     public async Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
