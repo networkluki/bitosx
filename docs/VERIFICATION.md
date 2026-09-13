@@ -1,8 +1,8 @@
 # Verification Status
 
 This document records how thoroughly each part of the **local encrypted vault** milestone has
-been verified, and provides a manual GUI checklist that has **not yet** been performed. It is kept
-deliberately honest: anything not actually confirmed is marked `NOT VERIFIED`.
+been verified, including the manual GUI checklist. It is kept deliberately honest: anything not
+actually confirmed is marked `NOT VERIFIED`.
 
 ## Legend
 
@@ -13,9 +13,10 @@ deliberately honest: anything not actually confirmed is marked `NOT VERIFIED`.
 | **MANUALLY VERIFIED** | A person ran the application and confirmed the behavior end to end. |
 | **NOT VERIFIED** | Not confirmed by any of the above. |
 
-> As of this pass, **no manual GUI click-through has been performed**, so nothing is
-> `MANUALLY VERIFIED`. The build, the automated tests, and the KDF benchmark were executed on a
-> Windows 11 / .NET 10.0.12 machine.
+> The manual GUI click-through (all 17 steps) was performed on **2026-09-13** on a
+> Windows 11 / .NET 10.0.12 machine, alongside the build, automated tests, and KDF benchmark.
+> It surfaced a real clipboard-clear defect that automated tests missed; the defect was fixed and
+> the affected steps re-verified (see "Clipboard auto-clear defect" below).
 
 ## Status matrix
 
@@ -38,13 +39,32 @@ deliberately honest: anything not actually confirmed is marked `NOT VERIFIED`.
 | Oversized vault file rejected before large allocation | AUTOMATED TESTED | `FileLocalVaultStorageTests.Read_OversizedFile_FailsClosed`. |
 | Vault item field-length / count / URL bounds | AUTOMATED TESTED | `VaultValidationTests` (enforced on add/update). |
 | Clipboard copy only on explicit action | VERIFIED | `VaultPageViewModel` copy commands call `ClipboardService`. |
-| Clipboard auto-clear after timeout | AUTOMATED TESTED | `ClipboardServiceTests.AutoClear_AfterDelay_ClearsClipboard`. |
-| Clipboard does not erase content the user copied afterward | AUTOMATED TESTED | `ClipboardServiceTests.AutoClear_DoesNotEraseContentTheUserReplaced`. |
+| Clipboard auto-clear after timeout | AUTOMATED TESTED + MANUALLY VERIFIED (2026-09-13) | `ClipboardServiceTests.AutoClear_AfterDelay_ClearsClipboard`; real-clipboard clear confirmed after the UI-thread fix. |
+| Clipboard does not erase content the user copied afterward | AUTOMATED TESTED + MANUALLY VERIFIED (2026-09-13) | `ClipboardServiceTests.AutoClear_DoesNotEraseContentTheUserReplaced`; confirmed live. |
 | Repeated copies / dispose / accessor failure handled safely | AUTOMATED TESTED | `ClipboardServiceTests`. |
-| Lock removes decrypted state; no navigation back without re-auth | VERIFIED + AUTOMATED TESTED | State-driven shell (`MainWindowViewModel`); `VaultServiceTests` locking tests. |
+| Lock removes decrypted state; no navigation back without re-auth | VERIFIED + AUTOMATED TESTED + MANUALLY VERIFIED (2026-09-13) | State-driven shell (`MainWindowViewModel`); `VaultServiceTests` locking tests; GUI steps 13–15. |
 | Argon2id production-profile unlock latency | VERIFIED | `tools/BitosX.KdfBenchmark` (~46 ms median on the reference machine). |
-| **End-to-end GUI behavior (create/unlock/edit/copy/lock/persist)** | **NOT VERIFIED** | Requires the manual checklist below. |
+| **End-to-end GUI behavior (create/unlock/edit/copy/lock/persist)** | **MANUALLY VERIFIED (2026-09-13)** | All 17 checklist steps passed; corroborated by on-disk checks (vault created, no plaintext leak, add/edit/delete persisted). |
 | Secure erasure of secrets held as managed `string` | NOT VERIFIED (not achievable) | Documented limitation in `SECURITY_MODEL.md`. |
+
+## Clipboard auto-clear defect (found in manual GUI verification, 2026-09-13 — FIXED)
+
+Manual step 11 revealed that after copying a value, the clipboard was **not** cleared when the
+timeout elapsed — a copied username/password stayed on the clipboard indefinitely, defeating the
+timed-clear protection. The automated tests missed it because they use an in-memory fake clipboard.
+
+Root cause: **Avalonia clipboard access must run on the UI thread.** The initial copy runs from a UI
+command (so it worked), but the delayed clear ran on a thread-pool thread; the clipboard read there
+returned nothing, the "is it unchanged?" guard failed, and the clear was skipped entirely.
+
+Fix (App/Platform layers only — no crypto/vault changes):
+- `AvaloniaClipboardAccessor` now marshals every clipboard operation onto the UI thread
+  (`Dispatcher.UIThread`), so reads/clears from the timer work.
+- Clearing now uses the platform `IClipboard.ClearAsync()` instead of setting an empty string,
+  which does not reliably clear the clipboard on Windows. (`IClipboardAccessor.ClearAsync` added.)
+- Regression test added: `ClipboardServiceTests.Clear_UsesPlatformClearOperation_NotEmptyStringSet`.
+  Note: the UI-thread aspect cannot be unit-tested with the fake accessor; it is covered by the
+  manual re-verification (step 11 re-tested and passed).
 
 ## Known limitations found or reaffirmed in this pass
 
@@ -62,10 +82,11 @@ deliberately honest: anything not actually confirmed is marked `NOT VERIFIED`.
   it from a single machine; a future milestone should add device-aware calibration and versioned
   migration.
 
-## Manual GUI checklist (NOT VERIFIED)
+## Manual GUI checklist — COMPLETED 2026-09-13 (all 17 steps PASS)
 
 Run the app with `dotnet run --project src/BitosX.App`. Perform each step and confirm the expected
-result. This checklist has **not** been executed by the automated pass.
+result. **All 17 steps were performed and passed on 2026-09-13** on Windows 11 / .NET 10.0.12
+(step 11 passed after the clipboard fix above). Re-run this checklist for future releases.
 
 > The default vault lives at `%APPDATA%\BitosX\vault.bitosx` (Windows). To test "first launch"
 > cleanly, ensure no vault file exists there first (back it up if it does).
@@ -90,5 +111,7 @@ result. This checklist has **not** been executed by the automated pass.
 | 16 | **Delete an item** | The item disappears from the list and does not return after save. |
 | 17 | **Restart and verify persistence** | After a full restart and unlock, previously added/edited items are present and the deleted item is gone. |
 
-Record the outcome of each step (PASS / FAIL / notes) when the checklist is run, and update the
-status matrix entry for end-to-end GUI behavior to `MANUALLY VERIFIED` only once all steps pass.
+All steps passed; on-disk checks corroborated the visual results (vault created at 888 bytes with no
+plaintext leak; the added login persisted with none of its field values in cleartext; the deleted
+item's data was gone from the file after save/restart). The status-matrix entry for end-to-end GUI
+behavior is now `MANUALLY VERIFIED (2026-09-13)`.

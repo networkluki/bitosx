@@ -51,11 +51,14 @@ machine** — a later milestone should add device-aware calibration and versione
 parameters are bounded (memory ≤ 1 GiB, iterations ≤ 64, parallelism ≤ 64) to stop a malicious vault
 file from causing resource exhaustion on unlock.
 
-## Manual GUI verification checklist — ⚠️ NOT YET DONE
+## Manual GUI verification checklist — ✅ DONE 2026-09-13 (all 17 steps PASS)
 
 Run `dotnet run --project src/BitosX.App`. Confirm each step (full expected results in
 [docs/VERIFICATION.md](docs/VERIFICATION.md)). On a clean machine, ensure no `%APPDATA%\BitosX\vault.bitosx`
-exists before step 1.
+exists before step 1. **Completed 2026-09-13 on Windows 11 / .NET 10.0.12 — all 17 steps passed.**
+This run caught a real clipboard-clear defect (copied secrets were not cleared after the timeout
+because Avalonia clipboard ops must run on the UI thread); it was fixed and step 11 re-verified.
+Re-run this checklist for each future release.
 
 | # | Step | Expected result |
 |---|---|---|
@@ -90,9 +93,10 @@ exists before step 1.
 
 ## NOT VERIFIED items
 
-- **End-to-end GUI behavior** — no manual click-through performed (the 17-step checklist above).
 - **Secure erasure of `string`-held secrets** — not achievable on managed .NET (documented).
-- **Cross-platform behavior on Linux/macOS** — code is cross-platform, but only Windows was exercised.
+- **Cross-platform behavior on Linux/macOS** — code is cross-platform, but only Windows was exercised
+  (note: the clipboard UI-thread fix uses `Dispatcher.UIThread`, which is cross-platform in Avalonia,
+  but the clipboard clear has been manually confirmed only on Windows).
 
 ## Release commands — ⚠️ DO NOT RUN until every gate above is green
 
