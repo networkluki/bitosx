@@ -38,7 +38,8 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.2.0`** — automatic vault locking (tag `v0.2.0-auto-lock`; Windows manually verified). Builds on
-the `0.1.0` encrypted local vault baseline (tag `v0.1.0-local-vault`). The encrypted vault on-disk
-format is unchanged (still v1). See [AUTO_LOCK.md](AUTO_LOCK.md) and
-[RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md).
+**`0.3.0`** — master password change (tag `v0.3.0-master-password`; Windows manually verified).
+Re-wraps the existing vault key under a new password; the vault key is not rotated and content is not
+re-encrypted. Builds on `0.2.0` automatic locking (tag `v0.2.0-auto-lock`) and the `0.1.0` encrypted
+local vault baseline (tag `v0.1.0-local-vault`). The encrypted vault on-disk format is unchanged
+(still v1). See [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md) — "Master password change".

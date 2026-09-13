@@ -37,7 +37,7 @@ encrypted vault contents
 
 - The **vault key** is random and independent of the password. The password only protects the
   wrapped vault key. This allows saving (re-encrypting content) without re-running Argon2, and
-  will allow master-password changes (re-wrap only) in a future milestone.
+  enables changing the master password by **re-wrapping only** (see "Master password change").
 - After unlock, only the **vault key** is kept in memory; the master password is not retained.
 
 ## Default parameters
@@ -118,6 +118,30 @@ Notes:
   (version, KDF parameters, salt for the key wrap; version and algorithm for the content). This
   binds the public header to the ciphertext without adding a separate tamperable field: modifying
   a bound header field changes the AAD and/or the derived KEK, so decryption fails closed.
+
+## Master password change
+
+Changing the master password **re-wraps the existing vault key** under a key derived from the new
+password; it does **not** rotate the vault key and does **not** re-encrypt vault content.
+
+1. The current password is verified by authenticating (unwrapping) the existing wrapped key — a
+   wrong password fails closed (`VaultAuthenticationException`) before anything is written.
+2. A **fresh salt** and **fresh key-wrap nonce** are generated; the vault's existing Argon2id cost
+   parameters are kept.
+3. The same vault key is wrapped under the new KEK. A self-check unwraps the freshly wrapped key and
+   verifies it matches the original vault key before the result is used.
+4. The new envelope carries the **unchanged** content nonce and ciphertext. This is sound because
+   the content's associated data depends only on the format version and algorithm — not on the salt
+   or KDF parameters — so the existing ciphertext still authenticates under the same vault key.
+5. The re-wrapped vault is written through the normal **atomic** storage path; the in-memory header
+   is updated only after a successful write.
+
+Requirements and boundaries: the vault must be unlocked and the current password re-entered (so the
+change cannot be made from an unattended unlocked session); the new password must differ from the
+current one. The on-disk **format is unchanged (v1)** — only the salt, key-wrap nonce, and wrapped
+key differ. Limitations: the vault key is **not** rotated (a change re-protects the key but does not
+invalidate a key that may already be compromised), and **pre-change copies/backups of the vault file
+remain decryptable with the old password**.
 
 ## Security properties
 

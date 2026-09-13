@@ -63,6 +63,18 @@ Full detail and the A1–A8 checklist live in [AUTO_LOCK.md](AUTO_LOCK.md). Summ
 
 Production default inactivity timeout is **15 minutes** (configurable; 1 minute valid for testing).
 
+## Master password change (milestone after v0.2.0) — automated tested
+
+Re-wraps the existing vault key under a new password; vault key not rotated, content not
+re-encrypted, format stays v1. See [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md) — "Master password change".
+
+| Item | Status |
+|---|---|
+| Re-wrap keeps same vault key + content; new password unlocks; old fails; fresh salt/nonce; wrong current password throws | AUTOMATED TESTED (`VaultCryptorTests`) |
+| Service flow: reopen with new password, requires unlocked + current password, rejects new==old, write-failure rollback | AUTOMATED TESTED (`VaultServiceTests`) |
+| Wrong current password leaves the vault file **byte-for-byte unchanged**; content ciphertext not re-encrypted end-to-end | AUTOMATED TESTED (`VaultPersistenceIntegrationTests`) |
+| Settings "Change master password" GUI (form, success/failure messages, re-unlock) | **NOT VERIFIED** (needs manual run) |
+
 ## Clipboard auto-clear defect (found in manual GUI verification, 2026-09-13 — FIXED)
 
 Manual step 11 revealed that after copying a value, the clipboard was **not** cleared when the
