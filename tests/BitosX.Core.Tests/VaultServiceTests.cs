@@ -146,6 +146,84 @@ public sealed class VaultServiceTests
     }
 
     [Fact]
+    public async Task ChangeMasterPassword_ReopensWithNewPassword_OldFails()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s1, _) = CreateService(storage);
+        await s1.CreateVaultAsync(MasterPassword);
+        await s1.AddLoginAsync(SampleLogin());
+
+        await s1.ChangeMasterPasswordAsync(MasterPassword, "new-master-pass");
+
+        // Same session still works (vault key unchanged) and can persist.
+        await s1.AddLoginAsync(new LoginItem { Name = "Second", Username = "u2", Password = "p2xxxxxx" });
+
+        (VaultService s2, _) = CreateService(storage);
+        await Assert.ThrowsAsync<VaultAuthenticationException>(() => s2.UnlockAsync(MasterPassword));
+        await s2.UnlockAsync("new-master-pass");
+        Assert.Equal(2, s2.Items.Count);
+    }
+
+    [Fact]
+    public async Task ChangeMasterPassword_WrongCurrent_Throws_AndStoredVaultUnchanged()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s, _) = CreateService(storage);
+        await s.CreateVaultAsync(MasterPassword);
+        EncryptedVault before = storage.Stored!;
+
+        await Assert.ThrowsAsync<VaultAuthenticationException>(
+            () => s.ChangeMasterPasswordAsync("wrong-current-pw", "new-master-pass"));
+
+        Assert.Same(before, storage.Stored); // nothing written
+
+        (VaultService s2, _) = CreateService(storage);
+        await s2.UnlockAsync(MasterPassword); // old password still works
+    }
+
+    [Fact]
+    public async Task ChangeMasterPassword_WhileLocked_Throws()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s, _) = CreateService(storage);
+        await s.CreateVaultAsync(MasterPassword);
+        s.Lock();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => s.ChangeMasterPasswordAsync(MasterPassword, "new-master-pass"));
+    }
+
+    [Fact]
+    public async Task ChangeMasterPassword_SameAsCurrent_Throws()
+    {
+        (VaultService s, _) = CreateService();
+        await s.CreateVaultAsync(MasterPassword);
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => s.ChangeMasterPasswordAsync(MasterPassword, MasterPassword));
+    }
+
+    [Fact]
+    public async Task ChangeMasterPassword_WriteFails_RollsBack_OldPasswordStillWorks()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s, _) = CreateService(storage);
+        await s.CreateVaultAsync(MasterPassword);
+        EncryptedVault before = storage.Stored!;
+
+        storage.FailNextWrite = true;
+        await Assert.ThrowsAsync<IOException>(
+            () => s.ChangeMasterPasswordAsync(MasterPassword, "new-master-pass"));
+
+        Assert.Same(before, storage.Stored); // nothing persisted
+
+        (VaultService s2, _) = CreateService(storage);
+        await s2.UnlockAsync(MasterPassword); // old password still works
+        (VaultService s3, _) = CreateService(storage);
+        await Assert.ThrowsAsync<VaultAuthenticationException>(() => s3.UnlockAsync("new-master-pass"));
+    }
+
+    [Fact]
     public async Task Lock_ClearsItemsAndState()
     {
         (VaultService service, _) = CreateService();

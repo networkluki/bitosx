@@ -149,4 +149,56 @@ public sealed class VaultCryptorTests
         UnlockResult unlocked = _cryptor.Unlock(created.Encrypted, Password("pw"));
         Assert.Empty(unlocked.Plaintext);
     }
+
+    [Fact]
+    public void ChangeMasterPassword_KeepsSameVaultKeyAndContent()
+    {
+        VaultCreationResult created = _cryptor.Create(Password("old-pw"), Plaintext("vault-data"), FastParams);
+        UnlockResult before = _cryptor.Unlock(created.Encrypted, Password("old-pw"));
+
+        EncryptedVault changed = _cryptor.ChangeMasterPassword(created.Encrypted, Password("old-pw"), Password("new-pw"));
+
+        // Content is carried over unchanged (no re-encryption).
+        Assert.Equal(created.Encrypted.ContentNonce, changed.ContentNonce);
+        Assert.Equal(created.Encrypted.Ciphertext, changed.Ciphertext);
+        // Only the wrapping changed.
+        Assert.NotEqual(created.Encrypted.Salt, changed.Salt);
+        Assert.NotEqual(created.Encrypted.KeyWrapNonce, changed.KeyWrapNonce);
+        Assert.NotEqual(created.Encrypted.EncryptedVaultKey, changed.EncryptedVaultKey);
+        // KDF cost parameters preserved.
+        Assert.Equal(created.Encrypted.KdfParameters, changed.KdfParameters);
+
+        // New password unlocks and yields the SAME vault key and plaintext.
+        UnlockResult after = _cryptor.Unlock(changed, Password("new-pw"));
+        Assert.Equal(before.VaultKey, after.VaultKey);
+        Assert.Equal("vault-data", Encoding.UTF8.GetString(after.Plaintext));
+    }
+
+    [Fact]
+    public void ChangeMasterPassword_NewPasswordUnlocks_OldPasswordFails()
+    {
+        VaultCreationResult created = _cryptor.Create(Password("old-pw"), Plaintext("data"), FastParams);
+        EncryptedVault changed = _cryptor.ChangeMasterPassword(created.Encrypted, Password("old-pw"), Password("new-pw"));
+
+        _ = _cryptor.Unlock(changed, Password("new-pw")); // succeeds
+        Assert.Throws<VaultAuthenticationException>(() => _cryptor.Unlock(changed, Password("old-pw")));
+    }
+
+    [Fact]
+    public void ChangeMasterPassword_WrongCurrentPassword_Throws()
+    {
+        VaultCreationResult created = _cryptor.Create(Password("old-pw"), Plaintext("data"), FastParams);
+        Assert.Throws<VaultAuthenticationException>(
+            () => _cryptor.ChangeMasterPassword(created.Encrypted, Password("wrong"), Password("new-pw")));
+    }
+
+    [Fact]
+    public void ChangeMasterPassword_UsesFreshSaltAndNonceEachTime()
+    {
+        VaultCreationResult created = _cryptor.Create(Password("old-pw"), Plaintext("data"), FastParams);
+        EncryptedVault a = _cryptor.ChangeMasterPassword(created.Encrypted, Password("old-pw"), Password("new-pw"));
+        EncryptedVault b = _cryptor.ChangeMasterPassword(created.Encrypted, Password("old-pw"), Password("new-pw"));
+        Assert.NotEqual(a.Salt, b.Salt);
+        Assert.NotEqual(a.KeyWrapNonce, b.KeyWrapNonce);
+    }
 }

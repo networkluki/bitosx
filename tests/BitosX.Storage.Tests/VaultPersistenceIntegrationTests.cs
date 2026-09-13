@@ -93,6 +93,61 @@ public sealed class VaultPersistenceIntegrationTests : IDisposable
         Assert.Empty(reopen3.Items);
     }
 
+    [Fact]
+    public async Task ChangeMasterPassword_WrongCurrent_LeavesFileByteForByteUnchanged()
+    {
+        VaultService create = NewService();
+        await create.CreateVaultAsync(MasterPassword);
+        await create.AddLoginAsync(new LoginItem { Name = "X", Username = "u", Password = SecretPassword });
+
+        byte[] before = await File.ReadAllBytesAsync(_vaultPath);
+
+        await Assert.ThrowsAsync<VaultAuthenticationException>(
+            () => create.ChangeMasterPasswordAsync("WrongCurrent-000", "NewMaster-456!"));
+
+        byte[] after = await File.ReadAllBytesAsync(_vaultPath);
+        Assert.Equal(before, after); // the stored vault file must be byte-for-byte unchanged
+    }
+
+    [Fact]
+    public async Task ChangeMasterPassword_EndToEnd_ContentNotReEncrypted_ReopensWithNewPassword()
+    {
+        VaultService create = NewService();
+        await create.CreateVaultAsync(MasterPassword);
+        LoginItem item = await create.AddLoginAsync(new LoginItem
+        {
+            Name = "X",
+            Username = SecretUsername,
+            Password = SecretPassword,
+        });
+
+        string beforeJson = await File.ReadAllTextAsync(_vaultPath);
+
+        await create.ChangeMasterPasswordAsync(MasterPassword, "NewMaster-456!");
+
+        string afterJson = await File.ReadAllTextAsync(_vaultPath);
+        // Content ciphertext + nonce unchanged; only the key-wrapping (salt) changed.
+        Assert.Equal(Field(beforeJson, "ciphertext"), Field(afterJson, "ciphertext"));
+        Assert.Equal(Field(beforeJson, "contentNonce"), Field(afterJson, "contentNonce"));
+        Assert.NotEqual(Field(beforeJson, "salt"), Field(afterJson, "salt"));
+
+        create.Lock();
+        VaultService reopen = NewService();
+        await Assert.ThrowsAsync<VaultAuthenticationException>(() => reopen.UnlockAsync(MasterPassword));
+        await reopen.UnlockAsync("NewMaster-456!");
+
+        LoginItem restored = Assert.IsType<LoginItem>(Assert.Single(reopen.Items));
+        Assert.Equal(item.Id, restored.Id);
+        Assert.Equal(SecretPassword, restored.Password);
+        Assert.Equal(SecretUsername, restored.Username);
+    }
+
+    private static string Field(string json, string name)
+    {
+        using var doc = System.Text.Json.JsonDocument.Parse(json);
+        return doc.RootElement.GetProperty(name).GetString()!;
+    }
+
     public void Dispose()
     {
         try
