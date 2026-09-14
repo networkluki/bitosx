@@ -38,11 +38,11 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.4.0`** — encrypted backup / export and restore (Windows manually verified, including the
-destructive-restore confirmation hardening H1–H6). Exports the encrypted vault envelope byte-for-byte;
-restore authenticates and validates the backup before an atomic, recovery-copy-protected replace. No
-new cryptography and the on-disk vault format is unchanged (still v1). This release also normalizes the
-About screen to show the 3-part product version (e.g. `0.4.0`) instead of the CLR 4-part `0.4.0.0`.
-Builds on `0.3.0` master password change (tag `v0.3.0-master-password`), `0.2.0` automatic locking
-(tag `v0.2.0-auto-lock`), and the `0.1.0` encrypted local vault baseline (tag `v0.1.0-local-vault`).
-See [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
+**`0.5.0`** — vault key rotation (Windows manually verified, R-series). Generates a new random vault
+key and **re-encrypts all content** under it, retiring the old key; requires the current master
+password. No new cryptography and the on-disk vault format is unchanged (still v1). Guarded by an
+on-disk/in-memory consistency fingerprint, a cancellation boundary, and write-failure reconciliation.
+Builds on `0.4.0` encrypted backup/restore (tag `v0.4.0-backup-restore`), `0.3.0` master password
+change (tag `v0.3.0-master-password`), `0.2.0` automatic locking (tag `v0.2.0-auto-lock`), and the
+`0.1.0` encrypted local vault baseline (tag `v0.1.0-local-vault`). See
+[KEY_ROTATION.md](KEY_ROTATION.md).

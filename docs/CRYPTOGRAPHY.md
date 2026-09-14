@@ -139,9 +139,28 @@ password; it does **not** rotate the vault key and does **not** re-encrypt vault
 Requirements and boundaries: the vault must be unlocked and the current password re-entered (so the
 change cannot be made from an unattended unlocked session); the new password must differ from the
 current one. The on-disk **format is unchanged (v1)** — only the salt, key-wrap nonce, and wrapped
-key differ. Limitations: the vault key is **not** rotated (a change re-protects the key but does not
-invalidate a key that may already be compromised), and **pre-change copies/backups of the vault file
+key differ. Limitations: a password change does **not** rotate the vault key (it re-protects the key
+but does not invalidate a key that may already be compromised — use
+[vault key rotation](KEY_ROTATION.md) for that), and **pre-change copies/backups of the vault file
 remain decryptable with the old password**.
+
+## Vault key rotation
+
+Rotation **replaces the vault key** and **re-encrypts all content** under the new key (in contrast to a
+master-password change, which re-wraps the same key). It requires an unlocked vault and re-entry of the
+current password; a wrong password or any tampering fails closed before any new material is generated.
+Fresh material is produced throughout — new vault key, salt, key-wrap nonce, and content nonce — while
+the master password, on-disk **format (v1)**, KDF identifier/algorithm, and Argon2 cost parameters are
+unchanged. A self-check confirms the rotated envelope unwraps to the new key and decrypts to the exact
+original plaintext before it is persisted through the atomic storage path.
+
+Because rotation is destructive it is additionally guarded by an on-disk/in-memory consistency gate (a
+SHA-256 fingerprint of the whole envelope that catches both different-key and same-key external
+changes), a cancellation boundary that cannot leave `disk = rotated / memory = old key`, and a
+write-failure reconciliation whose terminal state is always `OLD disk + OLD session`,
+`NEW disk + NEW session`, or `UNKNOWN disk + LOCKED session`. Rotation is **not retroactive**:
+pre-rotation copies/backups keep the old key material and remain decryptable with the master password.
+See [KEY_ROTATION.md](KEY_ROTATION.md) for the full design.
 
 ## Security properties
 

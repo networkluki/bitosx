@@ -51,6 +51,15 @@ A backup is encrypted with whatever master password was active **when it was mad
 **new** password. BitosX does **not** upgrade old backups and **cannot recover a forgotten backup
 password**.
 
+## Interaction with vault key rotation
+
+Backups are **not** affected by a later [vault key rotation](KEY_ROTATION.md), and rotation is not
+retroactive to them. A backup made **before** a rotation still opens with the master password (rotation
+does not change the password) but is an **older key generation** — it contains the pre-rotation vault
+key and content. Restoring such a backup replaces the live vault with that older generation. If the
+point of a rotation was to retire an exposed vault key, delete pre-rotation backups you no longer need,
+since they still carry the old key material.
+
 ## What a backup does and does not protect
 - It is safe to copy to USB / external disk / NAS / cloud: the contents are ciphertext.
 - Its security depends on the **strength of the master password** it was made with.

@@ -33,6 +33,8 @@ This is a threat-by-threat view of the current local vault milestone. It complem
 | 14 | **Malicious backup file on restore** | Backup treated as attacker-controlled: size-capped, strictly parsed (incl. KDF bounds and duplicate-property rejection), authenticated and model-validated **before** any replacement; the live vault is preserved as a recovery copy and replaced atomically. | Restore is destructive by design; mitigated by validate-before-replace, recovery copy, and explicit confirmation. |
 | 12 | **Tampered vault file** | AEAD + header bound as associated data; tampering fails authentication. | None for confidentiality/integrity; a tampered file simply won't open. |
 | 13 | **Downgrade / malformed / oversized file** | Version and structure validated; size-limited; no plaintext fallback. | None beyond denial of access to a broken file. |
+| 15 | **Exposed / possibly-compromised vault key** | **Vault key rotation** generates a new vault key and re-encrypts all content under it, retiring the old key; requires the current password; format unchanged (v1). | Not retroactive — pre-rotation backups keep the old key material and remain decryptable with the master password. |
+| 16 | **Concurrent external modification during a destructive op** | Rotation verifies an envelope-wide SHA-256 fingerprint of the on-disk vault against the session before replacing it (catches different-key **and** same-key content changes) and fails closed; a cancellation boundary and write-failure reconciliation guarantee the terminal state is never `disk = new / session = old key`. | Requires the session's fingerprint bookkeeping to be intact; addressed for the single-process app model. |
 
 ## Explicitly out of scope for this milestone
 
@@ -47,3 +49,5 @@ Cloudflare, and any production API. See the project brief.
   Keychain, Secret Service).
 - **Master-password change** (re-wrap the vault key without re-encrypting all content). *(Implemented.)*
 - **Encrypted backups / export**. *(Implemented — see [BACKUP_RESTORE.md](BACKUP_RESTORE.md).)*
+- **Vault key rotation** (new vault key + full content re-encryption, retiring the old key).
+  *(Implemented — see [KEY_ROTATION.md](KEY_ROTATION.md).)*

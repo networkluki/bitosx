@@ -14,6 +14,8 @@ and stays on the local device.
   (Windows), and optional lock-on-minimize. See [docs/AUTO_LOCK.md](docs/AUTO_LOCK.md).
 - Change the master password (re-wraps the vault key; contents are not re-encrypted and the vault
   format is unchanged). See [docs/CRYPTOGRAPHY.md](docs/CRYPTOGRAPHY.md).
+- Rotate the vault key (generates a new vault key and re-encrypts all content under it; the master
+  password and on-disk format are unchanged). See [docs/KEY_ROTATION.md](docs/KEY_ROTATION.md).
 - Encrypted backup / export and restore (the encrypted envelope copied byte-for-byte; restore is
   authenticated and validated before it replaces the vault). See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
 - Add, edit, delete, favorite, and search login items.
@@ -57,7 +59,7 @@ tools/
   BitosX.KdfBenchmark     Diagnostic-only Argon2id unlock-latency benchmark (not shipped)
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
-  VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md
+  VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md  KEY_ROTATION.md
 ```
 
 `BitosX.Core` and `BitosX.Crypto` do not depend on Avalonia.

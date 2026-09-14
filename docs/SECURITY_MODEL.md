@@ -31,6 +31,12 @@ It describes the current **local vault** milestone. No marketing claims are made
   built-in **encrypted backup/export** is the same encrypted envelope copied byte-for-byte (no
   plaintext, no new format); restore authenticates and validates the backup before replacing the
   vault and preserves a recovery copy. See [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
+- **Retiring a possibly-exposed vault key.** **Vault key rotation** generates a new vault key and
+  re-encrypts all content under it, so an old vault key that may have been exposed no longer protects
+  the current file. Rotation requires the current master password, keeps the on-disk format (v1), and
+  is guarded so it fails closed if the vault changed on disk and never leaves disk and session
+  disagreeing. It is **not** retroactive to pre-rotation backups. See
+  [KEY_ROTATION.md](KEY_ROTATION.md).
 - **Accidental plaintext persistence.** The plaintext vault is only ever held in memory while
   unlocked; only encrypted data is written to disk.
 - **Shoulder-surfing of stored passwords in the UI.** Passwords are masked by default and shown

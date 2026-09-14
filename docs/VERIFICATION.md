@@ -113,6 +113,42 @@ No inadvertent restore commit occurred in any scenario. The destructive path req
 authenticated+validated preview **and** the acknowledgement, plus an explicit click; the commit-side
 guard (`if (_pendingRestore is null || !RestoreAcknowledged) return;`) fails closed independently.
 
+## Vault key rotation (milestone after v0.4.0) — automated + manual verified
+
+New random vault key with full content re-encryption; the master password and on-disk format (v1) are
+unchanged. Guarded by an on-disk/in-memory consistency fingerprint, a cancellation boundary, and a
+write-failure reconciliation. See [KEY_ROTATION.md](KEY_ROTATION.md).
+
+| Item | Status |
+|---|---|
+| New vault key; content re-encrypted; old key can no longer decrypt; format/KDF/params preserved; wrong password + tamper fail closed | AUTOMATED TESTED (`VaultKeyRotationTests`) |
+| Envelope fingerprint detects different-key **and** same-key content change | AUTOMATED TESTED (`EncryptedVaultFingerprintTests`) |
+| Service: unlocked+password required; stale/external change fails closed; cancellation boundary; write-failure reconciliation (OLD/OLD, NEW/NEW, UNKNOWN→LOCKED); byte-for-byte-unchanged on every pre-commit failure | AUTOMATED TESTED (`VaultServiceRotationConsistencyTests`, `VaultServiceTests`) |
+| ViewModel: success/failure messaging incl. stale-vault and indeterminate-state safe messages | AUTOMATED TESTED (`SettingsPageViewModelRotationTests`) |
+| End-to-end GUI (real file storage, restart durability, historical backup) | **MANUAL VERIFIED** 2026-09-14 (R-series, see below) |
+| Linux/macOS GUI | **NOT VERIFIED** |
+
+### Manual rotation verification (2026-09-14, Windows 11, real Avalonia UI)
+
+Method: each step was performed in the live app, then the encrypted vault file on disk was SHA-256
+hashed and its public envelope fields compared, to prove exactly what changed. No decrypted secrets or
+key material were exposed. Synthetic credentials/items only. Pre-rotation baseline live vault
+`8e92f216…` (2 items); a byte-identical pre-rotation backup was preserved throughout.
+
+| Scenario | Expected | Result |
+|---|---|---|
+| Wrong current password | Rejected; disk byte-for-byte unchanged | **PASS** — `8e92f216…` unchanged, no `.tmp` |
+| Valid rotation | File hash + salt + key-wrap nonce + wrapped key + content nonce + ciphertext all change; version stays 1; Argon2 params unchanged | **PASS** — all changed; v1; decoded ciphertext length identical (same 2-item plaintext). (File shrank 40 B purely from JSON `+` escaping of `+` in base64 — 8 fewer `+` chars × 5 B — not a data change.) |
+| Same-password lock → unlock | Unlocks under the new key with the same password; 2 items intact; no migration prompt | **PASS** — authenticated unlock is the plaintext-integrity proof |
+| Post-rotation save | Writes under the **rotated** header/key (retired pre-rotation salt/wrapped-key do not return); no stale-session error | **PASS** — item count 3; rotated salt/wrapped-key retained |
+| Full application restart | Rotated vault is durable across a process restart; reopens under the same password | **PASS** — no startup/close rewrite; 3 items intact |
+| Historical pre-rotation backup validate | Old backup still validates with the same password; shows the older 2-item generation; live vault untouched; distinct generation | **PASS** — rotation is not retroactive |
+| Locked-state rotation availability | Rotate not reachable/executable while locked | **PASS** — locked UI exposes only the Unlock screen; nothing wrote |
+| Abandon/cancel rotation | Entering the password and abandoning (navigating away) commits nothing; field not retained | **PASS** — no write; field empty on return |
+
+Every pre-commit failure left the live vault byte-for-byte unchanged, and rotation only ever committed
+on the explicit "Rotate vault key" click.
+
 ## Version display fix (2026-09-13)
 
 The Settings → About line previously read "BitosX version 0.3.0.0" — the CLR/Windows 4-part
