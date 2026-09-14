@@ -90,4 +90,17 @@ public sealed class EncryptedVaultSerializerTests
 
         Assert.Throws<UnsupportedVaultFormatException>(() => EncryptedVaultSerializer.Deserialize(malicious));
     }
+
+    [Fact]
+    public void Deserialize_DuplicateJsonProperty_Rejected()
+    {
+        // Strict parsing: a crafted file must not smuggle a second value for a security-relevant
+        // field via a duplicate JSON property (default last-one-wins would be ambiguous).
+        string json = EncryptedVaultSerializer.Serialize(SampleVault());
+        // Inject a duplicate "algorithm" property just before the closing brace.
+        int lastBrace = json.LastIndexOf('}');
+        string tampered = json[..lastBrace] + ",\"algorithm\":\"AES-256-GCM\"" + json[lastBrace..];
+
+        Assert.Throws<UnsupportedVaultFormatException>(() => EncryptedVaultSerializer.Deserialize(tampered));
+    }
 }
