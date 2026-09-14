@@ -21,7 +21,8 @@ BitosX.ApiClient ──> Core                                     (local-only AP
   `VaultService` (create/unlock/lock, CRUD, save), `PasswordGenerator`, `SecurityAnalyzer`,
   validation, serialization, logging abstractions, and the `ILocalVaultStorage` interface.
 - **BitosX.Storage** — `FileLocalVaultStorage`, an atomic file implementation of
-  `ILocalVaultStorage`.
+  `ILocalVaultStorage`, plus `FileVaultBackup` (`IVaultBackup`) for byte-for-byte encrypted
+  export and recovery-copy-protected atomic restore.
 - **BitosX.Platform** — platform *policy* that does not need the UI framework: the clipboard
   auto-clear policy (`ClipboardService`) over an injected `IClipboardAccessor`, plus an
   `ISecureStorage` extension point for future OS key protection.

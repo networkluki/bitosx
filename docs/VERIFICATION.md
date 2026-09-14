@@ -75,6 +75,62 @@ re-encrypted, format stays v1. See [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md) — "Maste
 | Wrong current password leaves the vault file **byte-for-byte unchanged**; content ciphertext not re-encrypted end-to-end | AUTOMATED TESTED (`VaultPersistenceIntegrationTests`) |
 | Settings "Change master password" GUI (form, success/failure messages, re-unlock) | **NOT VERIFIED** (needs manual run) |
 
+## Encrypted backup / restore (milestone after v0.3.0) — automated tested
+
+Byte-for-byte export of the encrypted envelope; restore authenticates + validates before an atomic,
+recovery-copy-protected replace. Vault format v1 unchanged; no new crypto. See
+[BACKUP_RESTORE.md](BACKUP_RESTORE.md).
+
+| Item | Status |
+|---|---|
+| Byte-for-byte export; active vault untouched; no plaintext markers; export requires unlocked | AUTOMATED TESTED (`VaultBackupServiceTests`) |
+| Restore replace + recovery copy; unlock with backup password | AUTOMATED TESTED |
+| Wrong password / corrupted / unsupported version / malicious KDF / oversized / malformed → fail closed, live vault byte-for-byte unchanged | AUTOMATED TESTED |
+| Duplicate JSON property rejected (strict parse) | AUTOMATED TESTED (`EncryptedVaultSerializerTests`) |
+| Pre/post master-password-change backup passwords; foreign-vault replace-only (no merge) | AUTOMATED TESTED |
+| Destructive-confirmation hardening: acknowledgement + **commit-side guard** state machine | AUTOMATED TESTED (`RestoreConfirmationStateTests`) |
+| Real ViewModel commit boundary: destructive commit reached only with a pending preview AND acknowledgement; blocked on no-pending / not-acknowledged / stale (file or password change) / failed commit / failed validation / cancel | AUTOMATED TESTED (`SettingsPageViewModelRestoreTests`, `BitosX.App.Tests`) |
+| Focus/keyboard (Cancel focused, Enter/Space don't restore, Esc cancels) + end-to-end GUI (file picker, confirmation, restart, recovery copy) | **MANUAL VERIFIED** 2026-09-13 (H1–H6, see below) |
+| Linux/macOS file picker & behavior | **NOT VERIFIED** |
+
+### Manual restore-hardening verification — H1–H6 (2026-09-13, Windows 11, real Avalonia UI)
+
+Method: each destructive-input attempt was made on the live app, then the encrypted vault file on disk
+was SHA-256 hashed to prove whether a restore commit occurred. Baseline live vault `c9d2bffb…`; a valid
+backup preview was reached without ever writing the vault (validation is read-only).
+
+| # | Scenario | Expected | Result |
+|---|---|---|---|
+| H1 | Enter pressed once at the preview (no default button) | No commit | **PASS** — live vault unchanged, no `.tmp` |
+| H2 | Space pressed once at the preview (ack unchecked, Replace disabled) | No commit | **PASS** — live vault unchanged; Space activated the focused Cancel, closing the panel without writing |
+| H3 | Preview shows acknowledgement unchecked + "Replace my vault" disabled | Correct initial state | **PASS** (focus indicator not clearly observed) |
+| H4 | Checking acknowledgement enables Replace; commit only on explicit click | Commit only when clicked | **PASS** — enabling the button wrote nothing; commit occurred only on the explicit "Replace my vault" click |
+| H5 (Esc) | Esc at the preview cancels; the cancelled preview cannot commit | Cancel, no commit | **PASS** — panel closed, live vault unchanged; `_pendingRestore`/acknowledgement cleared |
+| H5 (Cancel) | Cancel button clears state; acknowledgement not retained on re-entry | Reset, no commit | **PASS** — after Cancel and re-validate, checkbox unchecked and Replace disabled |
+| H6 | Changing the backup password or file after validate clears the pending restore | Pending cleared | **PASS** |
+
+No inadvertent restore commit occurred in any scenario. The destructive path requires a pending
+authenticated+validated preview **and** the acknowledgement, plus an explicit click; the commit-side
+guard (`if (_pendingRestore is null || !RestoreAcknowledged) return;`) fails closed independently.
+
+## Version display fix (2026-09-13)
+
+The Settings → About line previously read "BitosX version 0.3.0.0" — the CLR/Windows 4-part
+`AssemblyName.Version`, whose trailing `.0` revision is a platform artefact, not a real release
+component. It now shows the 3-part SemVer product version (it tracks `<Version>` — e.g. "BitosX
+version 0.4.0" for this release; manually verified reading exactly "BitosX version 0.3.0" at the time
+of the fix, before the 0.4.0 bump).
+
+- New helper `AppVersionInfo` (`src/BitosX.App/AppVersionInfo.cs`) derives the string from the
+  assembly's **informational (product) version** (driven by `<Version>` in the build) and strips the
+  SemVer `+build` metadata (the git commit the SDK appends). It falls back to the first three parts of
+  the numeric assembly version only when no informational version is present. The value is not
+  hardcoded.
+- `SettingsPageViewModel.AppVersion` now uses `AppVersionInfo.Display`.
+- Regression tests: `AppVersionInfoTests` (`BitosX.App.Tests`) assert build-metadata is stripped, the
+  informational version is preferred, the CLR revision is dropped on fallback, and the live `Display`
+  value is always a 3-part `MAJOR.MINOR.PATCH` with no `+` metadata.
+
 ## Clipboard auto-clear defect (found in manual GUI verification, 2026-09-13 — FIXED)
 
 Manual step 11 revealed that after copying a value, the clipboard was **not** cleared when the

@@ -27,7 +27,10 @@ It describes the current **local vault** milestone. No marketing claims are made
   (memory ≤ 1 GiB, iterations ≤ 64, parallelism ≤ 64) before any derivation, so a tampered file
   cannot request an absurd allocation or unbounded CPU on unlock. See
   [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md) — "KDF parameter bounds".
-- **Casual disk/backup exposure.** A backup or synced copy of the vault file is ciphertext.
+- **Casual disk/backup exposure.** A backup or synced copy of the vault file is ciphertext. The
+  built-in **encrypted backup/export** is the same encrypted envelope copied byte-for-byte (no
+  plaintext, no new format); restore authenticates and validates the backup before replacing the
+  vault and preserves a recovery copy. See [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
 - **Accidental plaintext persistence.** The plaintext vault is only ever held in memory while
   unlocked; only encrypted data is written to disk.
 - **Shoulder-surfing of stored passwords in the UI.** Passwords are masked by default and shown

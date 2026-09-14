@@ -29,7 +29,8 @@ This is a threat-by-threat view of the current local vault milestone. It complem
 | 8 | **Compromised future server** | No server exists; local-only. Zero-knowledge intent for the future. | To be addressed by the (unbuilt) server design. |
 | 9 | **Phishing** | No autofill/browser integration to abuse; also no protection offered. | User can still be deceived elsewhere. |
 | 10 | **Weak master password** | Argon2id raises brute-force cost; UI shows a strength estimate; minimum length enforced. | A weak password remains the dominant risk. |
-| 11 | **Corrupted local storage / failed write** | Atomic write (temp + `File.Replace`); failed writes do not destroy the existing vault; reads fail closed. | No built-in backups; corruption without a backup means data loss. |
+| 11 | **Corrupted local storage / failed write** | Atomic write (temp + `File.Replace`); failed writes do not destroy the existing vault; reads fail closed. **Encrypted export/backup + restore** are available (see [BACKUP_RESTORE.md](BACKUP_RESTORE.md)). | The user must actually make and safeguard backups; a lost/forgotten backup password is unrecoverable. |
+| 14 | **Malicious backup file on restore** | Backup treated as attacker-controlled: size-capped, strictly parsed (incl. KDF bounds and duplicate-property rejection), authenticated and model-validated **before** any replacement; the live vault is preserved as a recovery copy and replaced atomically. | Restore is destructive by design; mitigated by validate-before-replace, recovery copy, and explicit confirmation. |
 | 12 | **Tampered vault file** | AEAD + header bound as associated data; tampering fails authentication. | None for confidentiality/integrity; a tampered file simply won't open. |
 | 13 | **Downgrade / malformed / oversized file** | Version and structure validated; size-limited; no plaintext fallback. | None beyond denial of access to a broken file. |
 
@@ -44,5 +45,5 @@ Cloudflare, and any production API. See the project brief.
   `IVaultService.StateChanged` seam and the locked/unlocked state machine are already in place).
 - **Optional OS-backed secret protection** via the `ISecureStorage` extension point (e.g. DPAPI,
   Keychain, Secret Service).
-- **Master-password change** (re-wrap the vault key without re-encrypting all content).
-- **Encrypted backups / export**.
+- **Master-password change** (re-wrap the vault key without re-encrypting all content). *(Implemented.)*
+- **Encrypted backups / export**. *(Implemented — see [BACKUP_RESTORE.md](BACKUP_RESTORE.md).)*

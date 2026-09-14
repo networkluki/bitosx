@@ -14,6 +14,8 @@ and stays on the local device.
   (Windows), and optional lock-on-minimize. See [docs/AUTO_LOCK.md](docs/AUTO_LOCK.md).
 - Change the master password (re-wraps the vault key; contents are not re-encrypted and the vault
   format is unchanged). See [docs/CRYPTOGRAPHY.md](docs/CRYPTOGRAPHY.md).
+- Encrypted backup / export and restore (the encrypted envelope copied byte-for-byte; restore is
+  authenticated and validated before it replaces the vault). See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
 - Add, edit, delete, favorite, and search login items.
 - Copy username / password to the clipboard with an automatic timed clear.
 - Show/hide passwords (hidden by default).
@@ -46,6 +48,7 @@ src/
   BitosX.Platform   Platform policy (clipboard auto-clear) and secure-storage extension point
   BitosX.ApiClient  Local-only API abstraction (no production server in this milestone)
 tests/
+  BitosX.App.Tests        ViewModel restore commit-boundary tests
   BitosX.Core.Tests
   BitosX.Crypto.Tests
   BitosX.Platform.Tests   Clipboard auto-clear policy tests
@@ -54,7 +57,7 @@ tools/
   BitosX.KdfBenchmark     Diagnostic-only Argon2id unlock-latency benchmark (not shipped)
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
-  VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md
+  VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md
 ```
 
 `BitosX.Core` and `BitosX.Crypto` do not depend on Avalonia.
