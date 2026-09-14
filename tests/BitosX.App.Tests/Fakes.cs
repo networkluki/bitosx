@@ -29,6 +29,18 @@ internal sealed class FakeVaultService : IVaultService
     public Task CreateVaultAsync(string masterPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task UnlockAsync(string masterPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task ChangeMasterPasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public int RotateCount { get; private set; }
+    public Exception? RotateThrow { get; set; }
+    public Task RotateVaultKeyAsync(string currentPassword, CancellationToken cancellationToken = default)
+    {
+        RotateCount++;
+        if (RotateThrow is not null)
+        {
+            return Task.FromException(RotateThrow);
+        }
+
+        return Task.CompletedTask;
+    }
     public Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<VaultItem> UpdateItemAsync(VaultItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task DeleteItemAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();

@@ -280,4 +280,125 @@ public sealed class VaultServiceTests
         await Assert.ThrowsAsync<UnsupportedVaultFormatException>(() => reopen.UnlockAsync(MasterPassword));
         Assert.NotEqual(VaultState.Unlocked, reopen.State);
     }
+
+    // ---- Vault key rotation (0.5.0) ----
+
+    [Fact]
+    public async Task RotateVaultKey_ReEncryptsUnderNewKey_SamePasswordReopens_ItemsIntact()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s1, _) = CreateService(storage);
+        await s1.CreateVaultAsync(MasterPassword);
+        await s1.AddLoginAsync(SampleLogin());
+        EncryptedVault before = storage.Stored!;
+
+        await s1.RotateVaultKeyAsync(MasterPassword);
+        EncryptedVault after = storage.Stored!;
+
+        // Fresh material was written: salt, both nonces, the wrapped key, and the ciphertext all change.
+        Assert.NotEqual(before.Salt, after.Salt);
+        Assert.NotEqual(before.KeyWrapNonce, after.KeyWrapNonce);
+        Assert.NotEqual(before.ContentNonce, after.ContentNonce);
+        Assert.NotEqual(before.EncryptedVaultKey, after.EncryptedVaultKey);
+        Assert.NotEqual(before.Ciphertext, after.Ciphertext);
+        // Format and KDF cost parameters are unchanged.
+        Assert.Equal(before.Version, after.Version);
+        Assert.Equal(before.KdfParameters, after.KdfParameters);
+
+        // The same master password reopens the vault and the item survives.
+        (VaultService s2, _) = CreateService(storage);
+        await s2.UnlockAsync(MasterPassword);
+        Assert.Single(s2.Items);
+    }
+
+    [Fact]
+    public async Task RotateVaultKey_SessionStaysUnlocked_AndSavesUnderNewKey()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s1, _) = CreateService(storage);
+        await s1.CreateVaultAsync(MasterPassword);
+        await s1.AddLoginAsync(SampleLogin());
+
+        await s1.RotateVaultKeyAsync(MasterPassword);
+
+        // The session remains unlocked and can persist further changes with the new key.
+        Assert.Equal(VaultState.Unlocked, s1.State);
+        await s1.AddLoginAsync(new LoginItem { Name = "Second", Username = "u2", Password = "p2xxxxxx" });
+
+        (VaultService s2, _) = CreateService(storage);
+        await s2.UnlockAsync(MasterPassword);
+        Assert.Equal(2, s2.Items.Count);
+    }
+
+    [Fact]
+    public async Task RotateVaultKey_WrongCurrentPassword_Throws_AndStoredVaultUnchanged()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s, _) = CreateService(storage);
+        await s.CreateVaultAsync(MasterPassword);
+        EncryptedVault before = storage.Stored!;
+        byte[] beforeHash = EncryptedVaultFingerprint.Compute(before);
+
+        await Assert.ThrowsAsync<VaultAuthenticationException>(
+            () => s.RotateVaultKeyAsync("wrong-current-pw"));
+
+        Assert.Same(before, storage.Stored); // nothing written
+        Assert.Equal(beforeHash, EncryptedVaultFingerprint.Compute(storage.Stored!)); // byte-for-byte unchanged
+
+        (VaultService s2, _) = CreateService(storage);
+        await s2.UnlockAsync(MasterPassword); // old password still works
+    }
+
+    [Fact]
+    public async Task RotateVaultKey_WhileLocked_Throws()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s, _) = CreateService(storage);
+        await s.CreateVaultAsync(MasterPassword);
+        s.Lock();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => s.RotateVaultKeyAsync(MasterPassword));
+    }
+
+    [Fact]
+    public async Task RotateVaultKey_WriteFails_RollsBack_SessionStillUsable_WithOldKey()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s, _) = CreateService(storage);
+        await s.CreateVaultAsync(MasterPassword);
+        await s.AddLoginAsync(SampleLogin());
+        EncryptedVault before = storage.Stored!;
+        byte[] beforeHash = EncryptedVaultFingerprint.Compute(before);
+
+        storage.FailNextWrite = true;
+        await Assert.ThrowsAsync<IOException>(() => s.RotateVaultKeyAsync(MasterPassword));
+
+        Assert.Same(before, storage.Stored); // rotation not persisted
+        Assert.Equal(beforeHash, EncryptedVaultFingerprint.Compute(storage.Stored!)); // byte-for-byte unchanged
+
+        // The session kept its old key material, so it remains fully usable and consistent on disk.
+        Assert.Equal(VaultState.Unlocked, s.State);
+        await s.AddLoginAsync(new LoginItem { Name = "Second", Username = "u2", Password = "p2xxxxxx" });
+
+        (VaultService s2, _) = CreateService(storage);
+        await s2.UnlockAsync(MasterPassword);
+        Assert.Equal(2, s2.Items.Count);
+    }
+
+    [Fact]
+    public async Task RotateVaultKey_TwiceInARow_SamePasswordStillReopens()
+    {
+        var storage = new InMemoryVaultStorage();
+        (VaultService s, _) = CreateService(storage);
+        await s.CreateVaultAsync(MasterPassword);
+        await s.AddLoginAsync(SampleLogin());
+
+        await s.RotateVaultKeyAsync(MasterPassword);
+        await s.RotateVaultKeyAsync(MasterPassword);
+
+        (VaultService s2, _) = CreateService(storage);
+        await s2.UnlockAsync(MasterPassword);
+        Assert.Single(s2.Items);
+    }
 }
