@@ -17,6 +17,14 @@ public static class EncryptedVaultSerializer
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
     };
 
+    // Strict parsing for untrusted vault/backup input: reject duplicate JSON properties so a
+    // crafted file cannot smuggle an ambiguous second value for a security-relevant field
+    // (e.g. two "kdfParameters" or two "algorithm" entries with last-one-wins semantics).
+    private static readonly JsonSerializerOptions DeserializeOptions = new()
+    {
+        AllowDuplicateProperties = false,
+    };
+
     /// <summary>Serializes an encrypted vault to its JSON representation.</summary>
     public static string Serialize(EncryptedVault vault)
     {
@@ -57,7 +65,7 @@ public static class EncryptedVaultSerializer
         EncryptedVaultDocument? document;
         try
         {
-            document = JsonSerializer.Deserialize<EncryptedVaultDocument>(json);
+            document = JsonSerializer.Deserialize<EncryptedVaultDocument>(json, DeserializeOptions);
         }
         catch (JsonException ex)
         {

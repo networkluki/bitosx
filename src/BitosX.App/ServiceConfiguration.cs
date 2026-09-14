@@ -1,4 +1,5 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input.Platform;
 using BitosX.ApiClient;
@@ -11,6 +12,7 @@ using BitosX.Core.Settings;
 using BitosX.Core.Storage;
 using BitosX.Crypto;
 using BitosX.Platform.Clipboard;
+using BitosX.Platform.Files;
 using BitosX.Platform.SecureStorage;
 using BitosX.Platform.Session;
 using BitosX.Storage;
@@ -39,9 +41,11 @@ public static class ServiceConfiguration
         // Storage (default per-user location)
         services.AddSingleton(FileLocalVaultStorage.CreateDefault());
         services.AddSingleton<ILocalVaultStorage>(sp => sp.GetRequiredService<FileLocalVaultStorage>());
+        services.AddSingleton<IVaultBackup>(sp => new FileVaultBackup(sp.GetRequiredService<FileLocalVaultStorage>().VaultFilePath));
 
         // Core services
         services.AddSingleton<IVaultService, VaultService>();
+        services.AddSingleton<IVaultBackupService, VaultBackupService>();
         services.AddSingleton<IPasswordGenerator, PasswordGenerator>();
         services.AddSingleton<ISecurityAnalyzer, SecurityAnalyzer>();
 
@@ -54,6 +58,7 @@ public static class ServiceConfiguration
         services.AddSingleton<IClipboardAccessor>(_ => new AvaloniaClipboardAccessor(GetMainWindowClipboard));
         services.AddSingleton<IClipboardService, ClipboardService>();
         services.AddSingleton<ISecureStorage, UnavailableSecureStorage>();
+        services.AddSingleton<IFilePicker>(_ => new AvaloniaFilePicker(GetMainWindow));
         services.AddSingleton<ISystemSessionEvents>(_ =>
             OperatingSystem.IsWindows() ? new WindowsSystemSessionEvents() : new NullSystemSessionEvents());
 
@@ -72,4 +77,7 @@ public static class ServiceConfiguration
 
     private static IClipboard? GetMainWindowClipboard()
         => (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow?.Clipboard;
+
+    private static Window? GetMainWindow()
+        => (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
 }

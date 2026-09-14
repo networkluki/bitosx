@@ -66,6 +66,52 @@
 
             <Border Classes="card">
                 <StackPanel Spacing="10">
+                    <TextBlock Text="Backup &amp; Restore" Classes="h2" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="An encrypted backup is a copy of your vault, protected by the master password that was active when it was made. It contains no plaintext. BitosX cannot recover a forgotten backup password." />
+
+                    <Button Content="Export encrypted backup…" Command="{Binding ExportBackupCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding BackupStatus}" TextWrapping="Wrap" Classes="muted"
+                               IsVisible="{Binding BackupStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                    <Border Height="1" Background="#33888888" Margin="0,6" />
+
+                    <TextBlock Text="Restore replaces your current vault." Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Content="Choose backup file…" Command="{Binding ChooseRestoreFileCommand}" />
+                        <TextBlock Text="{Binding SelectedBackupName}" VerticalAlignment="Center" Classes="muted"
+                                   IsVisible="{Binding HasSelectedBackup}" />
+                    </StackPanel>
+                    <TextBox PasswordChar="●" PlaceholderText="Backup master password" Text="{Binding RestoreBackupPassword}"
+                             IsVisible="{Binding HasSelectedBackup}" />
+                    <Button Content="Validate backup" Command="{Binding ValidateRestoreCommand}" HorizontalAlignment="Left"
+                            IsVisible="{Binding HasSelectedBackup}" />
+                    <TextBlock Text="{Binding RestoreStatus}" TextWrapping="Wrap" Classes="muted"
+                               IsVisible="{Binding RestoreStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                    <Border x:Name="RestoreConfirmPanel" IsVisible="{Binding IsRestorePending}" Padding="12" CornerRadius="6" Background="#22CC3333">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="This will REPLACE your current vault." FontWeight="Bold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding RestoreSummary}" TextWrapping="Wrap" Classes="muted" />
+                            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                       Text="After restoring, unlock with the backup's master password. Your current vault is saved as a recovery copy first." />
+                            <CheckBox IsChecked="{Binding RestoreAcknowledged}"
+                                      Content="I understand that this will replace my current vault." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <!-- Disabled until the acknowledgement is checked (ConfirmRestoreCommand.CanExecute);
+                                     deliberately NOT the default button and not initially focused. -->
+                                <Button Content="Replace my vault" Command="{Binding ConfirmRestoreCommand}" />
+                                <!-- IsCancel routes the Escape key here; also receives initial focus (code-behind). -->
+                                <Button x:Name="RestoreCancelButton" Content="Cancel"
+                                        Command="{Binding CancelRestoreCommand}" IsCancel="True" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="10">
                     <TextBlock Text="Security" Classes="h2" />
                     <StackPanel Spacing="2">
                         <TextBlock Text="Key derivation" Classes="muted" FontSize="12" />

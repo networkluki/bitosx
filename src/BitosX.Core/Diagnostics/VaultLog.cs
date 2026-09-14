@@ -35,6 +35,15 @@ public static partial class VaultLog
     [LoggerMessage(EventId = 1012, EventName = "master_password_change_failed", Level = LogLevel.Warning, Message = "Master password change failed.")]
     public static partial void MasterPasswordChangeFailed(ILogger logger);
 
+    [LoggerMessage(EventId = 1013, EventName = "backup_exported", Level = LogLevel.Information, Message = "Encrypted backup exported.")]
+    public static partial void BackupExported(ILogger logger);
+
+    [LoggerMessage(EventId = 1014, EventName = "backup_restore_validation_failed", Level = LogLevel.Warning, Message = "Backup restore validation failed.")]
+    public static partial void BackupRestoreValidationFailed(ILogger logger);
+
+    [LoggerMessage(EventId = 1015, EventName = "backup_restored", Level = LogLevel.Information, Message = "Vault restored from encrypted backup.")]
+    public static partial void BackupRestored(ILogger logger);
+
     [LoggerMessage(EventId = 1005, EventName = "vault_saved", Level = LogLevel.Information, Message = "Vault saved.")]
     public static partial void VaultSaved(ILogger logger);
 
