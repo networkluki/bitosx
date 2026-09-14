@@ -59,6 +59,12 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
     public partial string? ChangePasswordStatus { get; set; }
 
     [ObservableProperty]
+    public partial string RotatePassword { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string? RotateStatus { get; set; }
+
+    [ObservableProperty]
     public partial string? BackupStatus { get; set; }
 
     [ObservableProperty]
@@ -229,6 +235,43 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         catch (IOException)
         {
             ChangePasswordStatus = "Could not save the vault. The master password was not changed.";
+        }
+    }
+
+    [RelayCommand]
+    private async Task RotateVaultKeyAsync()
+    {
+        RotateStatus = null;
+
+        try
+        {
+            await _vaultService.RotateVaultKeyAsync(RotatePassword).ConfigureAwait(true);
+            RotatePassword = string.Empty;
+            RotateStatus = "Vault key rotated. Your data was re-encrypted under a new key; your master password is unchanged.";
+        }
+        catch (VaultAuthenticationException)
+        {
+            RotateStatus = "The current password is incorrect. The vault key was not rotated.";
+        }
+        catch (VaultChangedExternallyException)
+        {
+            RotateStatus = "The vault changed on disk while it was open. Lock and reopen the vault before rotating the key.";
+        }
+        catch (VaultInconsistentStateException)
+        {
+            RotateStatus = "The vault could not be verified after a disk error and has been locked. Reopen it and check your data — restore from a backup if it will not open.";
+        }
+        catch (BitosXCryptographicException)
+        {
+            RotateStatus = "The vault could not be processed. The vault key was not rotated.";
+        }
+        catch (InvalidOperationException ex)
+        {
+            RotateStatus = ex.Message;
+        }
+        catch (IOException)
+        {
+            RotateStatus = "Could not save the vault. The vault key was not rotated.";
         }
     }
 

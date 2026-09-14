@@ -37,6 +37,9 @@ public sealed class VaultService : IVaultService
     private Vault? _vault;
     private byte[]? _vaultKey;
     private EncryptedVaultHeader? _header;
+    // SHA-256 of the encrypted envelope this session last loaded or persisted. Lets destructive
+    // operations verify the on-disk vault still corresponds to the current session before replacing it.
+    private byte[]? _persistedFingerprint;
     private VaultState _state = VaultState.NoVault;
 
     public VaultService(
@@ -91,6 +94,7 @@ public sealed class VaultService : IVaultService
             _vault = vault;
             _vaultKey = created.VaultKey; // ownership transferred to the service
             _header = created.Encrypted.Header;
+            _persistedFingerprint = EncryptedVaultFingerprint.Compute(created.Encrypted);
             SetState(VaultState.Unlocked);
             VaultLog.VaultCreated(_logger);
         }
@@ -135,6 +139,7 @@ public sealed class VaultService : IVaultService
             _vault = vault;
             _vaultKey = unlocked.VaultKey; // ownership transferred to the service
             _header = unlocked.Header;
+            _persistedFingerprint = EncryptedVaultFingerprint.Compute(encrypted);
             SetState(VaultState.Unlocked);
             VaultLog.VaultUnlocked(_logger, vault.Items.Count);
         }
@@ -155,6 +160,7 @@ public sealed class VaultService : IVaultService
         _vaultKey = null;
         _vault = null;
         _header = null;
+        _persistedFingerprint = null;
         SetState(VaultState.Locked);
         VaultLog.VaultLocked(_logger);
     }
@@ -202,7 +208,164 @@ public sealed class VaultService : IVaultService
         // Only after successful persistence: adopt the new header so later saves use the new wrapping.
         // The retained vault key and decrypted contents are unchanged.
         _header = reWrapped.Header;
+        _persistedFingerprint = EncryptedVaultFingerprint.Compute(reWrapped);
         VaultLog.MasterPasswordChanged(_logger);
+    }
+
+    public async Task RotateVaultKeyAsync(string currentPassword, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(currentPassword);
+
+        if (_state != VaultState.Unlocked)
+        {
+            throw new InvalidOperationException("The vault must be unlocked to rotate the vault key.");
+        }
+
+        // The unlocked session always has a known persisted fingerprint (set on create/unlock/save).
+        byte[] expectedFingerprint = _persistedFingerprint
+            ?? throw new InvalidOperationException("The vault must be unlocked to rotate the vault key.");
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Read the current on-disk vault (cancellable — nothing has been written yet).
+        EncryptedVault current = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+        // Consistency gate: the on-disk vault must be byte-for-byte the state this session last loaded or
+        // persisted. This catches BOTH a different cryptographic identity (key/header) AND a same-key
+        // external content change (different content nonce/ciphertext), because the fingerprint covers the
+        // whole envelope. If it changed, fail closed and write nothing.
+        byte[] actualFingerprint = EncryptedVaultFingerprint.Compute(current);
+        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(actualFingerprint, expectedFingerprint))
+        {
+            VaultLog.VaultKeyRotationFailed(_logger);
+            throw new VaultChangedExternallyException();
+        }
+
+        byte[] currentBytes = Encoding.UTF8.GetBytes(currentPassword);
+        VaultKeyRotationResult rotated;
+        try
+        {
+            // Verifies the current password (authenticated decrypt), re-encrypts under a fresh key, and
+            // self-checks. All expensive/cancellable-in-spirit work happens here, before any write.
+            rotated = _cryptor.RotateVaultKey(current, currentBytes);
+        }
+        catch (BitosXCryptographicException)
+        {
+            VaultLog.VaultKeyRotationFailed(_logger);
+            throw;
+        }
+        finally
+        {
+            CryptoBuffers.Wipe(currentBytes);
+        }
+
+        // Last safe cancellation point: before any destructive write. After this, cancellation is not
+        // honored so we can never end with disk = rotated vault but memory = old key/header.
+        if (cancellationToken.IsCancellationRequested)
+        {
+            CryptoBuffers.Wipe(rotated.NewVaultKey);
+            throw new OperationCanceledException(cancellationToken);
+        }
+
+        // ---- Non-cancellable commit section ----
+        // The atomic replacement is issued with CancellationToken.None so it cannot be interrupted, and
+        // the in-memory key/header are adopted immediately afterward with no awaited step in between.
+        byte[] rotatedFingerprint = EncryptedVaultFingerprint.Compute(rotated.Encrypted);
+        Exception? writeException = null;
+        try
+        {
+            await _storage.WriteAsync(rotated.Encrypted, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            writeException = ex;
+        }
+
+        if (writeException is not null)
+        {
+            // The write threw AFTER we committed to replacing the vault. A correct atomic store leaves the
+            // old file intact on failure, but the service must not depend on that: the replacement MAY have
+            // taken effect before the throw. Reconcile against disk so the in-memory session can never end
+            // up disagreeing with the on-disk vault (never disk = rotated while memory = old key).
+            await ReconcileFailedRotationCommitAsync(rotated, rotatedFingerprint, expectedFingerprint, writeException)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        AdoptRotatedVault(rotated, rotatedFingerprint);
+    }
+
+    /// <summary>Adopts rotated key material into the unlocked session (disk already holds the rotated vault).</summary>
+    private void AdoptRotatedVault(VaultKeyRotationResult rotated, byte[] rotatedFingerprint)
+    {
+        byte[]? previousKey = _vaultKey;
+        _vaultKey = rotated.NewVaultKey;
+        _header = rotated.Encrypted.Header;
+        _persistedFingerprint = rotatedFingerprint;
+        CryptoBuffers.Wipe(previousKey);
+        VaultLog.VaultKeyRotated(_logger);
+    }
+
+    /// <summary>
+    /// Reconciles the in-memory session with disk after the rotation commit write threw. Reads the actual
+    /// on-disk vault and compares its fingerprint against the pre-rotation and rotated fingerprints:
+    /// <list type="bullet">
+    /// <item>disk == old → replacement did not take effect: keep the old key, surface the write failure.</item>
+    /// <item>disk == rotated → replacement took effect before the throw: adopt the new key (success).</item>
+    /// <item>disk == neither, or unreadable → indeterminate: lock the session and fail closed.</item>
+    /// </list>
+    /// </summary>
+    private async Task ReconcileFailedRotationCommitAsync(
+        VaultKeyRotationResult rotated, byte[] rotatedFingerprint, byte[] oldFingerprint, Exception writeException)
+    {
+        EncryptedVault onDisk;
+        try
+        {
+            onDisk = await _storage.ReadAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The on-disk state cannot even be read — treat as indeterminate and fail closed.
+            CryptoBuffers.Wipe(rotated.NewVaultKey);
+            LockAfterIndeterminateState();
+            throw new VaultInconsistentStateException();
+        }
+
+        byte[] diskFingerprint = EncryptedVaultFingerprint.Compute(onDisk);
+
+        if (System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(diskFingerprint, oldFingerprint))
+        {
+            // Replacement did NOT take effect: the old vault is intact on disk. Keep the still-valid old
+            // key and surface the genuine write failure. Nothing was rotated.
+            CryptoBuffers.Wipe(rotated.NewVaultKey);
+            VaultLog.VaultKeyRotationFailed(_logger);
+            throw writeException;
+        }
+
+        if (System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(diskFingerprint, rotatedFingerprint))
+        {
+            // Replacement DID take effect before the throw: disk holds the rotated vault. Adopt the new
+            // key so memory matches disk — the rotation is effectively complete.
+            AdoptRotatedVault(rotated, rotatedFingerprint);
+            return;
+        }
+
+        // Disk matches neither the old nor the rotated vault — indeterminate/corrupt. Lock and fail closed.
+        CryptoBuffers.Wipe(rotated.NewVaultKey);
+        LockAfterIndeterminateState();
+        throw new VaultInconsistentStateException();
+    }
+
+    /// <summary>Wipes all key material and locks the session after an indeterminate destructive-write outcome.</summary>
+    private void LockAfterIndeterminateState()
+    {
+        CryptoBuffers.Wipe(_vaultKey);
+        _vaultKey = null;
+        _vault = null;
+        _header = null;
+        _persistedFingerprint = null;
+        SetState(VaultState.Locked);
+        VaultLog.VaultKeyRotationFailed(_logger);
     }
 
     public async Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default)
@@ -284,6 +447,7 @@ public sealed class VaultService : IVaultService
         {
             EncryptedVault encrypted = _cryptor.ReEncryptContent(header, vaultKey, plaintext);
             await _storage.WriteAsync(encrypted, cancellationToken).ConfigureAwait(false);
+            _persistedFingerprint = EncryptedVaultFingerprint.Compute(encrypted);
             VaultLog.VaultSaved(_logger);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)

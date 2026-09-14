@@ -50,6 +50,16 @@ public interface IVaultService
     /// </summary>
     Task ChangeMasterPasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Rotates the vault key: generates a fresh random vault key and re-encrypts all content under it,
+    /// then re-wraps the new key. Fresh salt and nonces are produced; the master password, on-disk
+    /// format, and Argon2 parameters are unchanged. Requires the vault to be unlocked <b>and</b> the
+    /// correct <paramref name="currentPassword"/> (the unlocked session alone is not sufficient
+    /// authorization). A wrong current password throws and leaves the stored vault byte-for-byte
+    /// unchanged. On success the in-memory session adopts the new key material and stays unlocked.
+    /// </summary>
+    Task RotateVaultKeyAsync(string currentPassword, CancellationToken cancellationToken = default);
+
     /// <summary>Adds a login item and persists the vault.</summary>
     Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default);
 

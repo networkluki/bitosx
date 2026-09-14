@@ -44,6 +44,12 @@ public static partial class VaultLog
     [LoggerMessage(EventId = 1015, EventName = "backup_restored", Level = LogLevel.Information, Message = "Vault restored from encrypted backup.")]
     public static partial void BackupRestored(ILogger logger);
 
+    [LoggerMessage(EventId = 1016, EventName = "vault_key_rotated", Level = LogLevel.Information, Message = "Vault key rotated and content re-encrypted.")]
+    public static partial void VaultKeyRotated(ILogger logger);
+
+    [LoggerMessage(EventId = 1017, EventName = "vault_key_rotation_failed", Level = LogLevel.Warning, Message = "Vault key rotation failed.")]
+    public static partial void VaultKeyRotationFailed(ILogger logger);
+
     [LoggerMessage(EventId = 1005, EventName = "vault_saved", Level = LogLevel.Information, Message = "Vault saved.")]
     public static partial void VaultSaved(ILogger logger);
 

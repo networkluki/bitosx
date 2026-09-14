@@ -66,6 +66,18 @@
 
             <Border Classes="card">
                 <StackPanel Spacing="10">
+                    <TextBlock Text="Rotate vault key" Classes="h2" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="Generates a new encryption key and re-encrypts your entire vault under it, retiring the previous key. Your items and master password are unchanged. Requires your current master password." />
+                    <TextBox PasswordChar="●" PlaceholderText="Current password" Text="{Binding RotatePassword}" />
+                    <Button Content="Rotate vault key" Command="{Binding RotateVaultKeyCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Text="{Binding RotateStatus}" TextWrapping="Wrap" Classes="muted"
+                               IsVisible="{Binding RotateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="10">
                     <TextBlock Text="Backup &amp; Restore" Classes="h2" />
                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
                                Text="An encrypted backup is a copy of your vault, protected by the master password that was active when it was made. It contains no plaintext. BitosX cannot recover a forgotten backup password." />

@@ -202,6 +202,103 @@ public sealed class VaultCryptor
         }
     }
 
+    /// <summary>
+    /// Rotates the vault key: derives the KEK from <paramref name="currentPassword"/>, authenticates and
+    /// decrypts the existing vault, then generates a brand-new random vault key and <b>re-encrypts all
+    /// content under it</b>. Fresh cryptographic material is produced throughout — new vault key, new
+    /// salt, new key-wrap nonce, and new content nonce — while the master password, on-disk format
+    /// version (v1), and Argon2 cost parameters are preserved. A wrong current password (or any tampering
+    /// with the existing vault) fails closed via the authenticated decrypt <i>before</i> any new key is
+    /// generated. Before returning, a self-check confirms the rotated envelope unwraps to the new key and
+    /// decrypts back to the exact original plaintext, so an unusable vault can never be produced. Returns
+    /// the rotated vault together with the new vault key so the caller can stay unlocked; the caller owns
+    /// and must wipe <see cref="VaultKeyRotationResult.NewVaultKey"/>.
+    /// </summary>
+    public VaultKeyRotationResult RotateVaultKey(EncryptedVault current, ReadOnlySpan<byte> currentPassword)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ValidateFormat(current);
+
+        byte[] currentKek = _keyDerivation.DeriveKey(currentPassword, current.Salt, current.KdfParameters);
+        byte[]? oldVaultKey = null;
+        byte[]? plaintext = null;
+        byte[]? newVaultKey = null;
+        byte[]? newKek = null;
+        try
+        {
+            // Authenticated unwrap + content decrypt of the EXISTING vault. A wrong current password or
+            // any tampering throws here, before a new key or salt is generated.
+            byte[] currentKeyWrapAad = BuildKeyWrapAad(current.Version, current.KdfParameters, current.Salt);
+            oldVaultKey = _cipher.Decrypt(currentKek, current.KeyWrapNonce, current.EncryptedVaultKey, currentKeyWrapAad);
+
+            byte[] contentAad = BuildContentAad(current.Version);
+            plaintext = _cipher.Decrypt(oldVaultKey, current.ContentNonce, current.Ciphertext, contentAad);
+
+            // Fresh cryptographic material (D3): new vault key, salt, key-wrap nonce, content nonce.
+            newVaultKey = SecureRandom.GetBytes(CryptoConstants.KeySizeBytes);
+            byte[] newSalt = SecureRandom.GetBytes(CryptoConstants.SaltSizeBytes);
+            newKek = _keyDerivation.DeriveKey(currentPassword, newSalt, current.KdfParameters);
+
+            byte[] newKeyWrapNonce = SecureRandom.GetBytes(CryptoConstants.NonceSizeBytes);
+            byte[] newKeyWrapAad = BuildKeyWrapAad(current.Version, current.KdfParameters, newSalt);
+            byte[] newEncryptedVaultKey = _cipher.Encrypt(newKek, newKeyWrapNonce, newVaultKey, newKeyWrapAad);
+
+            // Full re-encryption of the content under the new vault key.
+            byte[] newContentNonce = SecureRandom.GetBytes(CryptoConstants.NonceSizeBytes);
+            byte[] newCiphertext = _cipher.Encrypt(newVaultKey, newContentNonce, plaintext, contentAad);
+
+            var rotated = new EncryptedVault(
+                current.Version,        // format unchanged (v1) — D1
+                current.Kdf,
+                current.KdfParameters,  // Argon2 cost parameters preserved — D3
+                newSalt,
+                current.Algorithm,
+                newKeyWrapNonce,
+                newEncryptedVaultKey,
+                newContentNonce,
+                newCiphertext);
+
+            // Self-check (D4): the rotated envelope must unwrap to the new key AND decrypt to the exact
+            // original plaintext, so an unreadable vault can never be produced/persisted.
+            byte[] checkKey = _cipher.Decrypt(newKek, newKeyWrapNonce, newEncryptedVaultKey, newKeyWrapAad);
+            try
+            {
+                if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(checkKey, newVaultKey))
+                {
+                    throw new BitosXCryptographicException("Vault key rotation self-check (key wrap) failed.");
+                }
+            }
+            finally
+            {
+                CryptoBuffers.Wipe(checkKey);
+            }
+
+            byte[] checkPlaintext = _cipher.Decrypt(newVaultKey, newContentNonce, newCiphertext, contentAad);
+            try
+            {
+                if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(checkPlaintext, plaintext))
+                {
+                    throw new BitosXCryptographicException("Vault key rotation self-check (content) failed.");
+                }
+            }
+            finally
+            {
+                CryptoBuffers.Wipe(checkPlaintext);
+            }
+
+            // Return a copy of the new vault key; the local buffer is wiped in finally.
+            return new VaultKeyRotationResult(rotated, newVaultKey.AsSpan().ToArray());
+        }
+        finally
+        {
+            CryptoBuffers.Wipe(currentKek);
+            CryptoBuffers.Wipe(newKek);
+            CryptoBuffers.Wipe(oldVaultKey);
+            CryptoBuffers.Wipe(plaintext);
+            CryptoBuffers.Wipe(newVaultKey);
+        }
+    }
+
     private static void ValidateFormat(EncryptedVault encrypted)
     {
         if (encrypted.Version != CryptoConstants.FormatVersion)
@@ -247,6 +344,12 @@ public sealed class VaultCryptor
 
 /// <summary>Result of creating a new vault: the encrypted vault and the (caller-owned) vault key.</summary>
 public sealed record VaultCreationResult(EncryptedVault Encrypted, byte[] VaultKey);
+
+/// <summary>
+/// Result of rotating the vault key: the re-encrypted vault and the new (caller-owned) vault key.
+/// <see cref="NewVaultKey"/> is a sensitive buffer that must be wiped when no longer needed.
+/// </summary>
+public sealed record VaultKeyRotationResult(EncryptedVault Encrypted, byte[] NewVaultKey);
 
 /// <summary>
 /// Result of unlocking a vault. <see cref="VaultKey"/> and <see cref="Plaintext"/> are
