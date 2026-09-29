@@ -52,7 +52,7 @@ session must be unlocked** (authorizes the destructive replace) in addition to t
   restored valid vault — never a partial file.
 
 ## Compatibility
-- Backups from 0.1.0 / 0.2.0 / 0.3.0 (all v1 envelopes) restore into 0.4.0.
+- Backups from every earlier version (all v1 envelopes) restore into the current one.
 - A future **v2** backup fails safely on a v1-only client (unsupported-format error, before any
   crypto). Supported existing formats restore; unknown future versions fail closed.
 
@@ -61,6 +61,21 @@ A backup is encrypted with whatever master password was active **when it was mad
 **before** a master-password change requires the **old** password; one made **after** requires the
 **new** password. BitosX does **not** upgrade old backups and **cannot recover a forgotten backup
 password**.
+
+## Key-derivation settings and password encoding
+
+A backup is a copy of the vault as it was, so it also keeps the **key-derivation settings** it was
+made with. [Strengthening](KEY_DERIVATION.md) the vault afterwards does not reach into earlier
+backups, and restoring one brings its older settings back — Settings then shows them and offers to
+strengthen them again.
+
+A backup made with stronger settings needs that much memory on the device it is restored on. If
+the device does not have it, validation says so; it does not say the password is wrong. The backup
+is fine and restores on a device with more memory.
+
+A backup made by a version before 0.6.0 is keyed with the password as it was typed then. It is
+validated by trying the encodings it could have been keyed with, exactly as when a vault is
+unlocked (see [MASTER_PASSWORD.md](MASTER_PASSWORD.md)).
 
 ## Interaction with vault key rotation
 

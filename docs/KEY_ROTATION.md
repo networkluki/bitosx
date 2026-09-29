@@ -93,6 +93,11 @@ findings 2 and 3).
 - Rotation addresses **vault-key** exposure, **not** a weak or compromised **master password** (the
   KEK is still derived from the same password). To change the password, use
   [master password change](CRYPTOGRAPHY.md#master-password-change); the two are independent.
+- Rotation preserves the **key-derivation settings**. To make guessing the master password more
+  expensive, [strengthen the key derivation](KEY_DERIVATION.md); the two are independent.
+- The new key is wrapped under the **canonical encoding** of the master password, so a vault that
+  was keyed by a version before 0.6.0 opens however the password is typed once it has been rotated
+  (see [MASTER_PASSWORD.md](MASTER_PASSWORD.md)).
 - As elsewhere, decrypted item values live in managed memory and cannot be reliably wiped (see
   [SECURITY_MODEL.md](SECURITY_MODEL.md)).
 

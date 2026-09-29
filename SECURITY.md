@@ -37,11 +37,17 @@ lifecycle events (see `BitosX.Core.Diagnostics.VaultLog`).
 
 - Managed .NET memory cannot be guaranteed to be wiped; secrets in `string` objects may persist
   in process memory. BitosX minimizes secret lifetime and wipes byte buffers on a best-effort basis.
-- On Windows a copied secret is marked so that the clipboard history and cloud clipboard leave it
-  alone; on other platforms it is not. Nowhere can BitosX take back a copy that another application
-  has already made of the clipboard.
+- A copied secret is marked so that the operating system and clipboard managers leave it alone.
+  On Windows this was verified against the real clipboard history; on macOS and Linux the markers
+  are set but **not verified**. Nowhere can BitosX take back a copy that another application has
+  already made of the clipboard.
 - A weak master password undermines all protection, because it is the root of the key hierarchy.
-  The strength rating shown in the application is a heuristic without a dictionary.
+  The strength rating shown in the application is a heuristic without a dictionary. Stronger
+  key-derivation settings make every guess more expensive; they do not rescue a password that can
+  be guessed in a few thousand attempts.
+- Improving a vault's protection — a new master password, a rotated key, stronger key derivation —
+  applies from then on. Copies and backups made earlier keep the protection they were made with.
+- BitosX has only been run on Windows. macOS and Linux are **not verified**.
 
 See [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md) for the full list, and
 [docs/SECURITY_REVIEW_0.5.1.md](docs/SECURITY_REVIEW_0.5.1.md) for the findings of the latest

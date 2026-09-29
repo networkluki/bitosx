@@ -220,7 +220,7 @@ code** — the cryptographic core of 0.5.0 was sound.
 
 - **The vault format and all cryptographic parameters.**
 - **KDF parameters are preserved** by password change and rotation, as documented. There is still no
-  path to strengthen an existing vault's parameters; Settings now at least says so.
+  path to strengthen an existing vault's parameters; Settings now at least says so. *(Added in 0.6.0.)*
 - **The settings file is not authenticated.** Software that can write to the user's profile can turn
   auto-lock off. That is the application's trust boundary (see THREAT_MODEL.md); values are clamped
   and an unreadable file falls back to the secure defaults.
@@ -228,6 +228,13 @@ code** — the cryptographic core of 0.5.0 was sound.
   the UI does not affect.
 
 ## Still open
+
+> **Update, 0.6.0.** Three things this document lists as open or unchanged have since been
+> addressed: the master password is
+> now encoded canonically ([MASTER_PASSWORD.md](MASTER_PASSWORD.md)), an existing vault can be moved
+> to stronger key-derivation settings ([KEY_DERIVATION.md](KEY_DERIVATION.md)), and the clipboard
+> markers for macOS and Linux are set — though still not verified on those systems. The text below
+> is left as it was written for 0.5.1.
 
 - **Master passwords are not Unicode-normalized.** A password with accented characters can be
   encoded differently by different keyboards or operating systems and then fail to unlock. Fixing it

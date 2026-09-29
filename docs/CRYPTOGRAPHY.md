@@ -39,12 +39,18 @@ encrypted vault contents
   wrapped vault key. This allows saving (re-encrypting content) without re-running Argon2, and
   enables changing the master password by **re-wrapping only** (see "Master password change").
 - After unlock, only the **vault key** is kept in memory; the master password is not retained.
+- The key is derived from the **canonical encoding** of the master password (every space
+  character mapped to U+0020, then Unicode NFC, then UTF-8), so that the same password gives the
+  same key however it is typed. See [MASTER_PASSWORD.md](MASTER_PASSWORD.md), including how vaults
+  from before 0.6.0 keep opening.
 
 ## Default parameters
 
 - Argon2id: **64 MiB** memory, **3** iterations, **parallelism 4**, 32-byte output
-  (aligned with current OWASP guidance for interactive Argon2id). A deliberately weak profile is
-  used **only** in automated tests to keep them fast.
+  (aligned with current OWASP guidance for interactive Argon2id; the second recommended option of
+  RFC 9106). A deliberately weak profile is used **only** in automated tests to keep them fast.
+  An existing vault can be moved to **256 MiB** or **1 GiB**; see
+  [KEY_DERIVATION.md](KEY_DERIVATION.md).
 - Salt: 16 bytes (128-bit), random per vault.
 - Nonces: 12 bytes (96-bit), random per encryption operation.
 - Authentication tag: 16 bytes (128-bit).
@@ -56,6 +62,7 @@ statistics without ever printing the password or derived key. Run it with:
 
 ```
 dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 12
+dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 12 strong     # or: maximum
 ```
 
 On one reference machine (16 logical CPUs, .NET 10, Release) the profile derived in ~46 ms
@@ -85,10 +92,12 @@ call, and the cryptor), so no unlock path can bypass it.
 
 ### Parameter tuning and migration
 
-The ceilings sit far above the interactive default to leave headroom for future, stronger
-device-aware profiles. Because the parameters are persisted per vault, an existing vault always
-opens with the profile it was created under; a new, stronger default only affects newly created
-vaults (or a future re-wrap/upgrade path). **Raising a profile above the current ceilings requires
+The ceilings sit far above the interactive default to leave headroom for stronger profiles.
+Because the parameters are persisted per vault, an existing vault always opens with the profile
+it has; a stronger default would only affect newly created vaults. An existing vault is moved to
+stronger settings explicitly, by its user, with a measurement from the device in front of them
+(see [KEY_DERIVATION.md](KEY_DERIVATION.md)); the default itself has deliberately not been raised
+from measurements on one machine. **Raising a profile above the current ceilings requires
 bumping the on-disk format version and widening the bounds together**, so that older builds reject
 files they cannot safely process rather than attempting an unbounded allocation.
 
@@ -147,11 +156,27 @@ rotation.
 
 Requirements and boundaries: the vault must be unlocked and the current password re-entered (so the
 change cannot be made from an unattended unlocked session); the new password must differ from the
-current one. The on-disk **format is unchanged (v1)** — only the salt, key-wrap nonce, and wrapped
+current one — compared in canonical form, so the same password typed on another keyboard does not
+count as a new one. The on-disk **format is unchanged (v1)** — only the salt, key-wrap nonce, and wrapped
 key differ. Limitations: a password change does **not** rotate the vault key (it re-protects the key
 but does not invalidate a key that may already be compromised — use
-[vault key rotation](KEY_ROTATION.md) for that), and **pre-change copies/backups of the vault file
+[vault key rotation](KEY_ROTATION.md) for that), it does **not** change the key-derivation settings
+(use [strengthening](KEY_DERIVATION.md) for that), and **pre-change copies/backups of the vault file
 remain decryptable with the old password**.
+
+## Strengthening key derivation
+
+The same re-wrap, with the settings changing instead of the password: the vault key is unwrapped
+with the current settings and wrapped again under a KEK derived from the same password with
+**stronger settings** and a fresh salt. The content is carried over unchanged, the vault key is not
+rotated, and the format stays v1. Settings can only be strengthened — no less memory and no fewer
+passes, and more of one — and both derivations and the self-check run before anything is written,
+so a vault cannot be moved to settings the device it is on cannot open. See
+[KEY_DERIVATION.md](KEY_DERIVATION.md).
+
+The new settings are bound to the wrapped key as associated data, exactly as the old ones were.
+Writing weaker settings into a vault file therefore does not make it cheaper to attack; it makes
+it fail to authenticate.
 
 ## Vault key rotation
 
@@ -160,7 +185,7 @@ master-password change, which re-wraps the same key). It requires an unlocked va
 current password; a wrong password or any tampering fails closed before any new material is generated.
 Fresh material is produced throughout — new vault key, salt, key-wrap nonce, and content nonce — while
 the master password, on-disk **format (v1)**, KDF identifier/algorithm, and Argon2 cost parameters are
-unchanged. A self-check confirms the rotated envelope unwraps to the new key and decrypts to the exact
+unchanged. The new key is wrapped under the canonical encoding of the master password. A self-check confirms the rotated envelope unwraps to the new key and decrypts to the exact
 original plaintext before it is persisted through the atomic storage path.
 
 Because rotation is destructive it is additionally guarded by an on-disk/in-memory consistency gate (a
@@ -194,7 +219,11 @@ See [KEY_ROTATION.md](KEY_ROTATION.md) for the full design.
 ## Limitations
 
 - Argon2id parameters trade off unlock latency vs. brute-force cost; the defaults are a
-  reasonable interactive baseline, not a maximum.
+  reasonable interactive baseline, not a maximum. A vault can be moved to stronger settings, not
+  beyond 1 GiB of memory: that is the ceiling of format v1.
+- Every device that opens a vault needs the memory its settings ask for. Where it is missing the
+  derivation fails with `KeyDerivationResourceException` — before anything is decrypted, and with
+  an error that is not the one for a wrong password.
 - The strength of everything depends on the master password's entropy.
 - Pure-managed Argon2 is slower than a native implementation; this is an intentional trade for
   cross-platform simplicity and no native dependencies.
@@ -205,8 +234,9 @@ See [KEY_ROTATION.md](KEY_ROTATION.md) for the full design.
 Cryptographic behavior is covered by `BitosX.Crypto.Tests`, including round-trip correctness,
 wrong-key/wrong-password rejection, ciphertext/tag/AAD/nonce/salt tampering, unsupported version
 and malformed input handling, independent per-vault keys, empty-input safety, rejection of weak
-**and** resource-exhausting KDF parameters, and rejection of malicious KDF parameters in a vault
-document before any derivation is attempted.
+**and** resource-exhausting KDF parameters, rejection of malicious KDF parameters in a vault
+document before any derivation is attempted, and re-wrapping under stronger settings and under
+another encoding of the same password (`KeyDerivationChangeTests`).
 
 **Known-answer tests** (`KnownAnswerTests`) check the primitives against published reference
 outputs rather than against themselves — a round trip cannot tell a correct implementation from

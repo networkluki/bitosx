@@ -18,7 +18,8 @@ BitosX.ApiClient ──> Core                                     (local-only AP
   `Argon2idKeyDerivation`, `AesGcmCipher`, `VaultCryptor`, `EncryptedVault(+Serializer)`,
   `SecureRandom`, `CryptoBuffers`. No dependency on Core or the UI.
 - **BitosX.Core** — UI-independent domain and logic: `Vault`, `VaultItem`/`LoginItem`,
-  `VaultService` (create/unlock/lock, CRUD, save), `PasswordGenerator`, `SecurityAnalyzer`,
+  `VaultService` (create/unlock/lock, CRUD, save, re-wrap), `PasswordGenerator`, `SecurityAnalyzer`,
+  `MasterPasswordEncoding`, `KeyDerivationProfile` and `KeyDerivationBenchmark`,
   validation, serialization, logging abstractions, and the `ILocalVaultStorage` interface.
 - **BitosX.Storage** — `FileLocalVaultStorage`, an atomic file implementation of
   `ILocalVaultStorage`, plus `FileVaultBackup` (`IVaultBackup`) for byte-for-byte encrypted
@@ -75,6 +76,9 @@ BitosX.ApiClient ──> Core                                     (local-only AP
 - **One owner for the key.** It passes to the session exactly once and is wiped only there. If a
   `StateChanged` subscriber cannot be notified that the vault is open, the vault locks again; every
   subscriber is notified even if an earlier one throws.
+- **Password encodings.** Wherever a master password is turned into bytes, it goes through
+  `MasterPasswordEncoding`. A new key is always wrapped under the canonical encoding; an existing
+  vault is opened by trying the encodings it could have been keyed with.
 
 `StateChanged` is raised while the session is held, so notifications arrive in the order the
 transitions happened. Handlers must not block waiting on another thread.

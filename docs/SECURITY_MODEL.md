@@ -53,7 +53,16 @@ It describes the current **local vault** milestone. No marketing claims are made
 - **Clipboard history and cloud clipboard (Windows).** A copied secret is marked so that Windows
   keeps it out of the clipboard history (Win+V) and does not upload it to the cloud clipboard.
   It is also cleared when the application closes and when the workstation is locked or the system
-  suspends, not only after the timed delay.
+  suspends, not only after the timed delay. On macOS and Linux the corresponding markers are set
+  too, but what those systems do with them is **NOT VERIFIED** (see below).
+- **The same master password typed differently.** The key is derived from a canonical encoding of
+  the password, so a vault opens whether an accented letter arrives as one code point or as a
+  letter and a combining mark, and whichever kind of space was typed. Vaults from before 0.6.0
+  keep opening. See [MASTER_PASSWORD.md](MASTER_PASSWORD.md).
+- **Key-derivation settings that have become too weak.** An existing vault can be moved to
+  stronger settings, which makes every guess at the master password more expensive for someone
+  holding a copy of the file made afterwards. Settings can be strengthened, never weakened. See
+  [KEY_DERIVATION.md](KEY_DERIVATION.md).
 - **Accidental plaintext persistence.** The plaintext vault is only ever held in memory while
   unlocked; only encrypted data is written to disk.
 - **Shoulder-surfing of stored passwords in the UI.** Passwords are masked by default and shown
@@ -77,14 +86,20 @@ It describes the current **local vault** milestone. No marketing claims are made
   (KEK, vault key, password bytes, plaintext bytes) on a best-effort basis, but decrypted values
   held as `string` (item passwords in the UI) cannot be reliably erased.
 - **A weak master password.** The master password is the root of the key hierarchy. A guessable
-  password can be brute-forced offline regardless of the cipher. Argon2id raises the cost but
-  cannot rescue a weak password.
-- **Anything that copies the clipboard for itself.** The markers BitosX sets on Windows are
-  requests: Windows and well-behaved clipboard managers honor them, but an application that reads
+  password can be brute-forced offline regardless of the cipher. Argon2id raises the cost, and
+  stronger settings raise it further, but nothing rescues a password that can be guessed in a few
+  thousand attempts.
+- **Copies of the vault made before its protection was improved.** Strengthening the key
+  derivation, rotating the vault key and changing the master password all apply to the vault file
+  from then on. A backup or any other copy made earlier keeps the protection it was made with.
+- **Anything that copies the clipboard for itself.** The markers BitosX sets are requests: the
+  operating system and well-behaved clipboard managers honor them, but an application that reads
   the clipboard directly sees the secret while it is there, and BitosX cannot take back a copy
-  that has been made. On **macOS and Linux no such markers are set**, so clipboard managers and
-  history features there may keep copied secrets. The timed clear never erases content you copied
-  afterwards.
+  that has been made. On **Windows** the markers were verified against the real clipboard and
+  clipboard history. On **macOS and Linux** they follow the published conventions
+  (`org.nspasteboard.ConcealedType`, `x-kde-passwordManagerHint`) but are **NOT VERIFIED**: no
+  such machine was available. If a clipboard there refuses the marker, the value is copied
+  without it rather than not at all. The timed clear never erases content you copied afterwards.
 - **A master password made of ordinary words.** The strength rating discounts repetition, runs,
   keyboard patterns and the most common passwords, but it has no dictionary and no knowledge of
   breached passwords. A good rating means no obvious weakness was found, nothing more.

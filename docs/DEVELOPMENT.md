@@ -63,13 +63,30 @@ The format is versioned (`CryptoConstants.FormatVersion`). To introduce version 
   `VaultService` lifecycle with an in-memory storage double.
 - `BitosX.Platform.Tests` — clipboard policy (timed clear, retry, workstation lock / suspend) and
   the single-instance guard.
-- `BitosX.App.Tests` — view models: the restore commit boundary, rotation, failure handling, and
-  the content handed to the clipboard.
+- `BitosX.App.Tests` — view models (the restore commit boundary, rotation, key derivation, failure
+  handling), the content handed to the clipboard, and the **real views run without a display**
+  (`*UiTests`, see below).
 - `BitosX.Storage.Tests` — atomic file storage, malformed/oversized handling, and an end-to-end
   persistence integration test using the real crypto + file storage.
 
 Use `Argon2Parameters.ForTesting` (a deliberately weak profile) in tests to keep them fast; never
 use it for real vaults.
+
+### Testing a view
+
+`HeadlessUi` (in `BitosX.App.Tests`) runs a view on the headless platform of the UI framework: the
+same XAML, styles, resources and view locator as the application, without a window on a screen.
+A test builds the view model on real services in a temporary directory, shows the view, and then
+acts as a user would — `HeadlessUi.Type` (focus and text input), `HeadlessUi.Press` (focus and
+Enter), `HeadlessUi.Toggle` (focus and Space) — and reads what the view shows. Controls are found
+by `Name`, so give a control a name when a test needs it.
+
+This tests what a view shows and does. It does not test how it looks, and it is not a substitute
+for the manual checklist.
+
+Text that is not ASCII is written with escapes in tests (`"l�senord"`), never typed into the
+source file: the composed and decomposed forms of a letter look the same, and an editor or a
+version control setting can turn one into the other.
 
 ### Writing a security regression test
 
@@ -85,7 +102,9 @@ vault key is left in memory.
 
 Neither is shipped.
 
-- `tools/BitosX.KdfBenchmark` — Argon2id unlock latency with the production profile.
+- `tools/BitosX.KdfBenchmark` — Argon2id unlock latency, for the production profile or one of the
+  stronger ones (`-- 12 strong`, `-- 12 maximum`). With the heap of the process limited
+  (`DOTNET_GCHeapHardLimit`) it shows what happens on a device without the memory.
 - `tools/BitosX.ClipboardProbe` — drives the production clipboard code against the **real**
   Windows clipboard and clipboard history and checks the result the way another application
   would see it. Windows-only, so it is **not part of `BitosX.slnx`**; build and run it on its own:

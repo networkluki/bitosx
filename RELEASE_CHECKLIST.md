@@ -13,13 +13,16 @@ the full verification-status matrix and per-step expected GUI results.
 |---|---|---|---|
 | 1 | Build Debug | `dotnet build BitosX.slnx -c Debug` | ✅ Build succeeded — 0 warnings, 0 errors |
 | 2 | Build Release | `dotnet build BitosX.slnx -c Release` | ✅ Build succeeded — 0 warnings, 0 errors |
-| 3 | Test Debug | `dotnet test BitosX.slnx -c Debug` | ✅ 468 passed, 0 failed, 0 skipped (Core 208, Crypto 113, App 60, Storage 52, Platform 35) |
-| 4 | Test Release | `dotnet test BitosX.slnx -c Release` | ✅ 468 passed, 0 failed, 0 skipped |
+| 3 | Test Debug | `dotnet test BitosX.slnx -c Debug` | ✅ 684 passed, 0 failed, 0 skipped (Core 318, Crypto 142, App 133, Storage 56, Platform 35) |
+| 4 | Test Release | `dotnet test BitosX.slnx -c Release` | ✅ 684 passed, 0 failed, 0 skipped |
 | 5 | Plaintext-regression check | `dotnet test BitosX.slnx -c Release --filter "FullyQualifiedName~VaultPersistenceIntegrationTests"` | ✅ Pass — persisted vault file contains none of the distinctive markers for master password, login password, username, item name, notes, or URL host. **This is a regression check against accidental plaintext persistence, NOT a proof of cryptographic security.** |
 | 6 | Argon2 benchmark | `dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 12` | ✅ See "Argon2 benchmark result" below |
 | 7 | Known-answer tests | `dotnet test BitosX.slnx -c Release --filter "FullyQualifiedName~KnownAnswerTests"` | ✅ 12 passed — Argon2id and AES-256-GCM match the published reference outputs |
-| 8 | Clipboard probe (Windows) | `dotnet run -c Release --project tools/BitosX.ClipboardProbe` | ✅ all 16 checks passed (2026-09-29). Uses the real clipboard for ~20 s and restores it. |
+| 8 | Clipboard probe (Windows) | `dotnet run -c Release --project tools/BitosX.ClipboardProbe` | ✅ all 18 checks passed (2026-09-29). Uses the real clipboard for ~25 s and restores it. |
 | 9 | Dependency audit | `dotnet list BitosX.slnx package --vulnerable --include-transitive` | ✅ no vulnerable packages (2026-09-29) |
+| 10 | Views, run without a display | `dotnet test BitosX.slnx -c Release --filter "FullyQualifiedName~UiTests"` | ✅ 22 passed — what the views show and do, not how they look |
+| 11 | Stronger key-derivation profiles | `dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 5 strong` (and `maximum`) | ✅ about 0.2 s and 0.85 s on the reference machine |
+| 12 | A device without the memory | `DOTNET_GCHeapHardLimit=0x19000000 dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 3 maximum` | ✅ reports the missing memory, exit code 3 |
 
 ## Secret scan
 
@@ -87,7 +90,8 @@ Re-run this checklist for each future release.
 
 - **Managed-memory wiping is best-effort.** Byte buffers (KEK, vault key, password bytes, plaintext)
   are zeroed; secrets held as `string` (UI passwords, clipboard compare value) cannot be reliably erased.
-- **Clipboard markers are Windows-only**, and they are requests: software that reads the clipboard
+- **Clipboard markers are verified on Windows only**; on macOS and Linux they are set but untested.
+  Everywhere they are requests: software that reads the clipboard
   directly still sees a copied value while it is there.
 - **The strength rating has no dictionary**; a good rating means no obvious weakness was found.
 - **KDF profile is fast on high-end hardware** (~46 ms median) — interactive but modest brute-force cost.
@@ -98,10 +102,13 @@ Re-run this checklist for each future release.
 ## NOT VERIFIED items
 
 - **Secure erasure of `string`-held secrets** — not achievable on managed .NET (documented).
+- **0.6.0: everything on macOS and Linux**, including the clipboard markers and the file
+  permissions; **how the views look** (the headless tests check what they show). See the
+  "NOT VERIFIED" table in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 - **0.5.1: the new Settings texts, clearing the clipboard on workstation lock in the running
   application, and Unix file permissions** — see the "NOT VERIFIED" table in
   [docs/VERIFICATION.md](docs/VERIFICATION.md). The manual GUI checklist below was **not re-run for
-  0.5.1**; re-run it before tagging.
+  0.5.1 or 0.6.0**; re-run it before tagging.
 - **Cross-platform behavior on Linux/macOS** — code is cross-platform, but only Windows was exercised
   (note: the clipboard UI-thread fix uses `Dispatcher.UIThread`, which is cross-platform in Avalonia,
   but the clipboard clear has been manually confirmed only on Windows).

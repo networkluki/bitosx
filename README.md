@@ -14,6 +14,11 @@ and stays on the local device.
   (Windows), and optional lock-on-minimize. See [docs/AUTO_LOCK.md](docs/AUTO_LOCK.md).
 - Change the master password (re-wraps the vault key; contents are not re-encrypted and the vault
   format is unchanged). See [docs/CRYPTOGRAPHY.md](docs/CRYPTOGRAPHY.md).
+- Strengthen the key derivation of an existing vault (more memory for every guess at the master
+  password; the settings can be measured on the device first). See
+  [docs/KEY_DERIVATION.md](docs/KEY_DERIVATION.md).
+- The vault opens however the same master password is typed (composed or decomposed accents,
+  either kind of space). See [docs/MASTER_PASSWORD.md](docs/MASTER_PASSWORD.md).
 - Rotate the vault key (generates a new vault key and re-encrypts all content under it; the master
   password and on-disk format are unchanged). See [docs/KEY_ROTATION.md](docs/KEY_ROTATION.md).
 - Encrypted backup / export and restore (the encrypted envelope copied byte-for-byte; restore is
@@ -26,8 +31,10 @@ and stays on the local device.
 - Encrypted, versioned, atomic and durable on-disk vault format that fails closed on tampering.
 - Refuses to overwrite a vault that changed on disk while it was open, and runs only one instance
   per vault.
-- On Windows, copied secrets are kept out of the clipboard history and the cloud clipboard; the
-  clipboard is also cleared on exit and when the workstation is locked or suspended.
+- Copied secrets are marked so that the system does not keep them: on Windows this keeps them out
+  of the clipboard history and the cloud clipboard (verified); on macOS and Linux the markers are
+  set but not verified. The clipboard is also cleared on exit and when the workstation is locked
+  or suspended.
 
 ## Requirements
 
@@ -54,18 +61,18 @@ src/
   BitosX.Platform   Platform policy (clipboard, single instance, OS session signals), secure-storage hook
   BitosX.ApiClient  Local-only API abstraction (no production server in this milestone)
 tests/
-  BitosX.App.Tests        View model tests (restore boundary, rotation, failure handling, clipboard content)
+  BitosX.App.Tests        View models, and the real views run without a display
   BitosX.Core.Tests
   BitosX.Crypto.Tests
   BitosX.Platform.Tests   Clipboard policy and single-instance tests
   BitosX.Storage.Tests
 tools/
-  BitosX.KdfBenchmark     Diagnostic-only Argon2id unlock-latency benchmark (not shipped)
+  BitosX.KdfBenchmark     Diagnostic-only Argon2id unlock-latency benchmark, per profile (not shipped)
   BitosX.ClipboardProbe   Diagnostic-only check against the real Windows clipboard (not shipped, not in the solution)
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
   VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md  KEY_ROTATION.md
-  SECURITY_REVIEW_0.5.1.md
+  SECURITY_REVIEW_0.5.1.md  KEY_DERIVATION.md  MASTER_PASSWORD.md
 ```
 
 `BitosX.Core` and `BitosX.Crypto` do not depend on Avalonia.

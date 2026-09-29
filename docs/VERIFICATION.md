@@ -262,6 +262,138 @@ This also shows that the application starts and shuts down cleanly with the chan
 | The full 17-step checklist below, and the A-, H- and R-series | **Not re-run for 0.5.1.** Re-run before tagging a release |
 | Everything on Linux and macOS | No machine available |
 
+Since 0.6.0 the first, third and fourth of these are covered by tests that run the real views
+without a display — to the extent described in the next section. None has been looked at by a
+person.
+
+## Master password encoding, key derivation, clipboard markers (0.6.0) — verified 2026-09-29
+
+Three things that [SECURITY_REVIEW_0.5.1.md](SECURITY_REVIEW_0.5.1.md) left open. The design of
+each is described in [MASTER_PASSWORD.md](MASTER_PASSWORD.md), [KEY_DERIVATION.md](KEY_DERIVATION.md)
+and `SensitiveClipboardData`. Machine: Windows 11 Pro (10.0.26200), .NET SDK 10.0.401, 16 logical
+CPUs, 64 GiB. The on-disk format is unchanged (v1).
+
+### Automated
+
+684 tests pass in Debug and in Release (468 in 0.5.1), with 0 build warnings.
+
+| Project | 0.5.1 | 0.6.0 |
+|---|---|---|
+| `BitosX.Core.Tests` | 208 | 318 |
+| `BitosX.Crypto.Tests` | 113 | 142 |
+| `BitosX.App.Tests` | 60 | 133 |
+| `BitosX.Storage.Tests` | 52 | 56 |
+| `BitosX.Platform.Tests` | 35 | 35 |
+
+| Item | Status |
+|---|---|
+| The same password has one encoding however it is typed; nothing else is changed (no trimming, case folding or compatibility mapping); different passwords stay different; invalid Unicode is rejected for a new password | AUTOMATED TESTED (`MasterPasswordEncodingTests`) |
+| Encodings offered for an existing vault: canonical first, never twice, one for ASCII | AUTOMATED TESTED (`MasterPasswordEncodingTests`) |
+| A new vault opens for either form; vaults keyed by earlier versions keep opening; opening never rewrites the vault | AUTOMATED TESTED (`VaultServicePasswordEncodingTests`) |
+| What a failed attempt costs: one derivation for ASCII, one per encoding otherwise | AUTOMATED TESTED (counting key derivation) |
+| A vault moves to the canonical encoding on password change, rotation and strengthening; a wrong password is rejected and nothing is written | AUTOMATED TESTED (`VaultServicePasswordEncodingTests`) |
+| Backups from earlier versions restore however they were keyed | AUTOMATED TESTED (`VaultBackupServiceTests`) |
+| Strengthening: same key and content, new wrapping; stronger only, in both dimensions; within the bounds; the settings are bound to the wrapped key; not retroactive | AUTOMATED TESTED (`KeyDerivationChangeTests`) |
+| Strengthening through the service: wrong password, locked, stale session, cancellation, write-failure reconciliation, lock during the operation, a device without the memory | AUTOMATED TESTED (`VaultServiceKeyDerivationTests`) |
+| Settings view model: what is offered, measuring, ten kinds of failure each reported without claiming success, the entered password not kept on success | AUTOMATED TESTED (`SettingsPageViewModelKeyDerivationTests`) |
+| Clipboard content per platform; the markers never contain the secret | AUTOMATED TESTED (`SensitiveClipboardDataTests`) |
+| A clipboard that refuses the marker: plain copy on macOS / Linux, failure on Windows | AUTOMATED TESTED (`AvaloniaClipboardAccessorTests`) |
+
+### The views, run without a display
+
+New in 0.6.0: `SettingsPageUiTests` and `VaultFlowUiTests` load the application's **real views**
+— the same XAML, styles, resources and view locator — on the headless platform of the UI
+framework, on top of the real vault service, cryptography and file storage in a temporary
+directory. They type into the text boxes and activate buttons and check boxes from the keyboard,
+and read what the text blocks show. 22 tests.
+
+| Item | Status |
+|---|---|
+| Settings describes the open vault, warns when its settings are weaker than the default, and offers only stronger profiles | AUTOMATED TESTED (headless view) |
+| Strengthening from the view: button disabled until a password is typed; wrong password reported and nothing written; success updates the page, empties the password box, and the file on disk has the new settings | AUTOMATED TESTED (headless view) |
+| Measuring from the view shows time and memory and changes nothing; a device without the memory is reported | AUTOMATED TESTED (headless view) |
+| A vault keyed the old way is pointed out until it has been moved | AUTOMATED TESTED (headless view) |
+| The new password is rated as it is typed; changing the master password from the view works | AUTOMATED TESTED (headless view) |
+| A setting that cannot be saved is reported on the page | AUTOMATED TESTED (headless view) |
+| Creating a vault; unlocking with each form of the password; wrong password; a device without the memory | AUTOMATED TESTED (headless view) |
+| Saving from the editor; a save refused because the vault changed on disk says what to do | AUTOMATED TESTED (headless view) |
+
+**These tests can fail:** with the binding of one text block deliberately pointed at the wrong
+property, two of them failed; with it restored, all pass.
+
+**What this is and is not.** It verifies what the views show and do: bindings, visibility,
+enabled state, commands, keyboard activation. It does not verify how they look — layout, wrapping,
+colours, whether a text is cut off — nor anything that depends on a real window on a real screen.
+Several items that were "NOT VERIFIED — needs a person at the GUI" in 0.5.1 are covered by it to
+that extent; none of them has been looked at by a person.
+
+### Against 0.5.1
+
+The same test, using only what 0.5.1 has, run on a checkout of the tag `v0.5.1-security-hardening`
+and on this version:
+
+| Vault created with | Unlocked with | 0.5.1 | 0.6.0 |
+|---|---|---|---|
+| composed | decomposed | **fails** | opens |
+| decomposed | composed | **fails** | opens |
+| no-break spaces | ordinary spaces | **fails** | opens |
+| ordinary spaces | no-break spaces | **fails** | opens |
+| composed (control) | composed | opens | opens |
+
+### A device without the memory
+
+The failure path cannot be reached in a unit test without actually running out of memory, so it
+was checked with a real process whose heap was limited to 400 MiB
+(`DOTNET_GCHeapHardLimit=0x19000000`):
+
+| Settings | Result |
+|---|---|
+| 64 MiB, 128 MiB | derived normally |
+| 256 MiB, 512 MiB, 1 GiB | `KeyDerivationResourceException`, naming the memory needed; the process carried on and later derivations in it succeeded |
+
+Reproduce with `tools/BitosX.KdfBenchmark`, which now takes a profile:
+
+```
+DOTNET_GCHeapHardLimit=0x19000000 dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 3 maximum
+```
+
+It prints that the device does not have the memory and exits with code 3.
+
+Measured without a limit: Standard about 0.05 s, Strong about 0.2 s, Maximum about 0.85 s per
+derivation.
+
+### Against the real Windows clipboard
+
+`tools/BitosX.ClipboardProbe` was run again, since the code that places a secret on the clipboard
+changed. All 18 checks passed (the 16 of 0.5.1 and two new ones):
+
+| New check | Result |
+|---|---|
+| Mechanism only: with the macOS marker the secret is placed, carries `org.nspasteboard.ConcealedType`, and can be pasted | PASS |
+| Mechanism only: with the Linux marker the secret is placed, carries `x-kde-passwordManagerHint`, and can be pasted | PASS |
+
+"Mechanism only" is meant literally. These two show that the UI framework accepts the content
+and that the text stays pasteable, on Windows. They say nothing about what macOS or a Linux
+desktop does with the marker.
+
+### The application itself
+
+Release build, started against the default vault location: it starts and shows its window; a
+second instance exits by itself with code 2; the first closes normally with code 0. The vault file
+and the settings file were unchanged (SHA-256), and no temporary file was left.
+
+### NOT VERIFIED
+
+| Item | Why |
+|---|---|
+| **Everything on macOS and Linux**, including whether the clipboard markers have any effect there | No such machine. Virtualization is disabled on the development machine, so neither WSL 2 nor Docker could be used. |
+| Unix file permissions (owner only), open since 0.5.1 | The same |
+| How the views look | The headless tests check what is shown, not how |
+| The 17-step manual checklist and the A-, H- and R-series | **Not re-run for 0.6.0**, nor for 0.5.1. Re-run before tagging a release |
+| Clearing the clipboard on workstation lock and suspend in the running application | Tested with simulated OS signals only |
+| The cloud clipboard, and third-party clipboard managers | Not enabled / not installed on the development machine |
+| Normalization with a different Unicode version than the one of this runtime and operating system | One machine |
+
 ## Version display fix (2026-09-13)
 
 The Settings → About line previously read "BitosX version 0.3.0.0" — the CLR/Windows 4-part
@@ -308,9 +440,10 @@ Fix (App/Platform layers only — no crypto/vault changes):
 - ~~Decrypted vault content is not re-validated on load.~~ **Closed in 0.5.1**: loading validates
   every item with the same rules as editing (`VaultLoadValidationTests`).
 - **The production KDF profile is fast on high-end hardware** (~46 ms median on a 16-core desktop).
-  It is comfortably interactive but on the low side for offline brute-force cost. Do **not** retune
-  it from a single machine; a future milestone should add device-aware calibration and versioned
-  migration.
+  It is comfortably interactive but on the low side for offline brute-force cost. The default for
+  new vaults is still not retuned from a single machine; **since 0.6.0 an existing vault can be
+  moved to stronger settings by its user**, with a measurement from the device
+  ([KEY_DERIVATION.md](KEY_DERIVATION.md)).
 
 ## Manual GUI checklist — COMPLETED 2026-09-13 (all 17 steps PASS)
 
