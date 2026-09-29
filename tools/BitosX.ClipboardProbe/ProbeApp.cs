@@ -86,6 +86,23 @@ internal sealed class ProbeApp : Application
                 break;
             }
 
+            case "marker-macos":
+            case "marker-linux":
+            {
+                // The markers of the other platforms, placed on THIS clipboard. This shows that the
+                // content is accepted and stays pasteable, not what macOS or Linux do with it.
+                ClipboardPlatform platform = Scenario == "marker-macos" ? ClipboardPlatform.MacOS : ClipboardPlatform.Linux;
+                var marked = new AvaloniaClipboardAccessor(
+                    () => window.Clipboard, platform, NullLogger<AvaloniaClipboardAccessor>.Instance);
+                await marked.SetSecretTextAsync(Marker).ConfigureAwait(true);
+
+                Record("formats", string.Join('|', NativeClipboard.FormatNames()));
+                Record("pasteable", NativeClipboard.Text() == Marker);
+                Record("readback", await marked.GetTextAsync().ConfigureAwait(true) == Marker);
+                await marked.ClearAsync().ConfigureAwait(true);
+                break;
+            }
+
             case "plain":
             {
                 // Control: what the application did before 0.5.1.

@@ -13,8 +13,14 @@ using BitosX.Crypto;
 // This tool NEVER prints the benchmark password or any derived key material. The password
 // below is a fixed, non-secret constant used only to feed the KDF; it is not a real secret.
 //
-// Usage:  dotnet run -c Release --project tools/BitosX.KdfBenchmark [runs]
+// Usage:  dotnet run -c Release --project tools/BitosX.KdfBenchmark [runs] [standard|strong|maximum]
 //         (Release is strongly recommended; Debug numbers are not representative.)
+//
+// The profile defaults to the production one (standard). The stronger ones are those a vault can
+// be moved to in Settings. To see what happens on a device without the memory a profile asks for,
+// limit the heap of the process, for example to 400 MiB:
+//         DOTNET_GCHeapHardLimit=0x19000000 dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 3 strong
+// The exit code is then 3 and nothing is measured.
 
 const string BenchmarkPassword = "benchmark-not-a-real-secret";
 const int DefaultRuns = 10;
@@ -25,7 +31,22 @@ if (args.Length > 0 && int.TryParse(args[0], NumberStyles.Integer, CultureInfo.I
     runs = parsed;
 }
 
-Argon2Parameters p = Argon2Parameters.Default;
+string profile = args.Length > 1 ? args[1].ToLowerInvariant() : "standard";
+Argon2Parameters? selected = profile switch
+{
+    "standard" => Argon2Parameters.Default,
+    "strong" => Argon2Parameters.Strong,
+    "maximum" => Argon2Parameters.Maximum,
+    _ => null,
+};
+
+if (selected is null)
+{
+    Console.Error.WriteLine($"Unknown profile '{profile}'. Use standard, strong or maximum.");
+    return 2;
+}
+
+Argon2Parameters p = selected;
 p.Validate();
 
 var kdf = new Argon2idKeyDerivation();
@@ -33,8 +54,8 @@ byte[] password = Encoding.UTF8.GetBytes(BenchmarkPassword);
 
 CultureInfo ci = CultureInfo.InvariantCulture;
 
-Console.WriteLine("BitosX Argon2id production-profile benchmark");
-Console.WriteLine("============================================");
+Console.WriteLine("BitosX Argon2id key-derivation benchmark");
+Console.WriteLine("========================================");
 Console.WriteLine();
 Console.WriteLine("Environment");
 Console.WriteLine($"  OS               : {RuntimeInformation.OSDescription}");
@@ -50,7 +71,7 @@ if (availableBytes > 0)
 }
 
 Console.WriteLine();
-Console.WriteLine("KDF configuration (production profile — NOT weakened for this benchmark)");
+Console.WriteLine($"KDF configuration (profile: {profile})");
 Console.WriteLine($"  Algorithm        : Argon2id (Konscious, pure-managed)");
 Console.WriteLine($"  Memory           : {p.MemoryKiB} KiB ({(p.MemoryKiB / 1024.0).ToString("0.#", ci)} MiB)");
 Console.WriteLine($"  Iterations       : {p.Iterations}");
@@ -60,7 +81,19 @@ Console.WriteLine();
 
 // Warm-up (JIT + first-allocation costs), excluded from the statistics.
 Console.Write("Warming up... ");
-RunOnce(kdf, password, p);
+try
+{
+    RunOnce(kdf, password, p);
+}
+catch (KeyDerivationResourceException ex)
+{
+    Console.WriteLine("failed.");
+    Console.WriteLine();
+    Console.WriteLine(ex.Message);
+    Console.WriteLine("A vault with these settings could not be opened on this device.");
+    return 3;
+}
+
 Console.WriteLine("done.");
 Console.WriteLine();
 
@@ -94,6 +127,8 @@ Console.WriteLine("  hundred milliseconds. Well under ~100 ms may indicate the p
 Console.WriteLine("  than desired; multiple seconds is likely too slow for interactive unlock.");
 Console.WriteLine("  These numbers are for THIS machine only. Do not tune production defaults from");
 Console.WriteLine("  a single device; prefer device-aware calibration and versioned migration.");
+
+return 0;
 
 static double RunOnce(Argon2idKeyDerivation kdf, byte[] password, Argon2Parameters p)
 {

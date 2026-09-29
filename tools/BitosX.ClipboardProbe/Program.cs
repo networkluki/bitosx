@@ -90,6 +90,22 @@ internal static class Program
 
         Check("Clearing removes everything BitosX placed on the clipboard", copy.GetValueOrDefault("cleared") == "True");
 
+        // 1b. The markers of the other platforms are accepted and leave the text pasteable. Checked
+        //     here because it can be; what macOS and Linux do with them cannot be checked on Windows.
+        foreach ((string scenario, string name, string format) in new[]
+                 {
+                     ("marker-macos", "macOS", SensitiveClipboardData.MacConcealedType),
+                     ("marker-linux", "Linux", SensitiveClipboardData.LinuxPasswordHintFormat),
+                 })
+        {
+            Dictionary<string, string> other = Child(scenario);
+            Check(
+                $"Mechanism only: with the {name} marker the secret is placed, carries '{format}', and can be pasted",
+                other.GetValueOrDefault("pasteable") == "True"
+                && other.GetValueOrDefault("readback") == "True"
+                && other.GetValueOrDefault("formats", string.Empty).Split('|').Contains(format, StringComparer.Ordinal));
+        }
+
         // 2. Clipboard history, with a control that proves the check can fail.
         Dictionary<string, string> plain = Child("plain");
         string control = plain.GetValueOrDefault("history", "unknown");
