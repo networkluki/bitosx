@@ -30,10 +30,25 @@ internal sealed class InstrumentedVaultStorage : ILocalVaultStorage
     /// <summary>If set, the next write stores THIS vault (an indeterminate/other state) and then throws.</summary>
     public EncryptedVault? StoreThenThrowNextWrite { get; set; }
 
+    /// <summary>If set, every read throws this (simulates a stored file this build cannot parse).</summary>
+    public Exception? ThrowOnRead { get; set; }
+
+    /// <summary>Invoked at the start of every read (simulates something happening mid-operation).</summary>
+    public Action? OnRead { get; set; }
+
+    /// <summary>Invoked at the start of every write, before anything is stored.</summary>
+    public Action? OnWrite { get; set; }
+
+    /// <summary>If set, every write awaits this before storing (holds an operation in flight).</summary>
+    public Func<Task>? BeforeWriteAsync { get; set; }
+
     public EncryptedVault? Stored => _stored;
 
     /// <summary>Replaces the stored vault out-of-band, i.e. without going through the service.</summary>
     public void ReplaceExternally(EncryptedVault vault) => _stored = vault;
+
+    /// <summary>Removes the stored vault out-of-band.</summary>
+    public void DeleteExternally() => _stored = null;
 
     public Task<bool> ExistsAsync(CancellationToken cancellationToken = default)
         => Task.FromResult(_stored is not null);
@@ -41,14 +56,27 @@ internal sealed class InstrumentedVaultStorage : ILocalVaultStorage
     public Task<EncryptedVault> ReadAsync(CancellationToken cancellationToken = default)
     {
         CancelOnRead?.Cancel();
+        OnRead?.Invoke();
+
+        if (ThrowOnRead is not null)
+        {
+            throw ThrowOnRead;
+        }
+
         return _stored is null
             ? throw new FileNotFoundException("No vault.")
             : Task.FromResult(_stored);
     }
 
-    public Task WriteAsync(EncryptedVault vault, CancellationToken cancellationToken = default)
+    public async Task WriteAsync(EncryptedVault vault, CancellationToken cancellationToken = default)
     {
         LastWriteToken = cancellationToken;
+        OnWrite?.Invoke();
+
+        if (BeforeWriteAsync is not null)
+        {
+            await BeforeWriteAsync().ConfigureAwait(false);
+        }
 
         if (FailNextWrite)
         {
@@ -74,7 +102,6 @@ internal sealed class InstrumentedVaultStorage : ILocalVaultStorage
 
         _stored = vault; // only assigned on success -> previous value preserved on failure
         WriteCount++;
-        return Task.CompletedTask;
     }
 
     public Task DeleteAsync(CancellationToken cancellationToken = default)

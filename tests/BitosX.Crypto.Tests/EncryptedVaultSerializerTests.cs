@@ -103,4 +103,134 @@ public sealed class EncryptedVaultSerializerTests
 
         Assert.Throws<UnsupportedVaultFormatException>(() => EncryptedVaultSerializer.Deserialize(tampered));
     }
+
+    // ---- Strict parsing (0.5.1) ----
+
+    public static TheoryData<string> EnvelopeFields =>
+    [
+        "version", "kdf", "kdfParameters", "salt", "algorithm",
+        "keyWrapNonce", "encryptedVaultKey", "contentNonce", "ciphertext",
+    ];
+
+    [Theory]
+    [MemberData(nameof(EnvelopeFields))]
+    public void Deserialize_FieldSetToNull_FailsClosed(string field)
+    {
+        // "kdfParameters": null used to escape as a NullReferenceException.
+        var node = (JsonObject)JsonNode.Parse(EncryptedVaultSerializer.Serialize(SampleVault()))!;
+        node[field] = null;
+        string json = node.ToJsonString();
+
+        Assert.Throws<UnsupportedVaultFormatException>(() => EncryptedVaultSerializer.Deserialize(json));
+        Assert.Throws<UnsupportedVaultFormatException>(
+            () => EncryptedVaultSerializer.Deserialize(Encoding.UTF8.GetBytes(json)));
+    }
+
+    [Theory]
+    [MemberData(nameof(EnvelopeFields))]
+    public void Deserialize_FieldMissing_FailsClosed(string field)
+    {
+        var node = (JsonObject)JsonNode.Parse(EncryptedVaultSerializer.Serialize(SampleVault()))!;
+        node.Remove(field);
+        string json = node.ToJsonString();
+
+        Assert.Throws<UnsupportedVaultFormatException>(() => EncryptedVaultSerializer.Deserialize(json));
+    }
+
+    [Theory]
+    [InlineData("salt", 15)]
+    [InlineData("salt", 17)]
+    [InlineData("keyWrapNonce", 11)]
+    [InlineData("keyWrapNonce", 13)]
+    [InlineData("contentNonce", 11)]
+    [InlineData("contentNonce", 13)]
+    [InlineData("encryptedVaultKey", 47)]
+    [InlineData("encryptedVaultKey", 49)]
+    [InlineData("ciphertext", 15)]
+    public void Deserialize_FieldWithWrongLength_FailsClosed(string field, int length)
+    {
+        var node = (JsonObject)JsonNode.Parse(EncryptedVaultSerializer.Serialize(SampleVault()))!;
+        node[field] = Convert.ToBase64String(new byte[length]);
+
+        Assert.Throws<UnsupportedVaultFormatException>(() => EncryptedVaultSerializer.Deserialize(node.ToJsonString()));
+    }
+
+    [Fact]
+    public void Deserialize_UnknownProperty_Rejected()
+    {
+        var node = (JsonObject)JsonNode.Parse(EncryptedVaultSerializer.Serialize(SampleVault()))!;
+        node["hint"] = "anything";
+
+        Assert.Throws<UnsupportedVaultFormatException>(() => EncryptedVaultSerializer.Deserialize(node.ToJsonString()));
+    }
+
+    [Fact]
+    public void Deserialize_UnknownKdfParameter_Rejected()
+    {
+        var node = (JsonObject)JsonNode.Parse(EncryptedVaultSerializer.Serialize(SampleVault()))!;
+        ((JsonObject)node["kdfParameters"]!)["secret"] = "AAAA";
+
+        Assert.Throws<UnsupportedVaultFormatException>(() => EncryptedVaultSerializer.Deserialize(node.ToJsonString()));
+    }
+
+    [Fact]
+    public void Deserialize_Utf8Bytes_RoundTrips_AndMatchesTheStringOverload()
+    {
+        EncryptedVault original = SampleVault();
+        byte[] bytes = EncryptedVaultSerializer.SerializeToUtf8Bytes(original);
+
+        EncryptedVault fromBytes = EncryptedVaultSerializer.Deserialize(bytes);
+        EncryptedVault fromString = EncryptedVaultSerializer.Deserialize(Encoding.UTF8.GetString(bytes));
+
+        Assert.Equal(EncryptedVaultFingerprint.Compute(original), EncryptedVaultFingerprint.Compute(fromBytes));
+        Assert.Equal(EncryptedVaultFingerprint.Compute(original), EncryptedVaultFingerprint.Compute(fromString));
+    }
+
+    [Fact]
+    public void SerializeToUtf8Bytes_WritesNoByteOrderMark()
+    {
+        byte[] bytes = EncryptedVaultSerializer.SerializeToUtf8Bytes(SampleVault());
+        Assert.Equal((byte)'{', bytes[0]);
+    }
+
+    [Fact]
+    public void Deserialize_Utf8Bytes_AcceptsAByteOrderMark()
+    {
+        EncryptedVault original = SampleVault();
+        byte[] bytes = [0xEF, 0xBB, 0xBF, .. EncryptedVaultSerializer.SerializeToUtf8Bytes(original)];
+
+        EncryptedVault parsed = EncryptedVaultSerializer.Deserialize(bytes);
+
+        Assert.Equal(original.Ciphertext, parsed.Ciphertext);
+    }
+
+    [Fact]
+    public void Deserialize_Utf8Bytes_InvalidUtf8_FailsClosed()
+    {
+        byte[] bytes = EncryptedVaultSerializer.SerializeToUtf8Bytes(SampleVault());
+        bytes[bytes.AsSpan().IndexOf("AES-256-GCM"u8)] = 0xC0; // an invalid UTF-8 lead byte
+
+        Assert.Throws<UnsupportedVaultFormatException>(() => EncryptedVaultSerializer.Deserialize(bytes));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   \r\n\t")]
+    [InlineData("null")]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("not json at all")]
+    [InlineData("{\"version\":1")]
+    public void Deserialize_Utf8Bytes_MalformedInput_FailsClosed(string input)
+    {
+        Assert.Throws<UnsupportedVaultFormatException>(
+            () => EncryptedVaultSerializer.Deserialize(Encoding.UTF8.GetBytes(input)));
+    }
+
+    [Fact]
+    public void Deserialize_Utf8Bytes_OnlyAByteOrderMark_FailsClosed()
+    {
+        Assert.Throws<UnsupportedVaultFormatException>(
+            () => EncryptedVaultSerializer.Deserialize(new byte[] { 0xEF, 0xBB, 0xBF }));
+    }
 }

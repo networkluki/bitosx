@@ -285,6 +285,120 @@ public sealed class VaultBackupServiceTests : IDisposable
         Assert.Equal("Foreign", only.Name); // replace-only
     }
 
+    // ---- Hardening (0.5.1) ----
+
+    /// <summary>Writes a backup whose decrypted content is exactly <paramref name="plaintextJson"/>.</summary>
+    private async Task WriteBackupWithContentAsync(string plaintextJson)
+    {
+        EncryptedVault envelope = _cryptor.Create(
+            System.Text.Encoding.UTF8.GetBytes(MasterPassword),
+            System.Text.Encoding.UTF8.GetBytes(plaintextJson),
+            Argon2Parameters.ForTesting).Encrypted;
+        await File.WriteAllBytesAsync(_backupPath, EncryptedVaultSerializer.SerializeToUtf8Bytes(envelope));
+    }
+
+    private static string ItemJson(string fields) =>
+        "{\"schemaVersion\":1,\"items\":[{\"type\":\"login\",\"Id\":\"5b2f0c0e-4f7e-4a53-9d0c-6f1f0a5a7c11\",\"Name\":\"Example\"," + fields + "}]}";
+
+    [Fact]
+    public async Task Restore_BackupMadeAfterTheClockWasMovedBack_IsAccepted()
+    {
+        // Earlier versions could store an item whose UpdatedAt was before its CreatedAt, and then
+        // rejected their own backup as invalid. Such a backup must restore.
+        await WriteBackupWithContentAsync(ItemJson(
+            "\"CreatedAt\":\"2026-06-01T00:00:00+00:00\",\"UpdatedAt\":\"2026-01-01T00:00:00+00:00\""));
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+
+        BackupPreview preview = await backup.PrepareRestoreAsync(_backupPath, MasterPassword);
+        await backup.CommitRestoreAsync(preview);
+        await svc.UnlockAsync(MasterPassword);
+
+        VaultItem item = Assert.Single(svc.Items);
+        Assert.True(item.UpdatedAt >= item.CreatedAt);
+        await svc.ToggleFavoriteAsync(item.Id); // and the item is editable again
+    }
+
+    [Theory]
+    [InlineData("\"Urls\":null")]
+    [InlineData("\"Urls\":[\"javascript:alert(1)\"]")]
+    [InlineData("\"Password\":\"a\",\"Password\":\"b\"")]
+    [InlineData("\"Unknown\":true")]
+    public async Task Restore_AuthenticBackupWithInvalidContent_FailsClosed_VaultUnchanged(string fields)
+    {
+        // Correctly encrypted with the right password, but the content is not a valid vault.
+        await WriteBackupWithContentAsync(ItemJson(fields));
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+        byte[] before = await File.ReadAllBytesAsync(_vaultPath);
+
+        await Assert.ThrowsAsync<VaultValidationException>(() => backup.PrepareRestoreAsync(_backupPath, MasterPassword));
+
+        Assert.Equal(before, await File.ReadAllBytesAsync(_vaultPath));
+        Assert.False(File.Exists(_vaultPath + FileVaultBackup.RecoverySuffix));
+        Assert.Equal(VaultState.Unlocked, svc.State);
+    }
+
+    [Fact]
+    public async Task Unlock_AuthenticVaultWithInvalidContent_FailsClosed_AndStaysLocked()
+    {
+        await WriteBackupWithContentAsync(ItemJson("\"Urls\":null"));
+        File.Move(_backupPath, _vaultPath);
+        (VaultService svc, _) = NewServices();
+
+        await Assert.ThrowsAsync<VaultValidationException>(() => svc.UnlockAsync(MasterPassword));
+
+        Assert.NotEqual(VaultState.Unlocked, svc.State);
+        Assert.Empty(svc.Items);
+    }
+
+    [Fact]
+    public async Task Export_OverTheVaultFileItself_IsRejected_AndTheVaultIsUntouched()
+    {
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+        byte[] before = await File.ReadAllBytesAsync(_vaultPath);
+
+        await Assert.ThrowsAsync<ArgumentException>(() => backup.ExportAsync(_vaultPath));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => backup.ExportAsync(Path.Combine(_tempDir, ".", "vault.bitosx")));
+
+        Assert.Equal(before, await File.ReadAllBytesAsync(_vaultPath));
+    }
+
+    [Fact]
+    public async Task Export_LeavesOnlyTheBackupBehind_AndIgnoresAFileAtThePredictableTempName()
+    {
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+        string exportDir = Path.Combine(_tempDir, "shared");
+        Directory.CreateDirectory(exportDir);
+        string destination = Path.Combine(exportDir, "backup.bitosx-backup");
+        string planted = destination + ".tmp"; // the name versions before 0.5.1 wrote through
+        await File.WriteAllTextAsync(planted, "not ours");
+
+        await backup.ExportAsync(destination);
+        await backup.ExportAsync(destination); // overwriting an existing backup
+
+        Assert.Equal(await File.ReadAllBytesAsync(_vaultPath), await File.ReadAllBytesAsync(destination));
+        Assert.Equal("not ours", await File.ReadAllTextAsync(planted));
+        Assert.Equal(2, Directory.GetFiles(exportDir).Length);
+    }
+
+    [Fact]
+    public async Task Restore_LeavesOnlyTheVaultAndItsRecoveryCopy()
+    {
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+        await backup.ExportAsync(_backupPath);
+
+        BackupPreview preview = await backup.PrepareRestoreAsync(_backupPath, MasterPassword);
+        await backup.CommitRestoreAsync(preview);
+
+        string[] names = [.. Directory.GetFiles(_tempDir).Select(Path.GetFileName).Order(StringComparer.Ordinal)!];
+        Assert.Equal(["backup.bitosx-backup", "vault.bitosx", "vault.bitosx.pre-restore"], names);
+    }
+
     public void Dispose()
     {
         try

@@ -10,12 +10,14 @@ internal sealed class FakeClipboardAccessor : IClipboardAccessor
 {
     private readonly Lock _gate = new();
     private string? _content;
+    private int _failingGets;
+    private int _failingClears;
 
     public int SetCount { get; private set; }
     public int GetCount { get; private set; }
     public int ClearCount { get; private set; }
 
-    /// <summary>When set, the next <see cref="SetTextAsync"/> throws this exception.</summary>
+    /// <summary>When set, the next <see cref="SetSecretTextAsync"/> throws this exception.</summary>
     public Exception? ThrowOnNextSet { get; set; }
 
     /// <summary>When set, <see cref="GetTextAsync"/> throws this exception.</summary>
@@ -36,7 +38,13 @@ internal sealed class FakeClipboardAccessor : IClipboardAccessor
         }
     }
 
-    public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
+    /// <summary>The next <paramref name="count"/> reads fail, as when another application holds the clipboard.</summary>
+    public void FailNextGets(int count) => Interlocked.Exchange(ref _failingGets, count);
+
+    /// <summary>The next <paramref name="count"/> clears fail, as when another application holds the clipboard.</summary>
+    public void FailNextClears(int count) => Interlocked.Exchange(ref _failingClears, count);
+
+    public Task SetSecretTextAsync(string text, CancellationToken cancellationToken = default)
     {
         Exception? toThrow = ThrowOnNextSet;
         if (toThrow is not null)
@@ -64,6 +72,12 @@ internal sealed class FakeClipboardAccessor : IClipboardAccessor
         lock (_gate)
         {
             GetCount++;
+            if (_failingGets > 0)
+            {
+                _failingGets--;
+                throw new IOException("The clipboard is in use by another application.");
+            }
+
             return Task.FromResult(_content);
         }
     }
@@ -72,6 +86,12 @@ internal sealed class FakeClipboardAccessor : IClipboardAccessor
     {
         lock (_gate)
         {
+            if (_failingClears > 0)
+            {
+                _failingClears--;
+                throw new IOException("The clipboard is in use by another application.");
+            }
+
             _content = null;
             ClearCount++;
         }

@@ -15,7 +15,12 @@ internal sealed class FakeVaultService : IVaultService
 
     public event EventHandler<VaultState>? StateChanged;
 
-    public IReadOnlyList<VaultItem> Items => [];
+    public Argon2Parameters? KdfParameters { get; set; }
+    public List<VaultItem> Stored { get; } = [];
+    public IReadOnlyList<VaultItem> Items => Stored;
+
+    /// <summary>When set, every item operation and the master password change throw this.</summary>
+    public Exception? OperationThrow { get; set; }
 
     public Task<VaultState> RefreshStateAsync(CancellationToken cancellationToken = default) => Task.FromResult(State);
 
@@ -28,7 +33,12 @@ internal sealed class FakeVaultService : IVaultService
 
     public Task CreateVaultAsync(string masterPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task UnlockAsync(string masterPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task ChangeMasterPasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public int ChangePasswordCount { get; private set; }
+    public Task ChangeMasterPasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
+    {
+        ChangePasswordCount++;
+        return OperationThrow is not null ? Task.FromException(OperationThrow) : Task.CompletedTask;
+    }
     public int RotateCount { get; private set; }
     public Exception? RotateThrow { get; set; }
     public Task RotateVaultKeyAsync(string currentPassword, CancellationToken cancellationToken = default)
@@ -43,8 +53,27 @@ internal sealed class FakeVaultService : IVaultService
     }
     public Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<VaultItem> UpdateItemAsync(VaultItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task DeleteItemAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    public Task<VaultItem> ToggleFavoriteAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task DeleteItemAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (OperationThrow is not null)
+        {
+            return Task.FromException(OperationThrow);
+        }
+
+        Stored.RemoveAll(i => i.Id == id);
+        return Task.CompletedTask;
+    }
+    public Task<VaultItem> ToggleFavoriteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        if (OperationThrow is not null)
+        {
+            return Task.FromException<VaultItem>(OperationThrow);
+        }
+
+        int index = Stored.FindIndex(i => i.Id == id);
+        Stored[index] = Stored[index] with { Favorite = !Stored[index].Favorite };
+        return Task.FromResult(Stored[index]);
+    }
 }
 
 /// <summary>Records calls to the destructive commit and validation, and can simulate failures.</summary>
@@ -102,15 +131,49 @@ internal sealed class FakeFilePicker : IFilePicker
     public Task<string?> PickBackupOpenAsync(CancellationToken cancellationToken = default) => Task.FromResult(OpenPath);
 }
 
+/// <summary>Records copies and clears; can simulate a clipboard that is busy.</summary>
 internal sealed class FakeClipboardService : IClipboardService
 {
     public TimeSpan ClearDelay => TimeSpan.FromSeconds(30);
-    public Task CopySecretAsync(string value, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task ClearIfUnchangedAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public bool HasPendingSecret { get; set; }
+    public string? LastCopied { get; private set; }
+    public int ClearCount { get; private set; }
+    public Exception? CopyThrow { get; set; }
+
+    public Task CopySecretAsync(string value, CancellationToken cancellationToken = default)
+    {
+        if (CopyThrow is not null)
+        {
+            return Task.FromException(CopyThrow);
+        }
+
+        LastCopied = value;
+        HasPendingSecret = true;
+        return Task.CompletedTask;
+    }
+
+    public Task ClearIfUnchangedAsync(CancellationToken cancellationToken = default)
+    {
+        ClearCount++;
+        HasPendingSecret = false;
+        return Task.CompletedTask;
+    }
 }
 
 internal sealed class FakeAppSettingsStore : IAppSettingsStore
 {
+    public AppSettings? Saved { get; private set; }
+    public Exception? SaveThrow { get; set; }
+
     public AppSettings Load() => AppSettings.Default;
-    public void Save(AppSettings settings) { }
+
+    public void Save(AppSettings settings)
+    {
+        if (SaveThrow is not null)
+        {
+            throw SaveThrow;
+        }
+
+        Saved = settings;
+    }
 }

@@ -70,4 +70,56 @@ public sealed class VaultTests
         Assert.Empty(vault.Items);
         Assert.False(vault.Remove(item.Id));
     }
+
+    // ---- Clock moved back since the item was created (0.5.1) ----
+
+    [Fact]
+    public void Update_WhenTheClockIsBehindCreatedAt_StampsCreatedAt_NotAnEarlierTime()
+    {
+        var vault = new Vault();
+        DateTimeOffset createdWhileClockWasAhead = DateTimeOffset.UtcNow.AddDays(2);
+        LoginItem item = Login() with { CreatedAt = createdWhileClockWasAhead, UpdatedAt = createdWhileClockWasAhead };
+        vault.Add(item);
+
+        VaultItem stored = vault.Update(item with { Favorite = true });
+
+        // Before the fix this stored UpdatedAt = now < CreatedAt, an item that failed its own validation.
+        Assert.Equal(createdWhileClockWasAhead, stored.UpdatedAt);
+        BitosX.Core.Validation.VaultValidation.Validate(stored);
+    }
+
+    [Fact]
+    public void Update_WhenTheClockIsBehindCreatedAt_TheItemCanStillBeEditedRepeatedly()
+    {
+        var vault = new Vault();
+        DateTimeOffset createdWhileClockWasAhead = DateTimeOffset.UtcNow.AddDays(2);
+        LoginItem item = Login() with { CreatedAt = createdWhileClockWasAhead, UpdatedAt = createdWhileClockWasAhead };
+        vault.Add(item);
+
+        // The editor stamps UpdatedAt with the current (earlier) time before handing the item over.
+        VaultItem first = vault.Update(item with { Name = "Renamed", UpdatedAt = DateTimeOffset.UtcNow });
+        VaultItem second = vault.Update((LoginItem)first with { Name = "Renamed again", UpdatedAt = DateTimeOffset.UtcNow });
+
+        Assert.Equal("Renamed again", ((LoginItem)vault.Items[0]).Name);
+        Assert.True(second.UpdatedAt >= second.CreatedAt);
+    }
+
+    [Fact]
+    public void Update_InvalidItem_Throws_AndKeepsTheStoredItem()
+    {
+        var vault = new Vault();
+        LoginItem item = Login();
+        vault.Add(item);
+
+        Assert.Throws<VaultValidationException>(() => vault.Update(item with { Name = " " }));
+
+        Assert.Same(item, vault.Items[0]);
+    }
+
+    [Fact]
+    public void Add_NullUrlList_Throws()
+    {
+        var vault = new Vault();
+        Assert.Throws<VaultValidationException>(() => vault.Add(Login() with { Urls = null! }));
+    }
 }
