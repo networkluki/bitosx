@@ -41,10 +41,24 @@ public sealed class Argon2idKeyDerivation : IKeyDerivation
 
             return argon2.GetBytes(parameters.KeyLengthBytes);
         }
+        catch (Exception ex) when (IsOutOfMemory(ex))
+        {
+            // The parameters are within the accepted bounds, so this is about the device, not the
+            // file. A failed allocation of this size leaves the process intact.
+            throw new KeyDerivationResourceException(parameters.MemoryKiB, ex);
+        }
         finally
         {
             CryptoBuffers.Wipe(passwordBytes);
             CryptoBuffers.Wipe(saltBytes);
         }
     }
+
+    // The library runs its lanes as tasks, so the failure can arrive wrapped.
+    private static bool IsOutOfMemory(Exception exception) => exception switch
+    {
+        OutOfMemoryException => true,
+        AggregateException aggregate => aggregate.Flatten().InnerExceptions.Any(IsOutOfMemory),
+        _ => exception.InnerException is not null && IsOutOfMemory(exception.InnerException),
+    };
 }

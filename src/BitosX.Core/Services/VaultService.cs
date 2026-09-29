@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using BitosX.Core.Diagnostics;
 using BitosX.Core.Domain;
+using BitosX.Core.Security;
 using BitosX.Core.Serialization;
 using BitosX.Core.Storage;
 using BitosX.Crypto;
@@ -15,7 +16,8 @@ namespace BitosX.Core.Services;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Memory handling: the master password is converted to a byte buffer, used transiently, and
+/// Memory handling: the master password is converted to a byte buffer (see
+/// <see cref="MasterPasswordEncoding"/>), used transiently, and
 /// wiped; it is NOT retained after create/unlock. The vault key is retained (as a byte array)
 /// only while unlocked and is wiped on <see cref="Lock"/>. Decrypted item values live in
 /// managed <see cref="string"/> objects that cannot be reliably wiped (see docs/SECURITY_MODEL.md).
@@ -68,6 +70,9 @@ public sealed class VaultService : IVaultService, IDisposable
     // SHA-256 of the encrypted envelope this session last loaded or persisted. Lets every write verify
     // the on-disk vault still corresponds to the current session before replacing it.
     private byte[]? _persistedFingerprint;
+    // Whether the stored vault is wrapped under the canonical encoding of the master password, as
+    // opposed to an encoding used before 0.6.0. Only known once a password has opened it.
+    private bool _usesCanonicalPasswordEncoding;
     // Identifies the current session; changes whenever a session is opened or cleared.
     private long _sessionId;
     private volatile VaultState _state = VaultState.NoVault;
@@ -124,6 +129,17 @@ public sealed class VaultService : IVaultService, IDisposable
         }
     }
 
+    public bool UsesLegacyPasswordEncoding
+    {
+        get
+        {
+            lock (_sessionLock)
+            {
+                return _vaultKey is not null && !_usesCanonicalPasswordEncoding;
+            }
+        }
+    }
+
     public async Task<VaultState> RefreshStateAsync(CancellationToken cancellationToken = default)
     {
         if (_state == VaultState.Unlocked)
@@ -146,7 +162,7 @@ public sealed class VaultService : IVaultService, IDisposable
 
     public async Task CreateVaultAsync(string masterPassword, CancellationToken cancellationToken = default)
     {
-        ValidateMasterPassword(masterPassword);
+        string canonicalPassword = ValidateNewMasterPassword(masterPassword);
 
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -160,7 +176,7 @@ public sealed class VaultService : IVaultService, IDisposable
 
             var vault = new Vault();
             byte[] plaintext = VaultSerializer.SerializeToUtf8Bytes(vault);
-            byte[] passwordBytes = Encoding.UTF8.GetBytes(masterPassword);
+            byte[] passwordBytes = Encoding.UTF8.GetBytes(canonicalPassword);
             byte[]? vaultKey = null;
             try
             {
@@ -171,7 +187,7 @@ public sealed class VaultService : IVaultService, IDisposable
 
                 byte[] adopted = vaultKey;
                 vaultKey = null; // ownership passes to the session (or is wiped by OpenSession on failure)
-                OpenSession(sessionId, vault, adopted, created.Encrypted.Header, fingerprint);
+                OpenSession(sessionId, vault, adopted, created.Encrypted.Header, fingerprint, canonicalEncoding: true);
                 VaultLog.VaultCreated(_logger);
             }
             finally
@@ -198,11 +214,14 @@ public sealed class VaultService : IVaultService, IDisposable
             long sessionId = CurrentSessionId();
             EncryptedVault encrypted = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
 
-            byte[] passwordBytes = Encoding.UTF8.GetBytes(masterPassword);
+            // A vault created before 0.6.0 may be keyed with another encoding of the same password.
+            PasswordCandidates candidates = MasterPasswordEncoding.EncodeCandidates(masterPassword);
             UnlockResult unlocked;
+            bool canonicalEncoding;
             try
             {
-                unlocked = _cryptor.Unlock(encrypted, passwordBytes);
+                (unlocked, canonicalEncoding) = candidates.FirstAccepted(
+                    encoding => _cryptor.Unlock(encrypted, encoding));
             }
             catch (BitosXCryptographicException)
             {
@@ -211,7 +230,7 @@ public sealed class VaultService : IVaultService, IDisposable
             }
             finally
             {
-                CryptoBuffers.Wipe(passwordBytes);
+                candidates.Wipe();
             }
 
             byte[]? vaultKey = unlocked.VaultKey;
@@ -222,7 +241,7 @@ public sealed class VaultService : IVaultService, IDisposable
 
                 byte[] adopted = vaultKey;
                 vaultKey = null; // ownership passes to the session (or is wiped by OpenSession on failure)
-                OpenSession(sessionId, vault, adopted, unlocked.Header, fingerprint);
+                OpenSession(sessionId, vault, adopted, unlocked.Header, fingerprint, canonicalEncoding);
                 VaultLog.VaultUnlocked(_logger, vault.Items.Count);
             }
             finally
@@ -253,7 +272,7 @@ public sealed class VaultService : IVaultService, IDisposable
         const string notUnlocked = "The vault must be unlocked to change the master password.";
 
         ArgumentNullException.ThrowIfNull(currentPassword);
-        ValidateMasterPassword(newPassword);
+        string canonicalNewPassword = ValidateNewMasterPassword(newPassword);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (_state != VaultState.Unlocked)
@@ -261,15 +280,94 @@ public sealed class VaultService : IVaultService, IDisposable
             throw new InvalidOperationException(notUnlocked);
         }
 
-        if (string.Equals(currentPassword, newPassword, StringComparison.Ordinal))
+        // Compared in canonical form: the same password typed on another keyboard is not a new one.
+        if (IsSamePassword(currentPassword, canonicalNewPassword))
         {
             throw new ArgumentException("The new master password must be different from the current password.", nameof(newPassword));
         }
 
+        byte[] newBytes = Encoding.UTF8.GetBytes(canonicalNewPassword);
+        try
+        {
+            // Verifies the current password (authenticated unwrap) and produces a re-wrapped vault.
+            await ReWrapAsync(
+                notUnlocked,
+                currentPassword,
+                (current, encoding) => _cryptor.ChangeMasterPassword(current, encoding, newBytes),
+                wrapsUnderCanonicalEncoding: true,
+                VaultLog.MasterPasswordChangeFailed,
+                VaultLog.MasterPasswordChanged,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            CryptoBuffers.Wipe(newBytes);
+        }
+    }
+
+    public async Task StrengthenKeyDerivationAsync(
+        string currentPassword, Argon2Parameters newParameters, CancellationToken cancellationToken = default)
+    {
+        const string notUnlocked = "The vault must be unlocked to change its key-derivation settings.";
+
+        ArgumentNullException.ThrowIfNull(currentPassword);
+        ArgumentNullException.ThrowIfNull(newParameters);
+        newParameters.Validate();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_state != VaultState.Unlocked)
+        {
+            throw new InvalidOperationException(notUnlocked);
+        }
+
+        // The key is wrapped again under the canonical encoding of the same password. Only if the
+        // password cannot be canonicalized is the encoding that opens the vault kept.
+        PasswordCandidates candidates = MasterPasswordEncoding.EncodeCandidates(currentPassword);
+        byte[]? canonical = candidates.FirstIsCanonical ? candidates.Encodings[0] : null;
+        try
+        {
+            await ReWrapAsync(
+                notUnlocked,
+                currentPassword,
+                (current, encoding) => _cryptor.ChangeKeyDerivation(current, encoding, canonical ?? encoding, newParameters),
+                wrapsUnderCanonicalEncoding: canonical is not null,
+                VaultLog.KeyDerivationStrengthenFailed,
+                VaultLog.KeyDerivationStrengthened,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            candidates.Wipe();
+        }
+    }
+
+    /// <summary>
+    /// The shared course of the operations that wrap the same vault key again — under a new password
+    /// or under stronger key-derivation settings — and carry the content over unchanged.
+    /// </summary>
+    /// <param name="notUnlockedMessage">The message if the vault is not unlocked.</param>
+    /// <param name="currentPassword">The current master password, as typed.</param>
+    /// <param name="reWrap">
+    /// Produces the re-wrapped vault from the stored one and an encoding of the current password.
+    /// Throws <see cref="VaultAuthenticationException"/> if that encoding does not open the vault.
+    /// </param>
+    /// <param name="wrapsUnderCanonicalEncoding">Whether the result is wrapped under a canonical encoding.</param>
+    /// <param name="logFailure">Logs that the operation failed.</param>
+    /// <param name="logSuccess">Logs that the operation succeeded.</param>
+    /// <param name="cancellationToken">Honored until the write begins.</param>
+    private async Task ReWrapAsync(
+        string notUnlockedMessage,
+        string currentPassword,
+        Func<EncryptedVault, byte[], EncryptedVault> reWrap,
+        bool wrapsUnderCanonicalEncoding,
+        Action<ILogger> logFailure,
+        Action<ILogger> logSuccess,
+        CancellationToken cancellationToken)
+    {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            SessionSnapshot session = CaptureSession(notUnlocked);
+            SessionSnapshot session = CaptureSession(notUnlockedMessage);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -280,27 +378,24 @@ public sealed class VaultService : IVaultService, IDisposable
                 EncryptedVault current = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
                 if (!MatchesSession(current, session))
                 {
-                    VaultLog.MasterPasswordChangeFailed(_logger);
+                    logFailure(_logger);
                     throw new VaultChangedExternallyException();
                 }
 
-                byte[] currentBytes = Encoding.UTF8.GetBytes(currentPassword);
-                byte[] newBytes = Encoding.UTF8.GetBytes(newPassword);
+                PasswordCandidates candidates = MasterPasswordEncoding.EncodeCandidates(currentPassword);
                 EncryptedVault reWrapped;
                 try
                 {
-                    // Verifies the current password (authenticated unwrap) and produces a re-wrapped vault.
-                    reWrapped = _cryptor.ChangeMasterPassword(current, currentBytes, newBytes);
+                    (reWrapped, _) = candidates.FirstAccepted(encoding => reWrap(current, encoding));
                 }
                 catch (BitosXCryptographicException)
                 {
-                    VaultLog.MasterPasswordChangeFailed(_logger);
+                    logFailure(_logger);
                     throw;
                 }
                 finally
                 {
-                    CryptoBuffers.Wipe(currentBytes);
-                    CryptoBuffers.Wipe(newBytes);
+                    candidates.Wipe();
                 }
 
                 // Last safe cancellation point: nothing has been written yet.
@@ -313,7 +408,7 @@ public sealed class VaultService : IVaultService, IDisposable
                 }
                 catch
                 {
-                    VaultLog.MasterPasswordChangeFailed(_logger);
+                    logFailure(_logger);
                     throw;
                 }
 
@@ -325,10 +420,11 @@ public sealed class VaultService : IVaultService, IDisposable
                     {
                         _header = reWrapped.Header;
                         _persistedFingerprint = fingerprint;
+                        _usesCanonicalPasswordEncoding = wrapsUnderCanonicalEncoding;
                     }
                 }
 
-                VaultLog.MasterPasswordChanged(_logger);
+                logSuccess(_logger);
             }
             finally
             {
@@ -374,13 +470,16 @@ public sealed class VaultService : IVaultService, IDisposable
                     throw new VaultChangedExternallyException();
                 }
 
-                byte[] currentBytes = Encoding.UTF8.GetBytes(currentPassword);
+                // The new key is wrapped under the canonical encoding of the same password.
+                PasswordCandidates candidates = MasterPasswordEncoding.EncodeCandidates(currentPassword);
+                byte[]? canonical = candidates.FirstIsCanonical ? candidates.Encodings[0] : null;
                 VaultKeyRotationResult rotated;
                 try
                 {
                     // Verifies the current password (authenticated decrypt), re-encrypts under a fresh
                     // key, and self-checks. All expensive work happens here, before any write.
-                    rotated = _cryptor.RotateVaultKey(current, currentBytes);
+                    (rotated, _) = candidates.FirstAccepted(
+                        encoding => _cryptor.RotateVaultKey(current, encoding, canonical ?? encoding));
                 }
                 catch (BitosXCryptographicException)
                 {
@@ -389,7 +488,7 @@ public sealed class VaultService : IVaultService, IDisposable
                 }
                 finally
                 {
-                    CryptoBuffers.Wipe(currentBytes);
+                    candidates.Wipe();
                 }
 
                 byte[]? newKey = rotated.NewVaultKey;
@@ -421,6 +520,7 @@ public sealed class VaultService : IVaultService, IDisposable
                             newKey = null; // ownership passed to the session
                             _header = rotated.Encrypted.Header;
                             _persistedFingerprint = fingerprint;
+                            _usesCanonicalPasswordEncoding = canonical is not null;
                         }
                     }
 
@@ -740,7 +840,13 @@ public sealed class VaultService : IVaultService, IDisposable
     /// Opens an unlocked session, taking ownership of <paramref name="vaultKey"/> in every outcome:
     /// it either becomes the session key or is wiped here.
     /// </summary>
-    private void OpenSession(long expectedSessionId, Vault vault, byte[] vaultKey, EncryptedVaultHeader header, byte[] fingerprint)
+    private void OpenSession(
+        long expectedSessionId,
+        Vault vault,
+        byte[] vaultKey,
+        EncryptedVaultHeader header,
+        byte[] fingerprint,
+        bool canonicalEncoding)
     {
         lock (_sessionLock)
         {
@@ -756,6 +862,7 @@ public sealed class VaultService : IVaultService, IDisposable
             _vaultKey = vaultKey;
             _header = header;
             _persistedFingerprint = fingerprint;
+            _usesCanonicalPasswordEncoding = canonicalEncoding;
 
             try
             {
@@ -788,6 +895,7 @@ public sealed class VaultService : IVaultService, IDisposable
         _vault = null;
         _header = null;
         _persistedFingerprint = null;
+        _usesCanonicalPasswordEncoding = false;
         _sessionId++;
     }
 
@@ -826,20 +934,48 @@ public sealed class VaultService : IVaultService, IDisposable
         firstFailure?.Throw();
     }
 
-    private static void ValidateMasterPassword(string masterPassword)
+    /// <summary>
+    /// Validates a password that is about to protect a vault and returns its canonical form, which is
+    /// what the key is derived from. The length limits apply to the canonical form.
+    /// </summary>
+    private static string ValidateNewMasterPassword(string masterPassword)
     {
         ArgumentNullException.ThrowIfNull(masterPassword);
 
-        if (masterPassword.Length < MinMasterPasswordLength)
+        // Rejects text that is not valid Unicode. Earlier versions encoded it with a replacement
+        // character, which made different passwords equal.
+        string canonical = MasterPasswordEncoding.Canonicalize(masterPassword);
+
+        if (canonical.Length < MinMasterPasswordLength)
         {
             throw new ArgumentException(
                 $"The master password must be at least {MinMasterPasswordLength} characters.", nameof(masterPassword));
         }
 
-        if (masterPassword.Length > MaxMasterPasswordLength)
+        if (canonical.Length > MaxMasterPasswordLength)
         {
             throw new ArgumentException(
                 $"The master password must be at most {MaxMasterPasswordLength} characters.", nameof(masterPassword));
+        }
+
+        return canonical;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="password"/>, as typed, is the password whose canonical form is
+    /// <paramref name="canonicalOther"/>.
+    /// </summary>
+    private static bool IsSamePassword(string password, string canonicalOther)
+    {
+        try
+        {
+            return string.Equals(
+                MasterPasswordEncoding.Canonicalize(password), canonicalOther, StringComparison.Ordinal);
+        }
+        catch (ArgumentException)
+        {
+            // Not valid Unicode, so it cannot equal a canonical password.
+            return false;
         }
     }
 

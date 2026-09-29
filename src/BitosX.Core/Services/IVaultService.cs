@@ -38,6 +38,15 @@ public interface IVaultService
     /// </summary>
     Argon2Parameters? KdfParameters { get; }
 
+    /// <summary>
+    /// Whether the unlocked vault is keyed with an encoding of the master password that versions
+    /// before 0.6.0 used, rather than the canonical one. Such a vault opens as long as the password is
+    /// typed the way it was when the vault was created; it moves to the canonical encoding the next
+    /// time the master password is changed, the vault key is rotated, or the key-derivation settings
+    /// are strengthened. <see langword="false"/> when locked.
+    /// </summary>
+    bool UsesLegacyPasswordEncoding { get; }
+
     /// <summary>Refreshes <see cref="State"/> from storage (NoVault vs Locked). Call at startup.</summary>
     Task<VaultState> RefreshStateAsync(CancellationToken cancellationToken = default);
 
@@ -67,6 +76,17 @@ public interface IVaultService
     /// unchanged. On success the in-memory session adopts the new key material and stays unlocked.
     /// </summary>
     Task RotateVaultKeyAsync(string currentPassword, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Moves the vault to stronger key-derivation settings by re-wrapping the existing vault key.
+    /// The vault key and the encrypted content are unchanged, and so is the master password.
+    /// Requires the vault to be unlocked <b>and</b> the correct <paramref name="currentPassword"/>;
+    /// a wrong password throws and leaves the stored vault untouched. Settings can only be
+    /// strengthened: weaker or equal ones are refused. From then on every unlock costs what the new
+    /// settings ask for, on every device the vault is opened on.
+    /// </summary>
+    Task StrengthenKeyDerivationAsync(
+        string currentPassword, Argon2Parameters newParameters, CancellationToken cancellationToken = default);
 
     /// <summary>Adds a login item and persists the vault.</summary>
     Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default);

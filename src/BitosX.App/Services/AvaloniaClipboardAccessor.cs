@@ -1,6 +1,8 @@
 using Avalonia.Input.Platform;
 using Avalonia.Threading;
 using BitosX.Platform.Clipboard;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace BitosX.App.Services;
 
@@ -15,23 +17,43 @@ namespace BitosX.App.Services;
 /// background thread, the clipboard read returned nothing, the "unchanged" guard failed, and the
 /// clear was silently skipped — leaving copied secrets on the clipboard.
 /// </remarks>
-public sealed class AvaloniaClipboardAccessor : IClipboardAccessor
+public sealed partial class AvaloniaClipboardAccessor : IClipboardAccessor
 {
     private readonly Func<IClipboard?> _clipboardProvider;
+    private readonly ClipboardPlatform _platform;
+    private readonly ILogger _logger;
 
     public AvaloniaClipboardAccessor(Func<IClipboard?> clipboardProvider)
+        : this(clipboardProvider, SensitiveClipboardData.CurrentPlatform, NullLogger<AvaloniaClipboardAccessor>.Instance)
+    {
+    }
+
+    public AvaloniaClipboardAccessor(
+        Func<IClipboard?> clipboardProvider,
+        ClipboardPlatform platform,
+        ILogger<AvaloniaClipboardAccessor> logger)
     {
         _clipboardProvider = clipboardProvider ?? throw new ArgumentNullException(nameof(clipboardProvider));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _platform = platform;
     }
 
     public Task SetSecretTextAsync(string text, CancellationToken cancellationToken = default)
         => RunOnUiThreadAsync(async () =>
         {
             IClipboard? clipboard = _clipboardProvider();
-            if (clipboard is not null)
+            if (clipboard is null)
             {
-                // The clipboard takes ownership of the data object and disposes it when it is replaced.
-                await clipboard.SetDataAsync(SensitiveClipboardData.Create(text)).ConfigureAwait(true);
+                return true;
+            }
+
+            // The clipboard takes ownership of the data object and disposes it when it is replaced.
+            bool marked = await SensitiveClipboardData
+                .PlaceAsync(text, _platform, transfer => clipboard.SetDataAsync(transfer))
+                .ConfigureAwait(true);
+            if (!marked)
+            {
+                LogMarkerRefused(_logger, _platform);
             }
 
             return true;
@@ -88,4 +110,8 @@ public sealed class AvaloniaClipboardAccessor : IClipboardAccessor
             }
         }
     }
+
+    [LoggerMessage(EventId = 1111, EventName = "clipboard_marker_refused", Level = LogLevel.Warning,
+        Message = "The clipboard refused the sensitivity marker for {Platform}; the value was copied without it.")]
+    private static partial void LogMarkerRefused(ILogger logger, ClipboardPlatform platform);
 }

@@ -15,17 +15,17 @@
 
             <StackPanel Spacing="6">
                 <TextBlock Text="Master password" />
-                <TextBox Text="{Binding MasterPassword}" PasswordChar="●" PlaceholderText="Enter your master password">
+                <TextBox Name="MasterPasswordBox" Text="{Binding MasterPassword}" PasswordChar="●" PlaceholderText="Enter your master password">
                     <TextBox.KeyBindings>
                         <KeyBinding Gesture="Enter" Command="{Binding UnlockCommand}" />
                     </TextBox.KeyBindings>
                 </TextBox>
             </StackPanel>
 
-            <TextBlock Text="{Binding ErrorMessage}" Classes="error"
+            <TextBlock Name="ErrorMessage" Text="{Binding ErrorMessage}" Classes="error"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
-            <Button Content="Unlock" Classes="accent" HorizontalAlignment="Stretch"
+            <Button Name="UnlockButton" Content="Unlock" Classes="accent" HorizontalAlignment="Stretch"
                     Command="{Binding UnlockCommand}" IsEnabled="{Binding !IsBusy}" />
         </StackPanel>
     </Border>

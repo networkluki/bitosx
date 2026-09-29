@@ -150,7 +150,58 @@ public sealed class VaultCryptor
         ArgumentNullException.ThrowIfNull(current);
         ValidateFormat(current);
 
-        byte[] oldKek = _keyDerivation.DeriveKey(currentPassword, current.Salt, current.KdfParameters);
+        return ReWrap(current, currentPassword, newPassword, current.KdfParameters);
+    }
+
+    /// <summary>
+    /// Moves the vault to stronger key-derivation settings by re-wrapping the SAME vault key under a
+    /// key-encryption key derived with <paramref name="newParameters"/> and a fresh salt. Like a
+    /// master-password change, this does not rotate the vault key and does not re-encrypt the
+    /// content. The current password is verified by authenticating the existing wrapped key, so a
+    /// wrong password throws <see cref="VaultAuthenticationException"/> before anything new is
+    /// produced.
+    /// </summary>
+    /// <param name="current">The vault as it is stored.</param>
+    /// <param name="currentPassword">The password encoding the vault is currently wrapped under.</param>
+    /// <param name="wrapPassword">
+    /// The password encoding to wrap under. The same password, in its canonical encoding: this is
+    /// how a vault that was created with another encoding of the password moves to the canonical one.
+    /// </param>
+    /// <param name="newParameters">
+    /// The settings to move to. They must be stronger than the vault's own
+    /// (<see cref="WeakerKeyDerivationException"/> otherwise) and within the bounds of the format.
+    /// </param>
+    public EncryptedVault ChangeKeyDerivation(
+        EncryptedVault current,
+        ReadOnlySpan<byte> currentPassword,
+        ReadOnlySpan<byte> wrapPassword,
+        Argon2Parameters newParameters)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        ArgumentNullException.ThrowIfNull(newParameters);
+        ValidateFormat(current);
+        newParameters.Validate();
+
+        if (!newParameters.IsStrongerThan(current.KdfParameters))
+        {
+            throw new WeakerKeyDerivationException();
+        }
+
+        return ReWrap(current, currentPassword, wrapPassword, newParameters);
+    }
+
+    /// <summary>
+    /// Unwraps the vault key with <paramref name="unwrapPassword"/> and the vault's own settings, and
+    /// wraps it again under <paramref name="wrapPassword"/> and <paramref name="wrapParameters"/> with
+    /// a fresh salt and nonce. The content is carried over unchanged.
+    /// </summary>
+    private EncryptedVault ReWrap(
+        EncryptedVault current,
+        ReadOnlySpan<byte> unwrapPassword,
+        ReadOnlySpan<byte> wrapPassword,
+        Argon2Parameters wrapParameters)
+    {
+        byte[] oldKek = _keyDerivation.DeriveKey(unwrapPassword, current.Salt, current.KdfParameters);
         byte[]? vaultKey = null;
         byte[]? newKek = null;
         try
@@ -159,12 +210,12 @@ public sealed class VaultCryptor
             // Authenticated unwrap; a wrong current password fails closed here, before any change.
             vaultKey = _cipher.Decrypt(oldKek, current.KeyWrapNonce, current.EncryptedVaultKey, currentAad);
 
-            // Fresh salt and key-wrap nonce; keep the vault's existing KDF cost parameters.
+            // Fresh salt and key-wrap nonce.
             byte[] newSalt = SecureRandom.GetBytes(CryptoConstants.SaltSizeBytes);
-            newKek = _keyDerivation.DeriveKey(newPassword, newSalt, current.KdfParameters);
+            newKek = _keyDerivation.DeriveKey(wrapPassword, newSalt, wrapParameters);
 
             byte[] newKeyWrapNonce = SecureRandom.GetBytes(CryptoConstants.NonceSizeBytes);
-            byte[] newKeyWrapAad = BuildKeyWrapAad(current.Version, current.KdfParameters, newSalt);
+            byte[] newKeyWrapAad = BuildKeyWrapAad(current.Version, wrapParameters, newSalt);
             byte[] newEncryptedVaultKey = _cipher.Encrypt(newKek, newKeyWrapNonce, vaultKey, newKeyWrapAad);
 
             // Self-check: the freshly wrapped key must unwrap back to exactly the same vault key,
@@ -174,7 +225,7 @@ public sealed class VaultCryptor
             {
                 if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(check, vaultKey))
                 {
-                    throw new BitosXCryptographicException("Master password change self-check failed.");
+                    throw new BitosXCryptographicException("Re-wrapping the vault key failed its self-check.");
                 }
             }
             finally
@@ -186,7 +237,7 @@ public sealed class VaultCryptor
             return new EncryptedVault(
                 current.Version,
                 current.Kdf,
-                current.KdfParameters,
+                wrapParameters,
                 newSalt,
                 current.Algorithm,
                 newKeyWrapNonce,
@@ -215,6 +266,18 @@ public sealed class VaultCryptor
     /// and must wipe <see cref="VaultKeyRotationResult.NewVaultKey"/>.
     /// </summary>
     public VaultKeyRotationResult RotateVaultKey(EncryptedVault current, ReadOnlySpan<byte> currentPassword)
+        => RotateVaultKey(current, currentPassword, currentPassword);
+
+    /// <summary>
+    /// Rotates the vault key as <see cref="RotateVaultKey(EncryptedVault, ReadOnlySpan{byte})"/> does,
+    /// wrapping the new key under <paramref name="wrapPassword"/>: the same password in its canonical
+    /// encoding. This is how a vault that was created with another encoding of the password moves to
+    /// the canonical one.
+    /// </summary>
+    public VaultKeyRotationResult RotateVaultKey(
+        EncryptedVault current,
+        ReadOnlySpan<byte> currentPassword,
+        ReadOnlySpan<byte> wrapPassword)
     {
         ArgumentNullException.ThrowIfNull(current);
         ValidateFormat(current);
@@ -237,7 +300,7 @@ public sealed class VaultCryptor
             // Fresh cryptographic material (D3): new vault key, salt, key-wrap nonce, content nonce.
             newVaultKey = SecureRandom.GetBytes(CryptoConstants.KeySizeBytes);
             byte[] newSalt = SecureRandom.GetBytes(CryptoConstants.SaltSizeBytes);
-            newKek = _keyDerivation.DeriveKey(currentPassword, newSalt, current.KdfParameters);
+            newKek = _keyDerivation.DeriveKey(wrapPassword, newSalt, current.KdfParameters);
 
             byte[] newKeyWrapNonce = SecureRandom.GetBytes(CryptoConstants.NonceSizeBytes);
             byte[] newKeyWrapAad = BuildKeyWrapAad(current.Version, current.KdfParameters, newSalt);

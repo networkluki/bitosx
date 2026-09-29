@@ -15,6 +15,10 @@ internal static class UserFacingError
         VaultAuthenticationException => "Incorrect master password, or the vault file has been modified.",
         UnsupportedVaultFormatException => "This vault file is not compatible with this version of BitosX.",
 
+        // About the device, not about the vault or the password; the message names the memory needed.
+        KeyDerivationResourceException resource => resource.Message,
+        WeakerKeyDerivationException weaker => weaker.Message,
+
         // These carry a fixed, non-secret message that tells the user what to do next.
         VaultChangedExternallyException changed => changed.Message,
         VaultInconsistentStateException inconsistent => inconsistent.Message,

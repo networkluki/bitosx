@@ -14,14 +14,14 @@
             <!-- Header -->
             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
                 <TextBlock Grid.Column="0" Text="Vault" Classes="h1" VerticalAlignment="Center" />
-                <Button Grid.Column="1" Content="+ Add Login" Classes="accent"
+                <Button Name="AddLoginButton" Grid.Column="1" Content="+ Add Login" Classes="accent"
                         Command="{Binding AddLoginCommand}" />
             </Grid>
 
             <TextBox DockPanel.Dock="Top" Text="{Binding SearchText}" PlaceholderText="Search by name, username, or URL"
                      Margin="0,0,0,12" />
 
-            <TextBlock DockPanel.Dock="Top" Text="{Binding StatusMessage}" Classes="muted" Margin="0,0,0,8"
+            <TextBlock Name="StatusMessage" DockPanel.Dock="Top" Text="{Binding StatusMessage}" Classes="muted" Margin="0,0,0,8"
                        IsVisible="{Binding StatusMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
             <TextBlock DockPanel.Dock="Top" Classes="muted" Margin="0,20,0,0"

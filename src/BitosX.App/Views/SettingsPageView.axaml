@@ -39,7 +39,7 @@
                     <CheckBox IsChecked="{Binding LockOnMinimize}"
                               Content="Lock when the window is minimized" />
 
-                    <TextBlock Text="{Binding AutoLockStatus}" TextWrapping="Wrap" Classes="error"
+                    <TextBlock Name="AutoLockStatus" Text="{Binding AutoLockStatus}" TextWrapping="Wrap" Classes="error"
                                IsVisible="{Binding AutoLockStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                     <StackPanel Spacing="2">
@@ -58,13 +58,13 @@
                     <TextBlock Text="Change master password" Classes="h2" />
                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
                                Text="Re-protects your existing vault with a new password. The vault contents are not re-encrypted and no data is lost." />
-                    <TextBox PasswordChar="●" PlaceholderText="Current password" Text="{Binding CurrentPassword}" />
-                    <TextBox PasswordChar="●" PlaceholderText="New password" Text="{Binding NewPassword}" />
-                    <TextBlock Text="{Binding NewPasswordStrengthText}" Classes="muted" FontSize="12"
+                    <TextBox Name="CurrentPasswordBox" PasswordChar="●" PlaceholderText="Current password" Text="{Binding CurrentPassword}" />
+                    <TextBox Name="NewPasswordBox" PasswordChar="●" PlaceholderText="New password" Text="{Binding NewPassword}" />
+                    <TextBlock Name="NewPasswordStrength" Text="{Binding NewPasswordStrengthText}" Classes="muted" FontSize="12"
                                IsVisible="{Binding NewPasswordStrengthText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
-                    <TextBox PasswordChar="●" PlaceholderText="Confirm new password" Text="{Binding ConfirmPassword}" />
-                    <Button Content="Change password" Command="{Binding ChangeMasterPasswordCommand}" HorizontalAlignment="Left" />
-                    <TextBlock Text="{Binding ChangePasswordStatus}" TextWrapping="Wrap" Classes="muted"
+                    <TextBox Name="ConfirmPasswordBox" PasswordChar="●" PlaceholderText="Confirm new password" Text="{Binding ConfirmPassword}" />
+                    <Button Name="ChangePasswordButton" Content="Change password" Command="{Binding ChangeMasterPasswordCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Name="ChangePasswordStatus" Text="{Binding ChangePasswordStatus}" TextWrapping="Wrap" Classes="muted"
                                IsVisible="{Binding ChangePasswordStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
             </Border>
@@ -78,6 +78,36 @@
                     <Button Content="Rotate vault key" Command="{Binding RotateVaultKeyCommand}" HorizontalAlignment="Left" />
                     <TextBlock Text="{Binding RotateStatus}" TextWrapping="Wrap" Classes="muted"
                                IsVisible="{Binding RotateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
+
+            <Border Classes="card">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Strengthen key derivation" Classes="h2" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="Makes every guess at your master password more expensive for someone who has a copy of the vault file, by requiring more memory to derive the key. Unlocking takes longer and needs that memory on every device the vault is opened on. Your items and master password are unchanged. The settings can be strengthened, never weakened. Requires your current master password." />
+
+                    <TextBlock Name="KeyDerivationAtStrongest" TextWrapping="Wrap"
+                               Text="This vault already uses the strongest settings BitosX offers."
+                               IsVisible="{Binding !CanStrengthenKeyDerivation}" />
+
+                    <StackPanel Name="KeyDerivationPanel" Spacing="10" IsVisible="{Binding CanStrengthenKeyDerivation}">
+                        <ComboBox Name="KeyDerivationChoices" ItemsSource="{Binding KeyDerivationChoices}"
+                                  SelectedItem="{Binding SelectedKeyDerivation}"
+                                  DisplayMemberBinding="{Binding Display}" HorizontalAlignment="Stretch" />
+                        <Button Name="TestKeyDerivationButton" Content="Measure on this device"
+                                Command="{Binding TestKeyDerivationCommand}" HorizontalAlignment="Left" />
+                        <TextBlock Name="KeyDerivationTestResult" Text="{Binding KeyDerivationTestResult}"
+                                   TextWrapping="Wrap" Classes="muted"
+                                   IsVisible="{Binding KeyDerivationTestResult, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                        <TextBox Name="StrengthenPasswordBox" PasswordChar="●" PlaceholderText="Current password"
+                                 Text="{Binding StrengthenPassword}" />
+                        <Button Name="StrengthenKeyDerivationButton" Content="Strengthen key derivation"
+                                Command="{Binding StrengthenKeyDerivationCommand}" HorizontalAlignment="Left" />
+                    </StackPanel>
+
+                    <TextBlock Name="StrengthenStatus" Text="{Binding StrengthenStatus}" TextWrapping="Wrap" Classes="muted"
+                               IsVisible="{Binding StrengthenStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
             </Border>
 
@@ -132,9 +162,14 @@
                     <TextBlock Text="Security" Classes="h2" />
                     <StackPanel Spacing="2">
                         <TextBlock Text="Key derivation" Classes="muted" FontSize="12" />
-                        <TextBlock Text="{Binding KdfDescription}" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding KdfWarning}" TextWrapping="Wrap" Classes="error"
+                        <TextBlock Name="KdfDescription" Text="{Binding KdfDescription}" TextWrapping="Wrap" />
+                        <TextBlock Name="KdfWarning" Text="{Binding KdfWarning}" TextWrapping="Wrap" Classes="error"
                                    IsVisible="{Binding KdfWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2"
+                                IsVisible="{Binding PasswordEncodingNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                        <TextBlock Text="Master password encoding" Classes="muted" FontSize="12" />
+                        <TextBlock Name="PasswordEncodingNote" Text="{Binding PasswordEncodingNote}" TextWrapping="Wrap" />
                     </StackPanel>
                     <StackPanel Spacing="2">
                         <TextBlock Text="Encryption" Classes="muted" FontSize="12" />

@@ -48,6 +48,7 @@ public static class ServiceConfiguration
         services.AddSingleton<IVaultBackupService, VaultBackupService>();
         services.AddSingleton<IPasswordGenerator, PasswordGenerator>();
         services.AddSingleton<ISecurityAnalyzer, SecurityAnalyzer>();
+        services.AddSingleton<IKeyDerivationBenchmark>(_ => new KeyDerivationBenchmark(new Argon2idKeyDerivation()));
 
         // Settings (non-secret preferences, stored separately from the vault)
         services.AddSingleton<IAppSettingsStore>(_ => FileAppSettingsStore.CreateDefault());
@@ -55,7 +56,10 @@ public static class ServiceConfiguration
         services.AddSingleton(TimeProvider.System);
 
         // Platform
-        services.AddSingleton<IClipboardAccessor>(_ => new AvaloniaClipboardAccessor(GetMainWindowClipboard));
+        services.AddSingleton<IClipboardAccessor>(sp => new AvaloniaClipboardAccessor(
+            GetMainWindowClipboard,
+            SensitiveClipboardData.CurrentPlatform,
+            sp.GetRequiredService<ILogger<AvaloniaClipboardAccessor>>()));
         services.AddSingleton<IClipboardService, ClipboardService>();
         services.AddSingleton<ClipboardSessionGuard>();
         services.AddSingleton<ExitClipboardCleaner>();

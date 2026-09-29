@@ -1,6 +1,6 @@
-using System.Text;
 using BitosX.Core.Diagnostics;
 using BitosX.Core.Domain;
+using BitosX.Core.Security;
 using BitosX.Core.Serialization;
 using BitosX.Core.Storage;
 using BitosX.Core.Validation;
@@ -60,11 +60,13 @@ public sealed class VaultBackupService : IVaultBackupService
 
         BackupReadResult read = await _backup.ReadBackupAsync(backupPath, cancellationToken).ConfigureAwait(false);
 
-        byte[] passwordBytes = Encoding.UTF8.GetBytes(backupPassword);
+        // A backup made before 0.6.0 may be keyed with another encoding of the same password.
+        PasswordCandidates candidates = MasterPasswordEncoding.EncodeCandidates(backupPassword);
         UnlockResult unlocked;
         try
         {
-            unlocked = _cryptor.Unlock(read.Envelope, passwordBytes); // authenticate; wrong pw fails closed
+            // Authenticate; a wrong password fails closed.
+            (unlocked, _) = candidates.FirstAccepted(encoding => _cryptor.Unlock(read.Envelope, encoding));
         }
         catch (BitosXCryptographicException)
         {
@@ -73,7 +75,7 @@ public sealed class VaultBackupService : IVaultBackupService
         }
         finally
         {
-            CryptoBuffers.Wipe(passwordBytes);
+            candidates.Wipe();
         }
 
         int itemCount;

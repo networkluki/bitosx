@@ -32,3 +32,33 @@ public sealed class UnsupportedVaultFormatException : BitosXCryptographicExcepti
     public UnsupportedVaultFormatException(string message) : base(message) { }
     public UnsupportedVaultFormatException(string message, Exception innerException) : base(message, innerException) { }
 }
+
+/// <summary>
+/// Thrown when the key cannot be derived because the device does not have the memory the vault's
+/// key-derivation settings ask for. Nothing is wrong with the vault or the password: the same vault
+/// opens on a device with enough free memory. Raised before anything is decrypted or written.
+/// </summary>
+public sealed class KeyDerivationResourceException : BitosXCryptographicException
+{
+    public KeyDerivationResourceException(int memoryKiB, Exception innerException)
+        : base(
+            $"This device does not have enough free memory to derive the key ({memoryKiB / 1024} MiB is needed).",
+            innerException)
+    {
+        MemoryKiB = memoryKiB;
+    }
+
+    /// <summary>The memory the key derivation asked for, in kibibytes.</summary>
+    public int MemoryKiB { get; }
+}
+
+/// <summary>
+/// Thrown when a vault is asked to move to key-derivation settings that are weaker than the ones it
+/// has. Settings can be strengthened, never weakened: whoever holds a copy of the vault as it is now
+/// keeps the benefit of the old settings, so weakening could only ever help an attacker.
+/// </summary>
+public sealed class WeakerKeyDerivationException : BitosXCryptographicException
+{
+    public WeakerKeyDerivationException()
+        : base("The new key-derivation settings must be stronger than the ones the vault already uses.") { }
+}

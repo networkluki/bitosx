@@ -50,6 +50,12 @@ public static partial class VaultLog
     [LoggerMessage(EventId = 1017, EventName = "vault_key_rotation_failed", Level = LogLevel.Warning, Message = "Vault key rotation failed.")]
     public static partial void VaultKeyRotationFailed(ILogger logger);
 
+    [LoggerMessage(EventId = 1018, EventName = "key_derivation_strengthened", Level = LogLevel.Information, Message = "Key-derivation settings strengthened.")]
+    public static partial void KeyDerivationStrengthened(ILogger logger);
+
+    [LoggerMessage(EventId = 1019, EventName = "key_derivation_strengthen_failed", Level = LogLevel.Warning, Message = "Strengthening the key-derivation settings failed.")]
+    public static partial void KeyDerivationStrengthenFailed(ILogger logger);
+
     [LoggerMessage(EventId = 1005, EventName = "vault_saved", Level = LogLevel.Information, Message = "Vault saved.")]
     public static partial void VaultSaved(ILogger logger);
 

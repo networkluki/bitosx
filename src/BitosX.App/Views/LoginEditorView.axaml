@@ -14,7 +14,7 @@
 
             <StackPanel Spacing="5">
                 <TextBlock Text="Name *" />
-                <TextBox Text="{Binding Name}" PlaceholderText="e.g. GitHub" />
+                <TextBox Name="NameBox" Text="{Binding Name}" PlaceholderText="e.g. GitHub" />
             </StackPanel>
 
             <StackPanel Spacing="5">
@@ -47,12 +47,12 @@
 
             <CheckBox Content="Favorite" IsChecked="{Binding Favorite}" />
 
-            <TextBlock Text="{Binding ErrorMessage}" Classes="error"
+            <TextBlock Name="ErrorMessage" Text="{Binding ErrorMessage}" Classes="error"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
                 <Button Content="Cancel" Command="{Binding CancelCommand}" />
-                <Button Content="Save" Classes="accent" Command="{Binding SaveCommand}" />
+                <Button Name="SaveButton" Content="Save" Classes="accent" Command="{Binding SaveCommand}" />
             </StackPanel>
         </StackPanel>
     </Border>

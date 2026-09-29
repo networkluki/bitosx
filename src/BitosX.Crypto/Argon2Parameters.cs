@@ -40,6 +40,26 @@ public sealed record Argon2Parameters(
         KeyLengthBytes: CryptoConstants.KeySizeBytes);
 
     /// <summary>
+    /// Stronger profile a user can opt into: 256 MiB, 3 passes, 4 lanes. Four times the memory an
+    /// attacker needs per guess compared with <see cref="Default"/>.
+    /// </summary>
+    public static Argon2Parameters Strong { get; } = new(
+        MemoryKiB: 256 * 1024,
+        Iterations: 3,
+        DegreeOfParallelism: 4,
+        KeyLengthBytes: CryptoConstants.KeySizeBytes);
+
+    /// <summary>
+    /// The strongest profile format version 1 allows: 1 GiB (the memory ceiling), 3 passes, 4 lanes.
+    /// Every unlock needs that much free memory, on every device the vault is opened on.
+    /// </summary>
+    public static Argon2Parameters Maximum { get; } = new(
+        MemoryKiB: MaxMemoryKiB,
+        Iterations: 3,
+        DegreeOfParallelism: 4,
+        KeyLengthBytes: CryptoConstants.KeySizeBytes);
+
+    /// <summary>
     /// Deliberately weak profile used ONLY to keep automated tests fast. Never use for real vaults.
     /// </summary>
     public static Argon2Parameters ForTesting { get; } = new(
@@ -47,6 +67,28 @@ public sealed record Argon2Parameters(
         Iterations: 1,
         DegreeOfParallelism: 1,
         KeyLengthBytes: CryptoConstants.KeySizeBytes);
+
+    /// <summary>
+    /// Whether deriving a key with these parameters costs an attacker at least as much as with
+    /// <paramref name="other"/>: no less memory and no fewer passes. Parallelism is not compared —
+    /// it decides how the same amount of work is spread over threads, not how much work there is.
+    /// </summary>
+    public bool IsAtLeastAsStrongAs(Argon2Parameters other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return MemoryKiB >= other.MemoryKiB && Iterations >= other.Iterations;
+    }
+
+    /// <summary>
+    /// Whether these parameters cost an attacker strictly more than <paramref name="other"/>: at
+    /// least as strong in both dimensions and stronger in one.
+    /// </summary>
+    public bool IsStrongerThan(Argon2Parameters other)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        return IsAtLeastAsStrongAs(other)
+               && (MemoryKiB > other.MemoryKiB || Iterations > other.Iterations);
+    }
 
     /// <summary>
     /// Validates the parameters, throwing <see cref="UnsupportedVaultFormatException"/> if any
