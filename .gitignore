@@ -27,6 +27,9 @@ coverage/
 *.bitosx
 *.bitosx.tmp
 vault.bitosx*
+*.bitosx.*.tmp
+*.bitosx-backup
+*.bitosx-backup.*
 
 # OS files
 .DS_Store

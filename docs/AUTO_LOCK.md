@@ -34,6 +34,26 @@ unsupported (`NullSystemSessionEvents`) and **never raises a fake event**. The S
 the real per-platform status. Adding Linux (logind/D-Bus) and macOS session/power detection is
 future work.
 
+## What locking guarantees
+
+- **Locking is immediate.** `Lock()` never waits for an operation that is in progress (a save, a
+  password change, a key rotation). The operation finishes on a private copy of the key, which is
+  then wiped, and cannot put key material back into the locked service.
+- **Every subscriber hears about it.** The UI and the auto-lock policy are both notified of a
+  transition even if one of them fails, and if the vault cannot be shown as open it locks again.
+- **The key is wiped on shutdown** as well as on lock.
+
+## The clipboard
+
+Locking the **vault** — manually, on minimize, or on inactivity — deliberately leaves a value you
+just copied on the clipboard for the rest of its 30 seconds: copying, switching to the other window
+and pasting is the intended use, and lock-on-minimize would otherwise make it impossible.
+
+The **operating system** reporting that you are leaving is different. On workstation lock and on
+suspend the copied value is cleared at once (`ClipboardSessionGuard`), because timers stop while a
+system sleeps and the value would otherwise still be there after resume. It is also cleared when
+the application is closed. Supported where the OS signals are: currently Windows.
+
 ## Design
 
 - **Core (`BitosX.Core`, Avalonia-free, unit-tested):** `AutoLockController` is the policy. It is

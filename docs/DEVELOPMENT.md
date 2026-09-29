@@ -61,11 +61,42 @@ The format is versioned (`CryptoConstants.FormatVersion`). To introduce version 
 - `BitosX.Crypto.Tests` — KDF, AEAD, format, tamper/fail-closed cases.
 - `BitosX.Core.Tests` — vault CRUD/validation, password generator, security analyzer,
   `VaultService` lifecycle with an in-memory storage double.
+- `BitosX.Platform.Tests` — clipboard policy (timed clear, retry, workstation lock / suspend) and
+  the single-instance guard.
+- `BitosX.App.Tests` — view models: the restore commit boundary, rotation, failure handling, and
+  the content handed to the clipboard.
 - `BitosX.Storage.Tests` — atomic file storage, malformed/oversized handling, and an end-to-end
   persistence integration test using the real crypto + file storage.
 
 Use `Argon2Parameters.ForTesting` (a deliberately weak profile) in tests to keep them fast; never
 use it for real vaults.
+
+### Writing a security regression test
+
+A test for a defect has to be able to fail. Before relying on one, run it against the code from
+before the fix — a second checkout (`git worktree add <dir> <commit>`) is the easiest way — and
+confirm that it fails there. This is how the tests of 0.5.1 were checked.
+
+`BitosX.Core` exposes its internals to `BitosX.Core.Tests` (`InternalsVisibleTo`). The only member
+that exists for tests is `VaultService.HoldsKeyMaterial`, a read-only flag used to assert that no
+vault key is left in memory.
+
+## Diagnostic tools
+
+Neither is shipped.
+
+- `tools/BitosX.KdfBenchmark` — Argon2id unlock latency with the production profile.
+- `tools/BitosX.ClipboardProbe` — drives the production clipboard code against the **real**
+  Windows clipboard and clipboard history and checks the result the way another application
+  would see it. Windows-only, so it is **not part of `BitosX.slnx`**; build and run it on its own:
+
+  ```bash
+  dotnet run -c Release --project tools/BitosX.ClipboardProbe
+  ```
+
+  It uses the clipboard for about twenty seconds, places only its own marker strings there, puts
+  back the text that was on it, and removes its markers from the clipboard history. Exit code 0
+  means every check passed. Run it whenever clipboard code or the Avalonia version changes.
 
 ## Where data lives during development
 

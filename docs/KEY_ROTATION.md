@@ -72,6 +72,17 @@ Rotation is destructive (it replaces the vault file), so it is guarded on severa
   a crash leaves either the old or the new vault, never a partial file. On any pre-commit failure the
   live vault is left **byte-for-byte unchanged**.
 
+Since 0.5.1 the consistency gate, the cancellation boundary and the write-failure reconciliation
+are no longer specific to rotation: **every** operation that replaces the vault file — saving a
+change and changing the master password too — goes through the same gate and the same commit
+routine. Rotation was the only one guarded before, which left the other two able to overwrite a
+rotated vault with the retired key (see [SECURITY_REVIEW_0.5.1.md](SECURITY_REVIEW_0.5.1.md),
+findings 2 and 3).
+
+- **Locking during a rotation.** `Lock()` takes effect immediately and never waits. A rotation that
+  is overtaken by a lock still completes on disk, but its new key is wiped instead of being adopted
+  into the locked service; the vault then opens with the same master password.
+
 ## What rotation does and does not protect
 
 - Rotation **retires the vault key for the current vault file**. If the old vault key (or the

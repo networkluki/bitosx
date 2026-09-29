@@ -24,15 +24,26 @@ replacement. Flow:
    properties are rejected**.
 3. Enter the **backup's** master password → Argon2id **within validated bounds** → **authenticated**
    unwrap/decrypt (wrong password or tampering fails closed).
-4. **Validate the decrypted model** (schema, unique ids, per-item `VaultValidation`).
+4. **Validate the decrypted model** (schema, unique ids, per-item `VaultValidation`, no unknown or
+   duplicated properties). The same validation runs whenever a vault is unlocked.
 5. Show a safe summary (format version, item count [computed locally after decryption], file name,
    size) — **never decrypted item content**.
 6. On explicit confirmation: preserve the current vault as a **recovery copy**
    (`vault.bitosx.pre-restore`), then **atomically replace** the vault, then lock so you re-unlock
    with the backup's password.
 
+A backup is never rejected over a timestamp. Versions before 0.5.1 could store an item whose
+last-modified time was earlier than its creation time (after the system clock had been moved back)
+and then refused to restore their own backup; such items are now repaired when they are loaded.
+
 Restore is **replace-only** in this milestone — it never merges vaults. Also required: the **current
 session must be unlocked** (authorizes the destructive replace) in addition to the backup password.
+
+## Export details
+- The backup is written to a uniquely named temporary file next to the destination, flushed to
+  disk, and renamed into place. A file that happens to exist at a predictable temporary name is
+  neither followed nor overwritten, which matters when exporting to a shared folder.
+- Exporting **over the vault file itself** is refused: the live vault is never written by an export.
 
 ## Recovery / rollback
 - Any failure in steps 1–5 leaves the live vault **byte-for-byte unchanged** (nothing is written).

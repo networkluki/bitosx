@@ -37,6 +37,23 @@ It describes the current **local vault** milestone. No marketing claims are made
   is guarded so it fails closed if the vault changed on disk and never leaves disk and session
   disagreeing. It is **not** retroactive to pre-rotation backups. See
   [KEY_ROTATION.md](KEY_ROTATION.md).
+- **A session that no longer matches the file.** If the vault file was changed by something else
+  while it was open — a second instance, a sync tool, a restored copy — every operation that would
+  replace it (saving a change, changing the master password, rotating the key) fails closed and
+  writes nothing, instead of overwriting the other change. Without this a stale session could
+  silently undo a master-password change or produce a vault that no password opens. The
+  application also refuses to start a second instance on the same vault.
+- **Malformed decrypted content.** Decrypted content is validated when it is loaded, with the same
+  rules as when items are edited, so the in-memory model is always well formed; failures never
+  quote the content.
+- **An interrupted write, including power loss.** New content is written to a temporary file,
+  flushed to the physical disk, and only then renamed over the vault, so the file is always either
+  the complete previous vault or the complete new one. If a write fails, the outcome is read back
+  from disk rather than assumed.
+- **Clipboard history and cloud clipboard (Windows).** A copied secret is marked so that Windows
+  keeps it out of the clipboard history (Win+V) and does not upload it to the cloud clipboard.
+  It is also cleared when the application closes and when the workstation is locked or the system
+  suspends, not only after the timed delay.
 - **Accidental plaintext persistence.** The plaintext vault is only ever held in memory while
   unlocked; only encrypted data is written to disk.
 - **Shoulder-surfing of stored passwords in the UI.** Passwords are masked by default and shown
@@ -62,9 +79,15 @@ It describes the current **local vault** milestone. No marketing claims are made
 - **A weak master password.** The master password is the root of the key hierarchy. A guessable
   password can be brute-forced offline regardless of the cipher. Argon2id raises the cost but
   cannot rescue a weak password.
-- **Clipboard history / clipboard sync.** BitosX clears the clipboard after a delay and avoids
-  overwriting content you copied afterward, but it cannot remove entries already captured by OS
-  clipboard history, clipboard managers, or cloud clipboard sync.
+- **Anything that copies the clipboard for itself.** The markers BitosX sets on Windows are
+  requests: Windows and well-behaved clipboard managers honor them, but an application that reads
+  the clipboard directly sees the secret while it is there, and BitosX cannot take back a copy
+  that has been made. On **macOS and Linux no such markers are set**, so clipboard managers and
+  history features there may keep copied secrets. The timed clear never erases content you copied
+  afterwards.
+- **A master password made of ordinary words.** The strength rating discounts repetition, runs,
+  keyboard patterns and the most common passwords, but it has no dictionary and no knowledge of
+  breached passwords. A good rating means no obvious weakness was found, nothing more.
 - **Phishing.** BitosX has no server or browser integration in this milestone and does not
   autofill; it cannot detect or prevent a user entering credentials on a fraudulent site.
 - **A malicious or compromised dependency.** BitosX relies on the .NET runtime, Avalonia, and a
@@ -73,17 +96,24 @@ It describes the current **local vault** milestone. No marketing claims are made
 - **A compromised future server.** No server exists yet. The zero-knowledge intent is that a
   future server compromise must not expose secrets, but that protection depends on the (not yet
   built) server-side design.
-- **Corrupted local storage / disk failure.** Atomic writes prevent BitosX from destroying an
-  existing vault on a failed write, but BitosX does not provide backups. Keep your own backups of
-  the (encrypted) vault file; a lost or corrupted file with no backup means lost data.
+- **Corrupted local storage / disk failure.** Atomic, durable writes prevent BitosX from
+  destroying an existing vault on a failed write, but they cannot protect against a failing disk.
+  Use the encrypted export to keep backups somewhere else; a lost or corrupted file with no backup
+  means lost data.
+- **Software that can write to your user profile.** The settings file holds preferences only and
+  is not authenticated, so such software could, for example, turn automatic locking off. It could
+  equally replace the application itself; this is the same boundary as the first point above.
 - **Forgotten master password.** There is no recovery mechanism, backdoor, or universal key. A
   forgotten master password means the vault cannot be decrypted.
 
 ## Data handling summary
 
 - **Persisted:** only the encrypted, versioned vault (ciphertext + public parameters).
-- **In memory while unlocked:** the decrypted vault, the vault key (byte buffer, wiped on lock),
-  and transiently the master password bytes during create/unlock (wiped after use).
+- **In memory while unlocked:** the decrypted vault, the vault key (byte buffer, wiped on lock
+  and on shutdown), and transiently the master password bytes during create/unlock (wiped after
+  use). Locking takes effect immediately even while an operation is in progress: the operation
+  finishes on a private copy of the key, which is wiped, and never puts key material back into
+  the locked service.
 - **Never persisted or logged:** master password, item passwords, secure notes, encryption keys,
   decrypted contents.
 

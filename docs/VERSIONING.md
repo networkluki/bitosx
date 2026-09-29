@@ -38,11 +38,16 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.5.0`** — vault key rotation (Windows manually verified, R-series). Generates a new random vault
-key and **re-encrypts all content** under it, retiring the old key; requires the current master
-password. No new cryptography and the on-disk vault format is unchanged (still v1). Guarded by an
-on-disk/in-memory consistency fingerprint, a cancellation boundary, and write-failure reconciliation.
-Builds on `0.4.0` encrypted backup/restore (tag `v0.4.0-backup-restore`), `0.3.0` master password
-change (tag `v0.3.0-master-password`), `0.2.0` automatic locking (tag `v0.2.0-auto-lock`), and the
-`0.1.0` encrypted local vault baseline (tag `v0.1.0-local-vault`). See
-[KEY_ROTATION.md](KEY_ROTATION.md).
+**`0.5.1`** — security hardening after a review of the whole code base. No new feature, no new
+cryptography, and the on-disk vault format is unchanged (still v1): every existing vault and backup
+opens as before. Fixes three defects that could destroy a vault or silently undo a password change,
+keeps copied secrets out of the Windows clipboard history, validates decrypted content on load, and
+makes writes durable. See [SECURITY_REVIEW_0.5.1.md](SECURITY_REVIEW_0.5.1.md). Windows verified
+against the real clipboard and with two real processes; the new user-interface texts are covered by
+automated tests but have not been checked by a person in the GUI.
+
+Builds on `0.5.0` vault key rotation (tag `v0.5.0-key-rotation`, see
+[KEY_ROTATION.md](KEY_ROTATION.md)), `0.4.0` encrypted backup/restore (tag
+`v0.4.0-backup-restore`), `0.3.0` master password change (tag `v0.3.0-master-password`), `0.2.0`
+automatic locking (tag `v0.2.0-auto-lock`), and the `0.1.0` encrypted local vault baseline (tag
+`v0.1.0-local-vault`).

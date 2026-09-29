@@ -134,7 +134,16 @@ password; it does **not** rotate the vault key and does **not** re-encrypt vault
    the content's associated data depends only on the format version and algorithm — not on the salt
    or KDF parameters — so the existing ciphertext still authenticates under the same vault key.
 5. The re-wrapped vault is written through the normal **atomic** storage path; the in-memory header
-   is updated only after a successful write.
+   is updated only once the new vault is known to be on disk.
+
+Because the content is carried over from the file while the session keeps its own key, the file
+must be exactly the vault the session holds the key for. Before re-wrapping, the same
+**consistency gate** as for key rotation applies (a SHA-256 fingerprint of the whole envelope); if
+the file changed while the vault was open, the change fails closed with
+`VaultChangedExternallyException` and writes nothing. Without it, a header wrapping a key the
+session does not hold could be adopted, and the next save would produce a vault that no password
+opens. The write itself uses the same cancellation boundary and write-failure reconciliation as
+rotation.
 
 Requirements and boundaries: the vault must be unlocked and the current password re-entered (so the
 change cannot be made from an unattended unlocked session); the new password must differ from the
@@ -169,13 +178,16 @@ See [KEY_ROTATION.md](KEY_ROTATION.md) for the full design.
 - **Wrong password and tampering are indistinguishable**: both surface a single
   `VaultAuthenticationException` with an identical message, revealing nothing about which
   component failed.
-- **Fail closed**: unknown version, unsupported KDF/algorithm, malformed structure, invalid
-  base64, wrong field lengths, out-of-range KDF parameters, and oversized files are all rejected
+- **Fail closed**: unknown version, unsupported KDF/algorithm, malformed structure, missing or
+  `null` fields, unknown or duplicated properties, invalid UTF-8, invalid base64, wrong field
+  lengths, out-of-range KDF parameters, and oversized files are all rejected
   (`UnsupportedVaultFormatException`). There is no plaintext fallback.
 - **Resource-exhaustion resistance**: the vault file is treated as untrusted input. The file size
-  is capped (16 MiB) before it is read, and the KDF cost parameters are bounded (see "KDF
-  parameter bounds") before any Argon2 work, so a malicious file cannot trivially exhaust memory
-  or CPU.
+  is capped (16 MiB) — enforced on the bytes actually read, not only on the size reported
+  beforehand — and the KDF cost parameters are bounded (see "KDF parameter bounds") before any
+  Argon2 work, so a malicious file cannot trivially exhaust memory or CPU.
+- **The decrypted content is validated too.** Authentication proves the content was written by
+  someone holding the key, not that it is well formed; see [SECURITY_MODEL.md](SECURITY_MODEL.md).
 - **Nonce uniqueness**: nonces come from the CSPRNG and a fresh nonce is used for every
   encryption. Vault creation also generates a fresh salt and vault key.
 
@@ -195,3 +207,17 @@ wrong-key/wrong-password rejection, ciphertext/tag/AAD/nonce/salt tampering, uns
 and malformed input handling, independent per-vault keys, empty-input safety, rejection of weak
 **and** resource-exhausting KDF parameters, and rejection of malicious KDF parameters in a vault
 document before any derivation is attempted.
+
+**Known-answer tests** (`KnownAnswerTests`) check the primitives against published reference
+outputs rather than against themselves — a round trip cannot tell a correct implementation from
+one that is consistently wrong:
+
+| Primitive | Vectors |
+|---|---|
+| Argon2id, through the vault's own wrapper | Seven vectors from the test suite of the reference implementation (phc-winner-argon2, version 0x13) |
+| Argon2id, the library directly | RFC 9106, section 5.3 (with secret and associated data) |
+| AES-256-GCM, including the `ciphertext ‖ tag` layout | Test cases 13, 14 and 16 of the GCM specification |
+| Associated data of format v1 | An envelope assembled from the primitives alone, as documented above, must be accepted by the real cryptor |
+
+The last one matters because the associated data is derived rather than stored: a change to how it
+is built would make every existing vault fail to authenticate, and no round-trip test would notice.

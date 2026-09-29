@@ -35,11 +35,11 @@ actually confirmed is marked `NOT VERIFIED`.
 | Vault key wiped and released on lock | VERIFIED + AUTOMATED TESTED | `VaultService.Lock`, `VaultServiceTests` locking tests. |
 | Vault plaintext never written to disk | VERIFIED + AUTOMATED TESTED | `FileLocalVaultStorage` writes ciphertext only; `VaultPersistenceIntegrationTests` plaintext-leak check. |
 | No accidental plaintext in the persisted file | AUTOMATED TESTED | `VaultPersistenceIntegrationTests` (per-field distinctive markers). |
-| Atomic write preserves prior vault on failure | AUTOMATED TESTED | `FileLocalVaultStorageTests.FailedWrite_DoesNotDestroyExistingVault`. |
+| Atomic write preserves prior vault on failure, leaves nothing behind | AUTOMATED TESTED | `FileLocalVaultStorageTests` (byte-for-byte comparison; directory listing). |
 | Oversized vault file rejected before large allocation | AUTOMATED TESTED | `FileLocalVaultStorageTests.Read_OversizedFile_FailsClosed`. |
-| Vault item field-length / count / URL bounds | AUTOMATED TESTED | `VaultValidationTests` (enforced on add/update). |
+| Vault item field-length / count / URL bounds | AUTOMATED TESTED | `VaultValidationTests` (on add/update), `VaultLoadValidationTests` (on load, since 0.5.1). |
 | Clipboard copy only on explicit action | VERIFIED | `VaultPageViewModel` copy commands call `ClipboardService`. |
-| Clipboard auto-clear after timeout | AUTOMATED TESTED + MANUALLY VERIFIED (2026-09-13) | `ClipboardServiceTests.AutoClear_AfterDelay_ClearsClipboard`; real-clipboard clear confirmed after the UI-thread fix. |
+| Clipboard auto-clear after timeout | AUTOMATED TESTED + MANUALLY VERIFIED (2026-09-13) + VERIFIED AGAINST THE REAL CLIPBOARD (2026-09-29) | `ClipboardServiceTests.AutoClear_AfterDelay_ClearsClipboard`; `tools/BitosX.ClipboardProbe`. |
 | Clipboard does not erase content the user copied afterward | AUTOMATED TESTED + MANUALLY VERIFIED (2026-09-13) | `ClipboardServiceTests.AutoClear_DoesNotEraseContentTheUserReplaced`; confirmed live. |
 | Repeated copies / dispose / accessor failure handled safely | AUTOMATED TESTED | `ClipboardServiceTests`. |
 | Lock removes decrypted state; no navigation back without re-auth | VERIFIED + AUTOMATED TESTED + MANUALLY VERIFIED (2026-09-13) | State-driven shell (`MainWindowViewModel`); `VaultServiceTests` locking tests; GUI steps 13–15. |
@@ -149,6 +149,119 @@ key material were exposed. Synthetic credentials/items only. Pre-rotation baseli
 Every pre-commit failure left the live vault byte-for-byte unchanged, and rotation only ever committed
 on the explicit "Rotate vault key" click.
 
+## Security hardening (0.5.1) — verified 2026-09-29
+
+The findings, their evidence and the fixes are described in
+[SECURITY_REVIEW_0.5.1.md](SECURITY_REVIEW_0.5.1.md). This section records how each was verified.
+Machine: Windows 11 Pro (10.0.26200), .NET SDK 10.0.401.
+
+### Automated
+
+468 tests pass in Debug and in Release (217 before the review), with 0 build warnings.
+
+| Project | Before | After |
+|---|---|---|
+| `BitosX.Core.Tests` | 96 | 208 |
+| `BitosX.Crypto.Tests` | 60 | 113 |
+| `BitosX.Storage.Tests` | 29 | 52 |
+| `BitosX.Platform.Tests` | 12 | 35 |
+| `BitosX.App.Tests` | 20 | 60 |
+
+**The new tests were run against the 0.5.0 code as well**, in a separate checkout, to confirm that
+they detect the defects rather than merely pass. Of the 112 tests added to `BitosX.Core.Tests`,
+**77 fail against 0.5.0** and pass against 0.5.1; the other 35 are invariants that already held and
+are kept as regression guards. (The 0.5.0 service was given three one-line members so that the
+tests compile; its behaviour was not touched. Tests in the other projects exercise components that
+do not exist in 0.5.0.)
+
+| Item | Status |
+|---|---|
+| A stale session cannot overwrite the file: save, password change, rotation; recovery by lock + reopen; missing file is written back; unreadable file is left alone | AUTOMATED TESTED (`VaultServiceSessionConsistencyTests`) |
+| A write that throws is reconciled (old / new / indeterminate → locked), for all three write paths | AUTOMATED TESTED (`VaultServiceSessionConsistencyTests`, `VaultServiceRotationConsistencyTests`) |
+| `Items` never shows unpersisted state; a rejected change writes nothing | AUTOMATED TESTED (`VaultServiceSessionConsistencyTests`) |
+| A failing subscriber cannot leave the service open around a destroyed key; all subscribers are notified | AUTOMATED TESTED (`VaultServiceLockingGuaranteeTests`) |
+| `Lock()` during rotation, password change, save and unlock leaves no key in memory and a vault that opens | AUTOMATED TESTED (`VaultServiceLockingGuaranteeTests`) |
+| Overlapping operations run one at a time | AUTOMATED TESTED (`VaultServiceLockingGuaranteeTests`) |
+| Decrypted content validated on load: 33 kinds of invalid document, each fails closed as a validation error that never quotes the content | AUTOMATED TESTED (`VaultLoadValidationTests`) |
+| Clock moved back: item stays editable; affected vaults and backups still open | AUTOMATED TESTED (`VaultTests`, `VaultLoadValidationTests`, `VaultBackupServiceTests`) |
+| Envelope parsing: `null` and missing fields, wrong lengths, unknown properties, invalid UTF-8, byte order mark | AUTOMATED TESTED (`EncryptedVaultSerializerTests`, `FileLocalVaultStorageTests`) |
+| Temporary files: unique, exclusive, nothing left behind, stale ones removed, a planted file untouched | AUTOMATED TESTED (`FileLocalVaultStorageTests`, `VaultBackupServiceTests`, `FileAppSettingsStoreTests`) |
+| Primitives match published reference outputs; associated data of format v1 pinned | AUTOMATED TESTED (`KnownAnswerTests`) |
+| Strength rating: 16 patterned passwords never better than Weak; 500 generated passwords never worse than Strong | AUTOMATED TESTED (`PasswordStrengthTests`) |
+| Clipboard: retry when busy; cleared on workstation lock and suspend; user content never erased | AUTOMATED TESTED (`ClipboardHardeningTests`, fake clipboard and fake OS signals) |
+| Content handed to the clipboard carries the markers | AUTOMATED TESTED (`SensitiveClipboardDataTests`) |
+| Single instance per vault | AUTOMATED TESTED (`SingleInstanceGuardTests`) |
+| Commands report failures instead of letting them escape | AUTOMATED TESTED (`ViewModelFailureHandlingTests`) |
+| Settings describes the open vault; new master password is rated | AUTOMATED TESTED (`ViewModelFailureHandlingTests`) |
+| Unix file permissions (owner only) | **NOT VERIFIED** — the test is skipped on Windows and no Unix machine was available |
+
+### Against the real Windows clipboard
+
+Unit tests use an in-memory clipboard, and the one clipboard defect this project has had was
+invisible to them. `tools/BitosX.ClipboardProbe` therefore drives the **production** classes
+(`AvaloniaClipboardAccessor`, `ClipboardService`, `ExitClipboardCleaner`) against the real clipboard
+and the real clipboard history, and reads the result back the way any other application would
+(Win32). It uses marker strings only, puts back the text that was on the clipboard, and removes its
+markers from the history. Run it with:
+
+```
+dotnet run -c Release --project tools/BitosX.ClipboardProbe
+```
+
+Result on 2026-09-29, clipboard history **enabled**, cloud clipboard not enabled — all 16 checks
+passed:
+
+| Check | Result |
+|---|---|
+| A copied secret can be pasted by other applications | PASS |
+| BitosX can read its own copy back (needed for the "unchanged" guard) | PASS |
+| The clipboard carries each of the four markers | PASS (4) |
+| Clearing removes everything BitosX placed on the clipboard | PASS |
+| **Control:** an unmarked copy **is** recorded in the clipboard history | PASS |
+| A copied secret is **not** recorded in the clipboard history | PASS |
+| The secret is on the clipboard right after copying; the timed clear removes it | PASS (2) |
+| The secret was pasted once before closing | PASS |
+| **Control:** without the exit cleaner a pasted secret survives the application closing | PASS |
+| With the exit cleaner the secret is gone once the application has closed, and the clipboard is empty | PASS (2) |
+| Closing does not erase what the user copied after the secret | PASS |
+
+The two controls are what make the result meaningful: they show that the history check and the
+exit check can fail, and do fail for the 0.5.0 behaviour.
+
+One observation worth keeping: Windows hands out clipboard content on request, and only content
+that has been requested at least once stays behind when its owner exits. A secret that was copied
+but never pasted, and that no clipboard listener read, disappears with the application even without
+the cleaner. In normal use the secret *has* been pasted, which is the case the cleaner is for.
+
+Not verified: that Windows also keeps the value out of the **cloud** clipboard (it was not enabled
+on the machine; the marker is set and documented by Microsoft), and the behaviour of any third-party
+clipboard manager.
+
+### With two real processes
+
+Release build of the application, started twice against the default vault location:
+
+| Step | Result |
+|---|---|
+| Second instance started while the first is running | Exits by itself after 86 ms with exit code 2; one process remains |
+| First instance closed the way a user would (window close) | Exits normally, exit code 0 |
+| A new instance started afterwards | Starts and stays |
+| Vault file (SHA-256 and modification time) and its directory | Unchanged; no temporary file left |
+
+This also shows that the application starts and shuts down cleanly with the changed composition
+(disposable vault service, clipboard guard, exit cleaner).
+
+### NOT VERIFIED — needs a person at the GUI
+
+| Item | Why |
+|---|---|
+| The password rating under "New password", the key-derivation note, and the "could not be saved" notice in Settings | New bindings; the view models are tested, the rendered page has not been looked at |
+| Clearing the clipboard on workstation lock (Win+L) and on suspend **in the running application** | The policy is tested with fake OS signals; the real signals were verified for auto-lock (A6, A7) but not for this consumer |
+| Closing the real application window shortly after copying | The same `ExitClipboardCleaner` class was verified through the probe, in a window of its own |
+| The message shown when a save is refused because the vault changed on disk | Needs two instances, which the application now prevents; covered by `ViewModelFailureHandlingTests` |
+| The full 17-step checklist below, and the A-, H- and R-series | **Not re-run for 0.5.1.** Re-run before tagging a release |
+| Everything on Linux and macOS | No machine available |
+
 ## Version display fix (2026-09-13)
 
 The Settings → About line previously read "BitosX version 0.3.0.0" — the CLR/Windows 4-part
@@ -192,11 +305,8 @@ Fix (App/Platform layers only — no crypto/vault changes):
   plaintext bytes) are zeroed, but decrypted values held as `string` (item passwords in the UI,
   and the last-copied value the clipboard policy compares against) cannot be reliably erased. See
   `SECURITY_MODEL.md`.
-- **Decrypted vault content is not re-validated against `VaultValidation` bounds on load.**
-  `VaultValidation` is enforced when items are added/updated, not when a decrypted vault is
-  deserialized. This is defense-in-depth only: the content is AEAD-authenticated, so producing
-  malicious content requires the vault key (i.e. the master password), and the pre-decryption file
-  size is already capped at 16 MiB. Adding validation-on-load is a reasonable future hardening.
+- ~~Decrypted vault content is not re-validated on load.~~ **Closed in 0.5.1**: loading validates
+  every item with the same rules as editing (`VaultLoadValidationTests`).
 - **The production KDF profile is fast on high-end hardware** (~46 ms median on a 16-core desktop).
   It is comfortably interactive but on the low side for offline brute-force cost. Do **not** retune
   it from a single machine; a future milestone should add device-aware calibration and versioned

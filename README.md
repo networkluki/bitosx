@@ -23,7 +23,11 @@ and stays on the local device.
 - Show/hide passwords (hidden by default).
 - Cryptographically secure password generator.
 - Security Center with local-only checks (reused / weak passwords, duplicate entries, HTTP URLs).
-- Encrypted, versioned, atomic on-disk vault format that fails closed on tampering.
+- Encrypted, versioned, atomic and durable on-disk vault format that fails closed on tampering.
+- Refuses to overwrite a vault that changed on disk while it was open, and runs only one instance
+  per vault.
+- On Windows, copied secrets are kept out of the clipboard history and the cloud clipboard; the
+  clipboard is also cleared on exit and when the workstation is locked or suspended.
 
 ## Requirements
 
@@ -47,19 +51,21 @@ src/
   BitosX.Core       Domain models, vault service, password generator, security analyzer, validation
   BitosX.Crypto     KDF (Argon2id), AEAD (AES-256-GCM), versioned encrypted format, RNG
   BitosX.Storage    Atomic encrypted local file persistence
-  BitosX.Platform   Platform policy (clipboard auto-clear) and secure-storage extension point
+  BitosX.Platform   Platform policy (clipboard, single instance, OS session signals), secure-storage hook
   BitosX.ApiClient  Local-only API abstraction (no production server in this milestone)
 tests/
-  BitosX.App.Tests        ViewModel restore commit-boundary tests
+  BitosX.App.Tests        View model tests (restore boundary, rotation, failure handling, clipboard content)
   BitosX.Core.Tests
   BitosX.Crypto.Tests
-  BitosX.Platform.Tests   Clipboard auto-clear policy tests
+  BitosX.Platform.Tests   Clipboard policy and single-instance tests
   BitosX.Storage.Tests
 tools/
   BitosX.KdfBenchmark     Diagnostic-only Argon2id unlock-latency benchmark (not shipped)
+  BitosX.ClipboardProbe   Diagnostic-only check against the real Windows clipboard (not shipped, not in the solution)
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
   VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md  KEY_ROTATION.md
+  SECURITY_REVIEW_0.5.1.md
 ```
 
 `BitosX.Core` and `BitosX.Crypto` do not depend on Avalonia.
@@ -74,6 +80,9 @@ By default the encrypted vault lives at your per-user application data directory
 BitosX aims for a zero-knowledge design as it grows. See [SECURITY.md](SECURITY.md) and the
 documents under [`docs/`](docs/) for the security model, threat model, and cryptographic design,
 **including an explicit list of what BitosX does and does not protect against.**
+
+The findings of the latest security review, and what was done about each, are in
+[docs/SECURITY_REVIEW_0.5.1.md](docs/SECURITY_REVIEW_0.5.1.md).
 
 If you forget your master password, your vault cannot be recovered. There is no backdoor,
 recovery key, or universal decryption key.
