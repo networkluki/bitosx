@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -23,6 +24,10 @@ public static class EncryptedVaultSerializer
     private static readonly JsonSerializerOptions DeserializeOptions = new()
     {
         AllowDuplicateProperties = false,
+
+        // Unknown properties are rejected rather than ignored: every field of the envelope is
+        // security relevant, and nothing this build does not understand belongs in a v1 file.
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
     /// <summary>Serializes an encrypted vault to its JSON representation.</summary>
@@ -52,6 +57,9 @@ public static class EncryptedVaultSerializer
         return JsonSerializer.Serialize(document, SerializeOptions);
     }
 
+    /// <summary>Serializes an encrypted vault to UTF-8 JSON, without a byte order mark.</summary>
+    public static byte[] SerializeToUtf8Bytes(EncryptedVault vault) => Encoding.UTF8.GetBytes(Serialize(vault));
+
     /// <summary>Parses and validates an encrypted vault from its JSON representation.</summary>
     public static EncryptedVault Deserialize(string json)
     {
@@ -72,6 +80,41 @@ public static class EncryptedVaultSerializer
             throw new UnsupportedVaultFormatException("The vault file is not valid JSON.", ex);
         }
 
+        return FromDocument(document);
+    }
+
+    /// <summary>
+    /// Parses and validates an encrypted vault from the raw bytes of a vault or backup file. The
+    /// bytes must be valid UTF-8 JSON (invalid sequences are rejected, never replaced); a leading
+    /// byte order mark is accepted.
+    /// </summary>
+    public static EncryptedVault Deserialize(ReadOnlySpan<byte> utf8Json)
+    {
+        if (utf8Json.StartsWith(Encoding.UTF8.Preamble))
+        {
+            utf8Json = utf8Json[Encoding.UTF8.Preamble.Length..];
+        }
+
+        if (utf8Json.IndexOfAnyExcept(" \t\r\n"u8) < 0)
+        {
+            throw new UnsupportedVaultFormatException("The vault file is empty.");
+        }
+
+        EncryptedVaultDocument? document;
+        try
+        {
+            document = JsonSerializer.Deserialize<EncryptedVaultDocument>(utf8Json, DeserializeOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new UnsupportedVaultFormatException("The vault file is not valid JSON.", ex);
+        }
+
+        return FromDocument(document);
+    }
+
+    private static EncryptedVault FromDocument(EncryptedVaultDocument? document)
+    {
         if (document is null)
         {
             throw new UnsupportedVaultFormatException("The vault file is empty.");
@@ -91,6 +134,12 @@ public static class EncryptedVaultSerializer
         if (!string.Equals(document.Algorithm, CryptoConstants.AlgorithmAes256Gcm, StringComparison.Ordinal))
         {
             throw new UnsupportedVaultFormatException($"Unsupported encryption algorithm '{document.Algorithm}'.");
+        }
+
+        // An explicit JSON null replaces the default instance.
+        if (document.KdfParameters is null)
+        {
+            throw new UnsupportedVaultFormatException("The vault field 'kdfParameters' is missing.");
         }
 
         var parameters = new Argon2Parameters(
@@ -161,7 +210,7 @@ public static class EncryptedVaultSerializer
     {
         [JsonPropertyName("version")] public int Version { get; set; }
         [JsonPropertyName("kdf")] public string Kdf { get; set; } = string.Empty;
-        [JsonPropertyName("kdfParameters")] public KdfParametersDocument KdfParameters { get; set; } = new();
+        [JsonPropertyName("kdfParameters")] public KdfParametersDocument? KdfParameters { get; set; } = new();
         [JsonPropertyName("salt")] public string Salt { get; set; } = string.Empty;
         [JsonPropertyName("algorithm")] public string Algorithm { get; set; } = string.Empty;
         [JsonPropertyName("keyWrapNonce")] public string KeyWrapNonce { get; set; } = string.Empty;

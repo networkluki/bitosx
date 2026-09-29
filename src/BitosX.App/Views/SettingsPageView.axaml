@@ -39,6 +39,9 @@
                     <CheckBox IsChecked="{Binding LockOnMinimize}"
                               Content="Lock when the window is minimized" />
 
+                    <TextBlock Text="{Binding AutoLockStatus}" TextWrapping="Wrap" Classes="error"
+                               IsVisible="{Binding AutoLockStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
                     <StackPanel Spacing="2">
                         <TextBlock Text="Workstation lock" Classes="muted" FontSize="12" />
                         <TextBlock Text="{Binding SessionLockSupport}" TextWrapping="Wrap" />
@@ -57,6 +60,8 @@
                                Text="Re-protects your existing vault with a new password. The vault contents are not re-encrypted and no data is lost." />
                     <TextBox PasswordChar="●" PlaceholderText="Current password" Text="{Binding CurrentPassword}" />
                     <TextBox PasswordChar="●" PlaceholderText="New password" Text="{Binding NewPassword}" />
+                    <TextBlock Text="{Binding NewPasswordStrengthText}" Classes="muted" FontSize="12"
+                               IsVisible="{Binding NewPasswordStrengthText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <TextBox PasswordChar="●" PlaceholderText="Confirm new password" Text="{Binding ConfirmPassword}" />
                     <Button Content="Change password" Command="{Binding ChangeMasterPasswordCommand}" HorizontalAlignment="Left" />
                     <TextBlock Text="{Binding ChangePasswordStatus}" TextWrapping="Wrap" Classes="muted"
@@ -128,6 +133,8 @@
                     <StackPanel Spacing="2">
                         <TextBlock Text="Key derivation" Classes="muted" FontSize="12" />
                         <TextBlock Text="{Binding KdfDescription}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding KdfWarning}" TextWrapping="Wrap" Classes="error"
+                                   IsVisible="{Binding KdfWarning, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     </StackPanel>
                     <StackPanel Spacing="2">
                         <TextBlock Text="Encryption" Classes="muted" FontSize="12" />

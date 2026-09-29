@@ -28,14 +28,15 @@ public sealed class ItemNotFoundException : VaultException
 /// <summary>
 /// Thrown when the on-disk vault no longer matches the state the current session loaded or last
 /// persisted — i.e. the vault file was replaced or modified by another process/instance while it was
-/// open. Destructive operations (such as vault key rotation) fail closed in this state: nothing is
-/// written, the external file is left byte-for-byte intact, and the current session keeps its state.
+/// open. Every operation that replaces the stored vault (saving a change, changing the master
+/// password, rotating the vault key) fails closed in this state: nothing is written, the external
+/// file is left byte-for-byte intact, and the current session keeps its state.
 /// The message is deliberately non-secret (no keys, hashes, or plaintext).
 /// </summary>
 public sealed class VaultChangedExternallyException : VaultException
 {
     public VaultChangedExternallyException()
-        : base("The vault changed on disk while it was open. Lock and reopen the vault before rotating the key.") { }
+        : base("The vault changed on disk while it was open. Nothing was saved. Lock and reopen the vault, then try again.") { }
 }
 
 /// <summary>

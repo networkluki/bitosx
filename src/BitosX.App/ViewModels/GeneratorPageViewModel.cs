@@ -82,8 +82,16 @@ public sealed partial class GeneratorPageViewModel : ViewModelBase
     {
         if (!string.IsNullOrEmpty(GeneratedPassword))
         {
-            await _clipboard.CopySecretAsync(GeneratedPassword).ConfigureAwait(true);
-            StatusMessage = $"Copied. Clipboard clears in {_clipboard.ClearDelay.TotalSeconds:0}s.";
+            try
+            {
+                await _clipboard.CopySecretAsync(GeneratedPassword).ConfigureAwait(true);
+                StatusMessage = $"Copied. Clipboard clears in {_clipboard.ClearDelay.TotalSeconds:0}s.";
+            }
+            catch (Exception)
+            {
+                // The clipboard is shared with every other application and can be busy.
+                StatusMessage = "The password could not be copied. Please try again.";
+            }
         }
     }
 }

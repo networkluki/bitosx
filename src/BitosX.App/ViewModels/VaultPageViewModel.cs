@@ -113,16 +113,31 @@ public sealed partial class VaultPageViewModel : ViewModelBase
     [RelayCommand]
     private async Task DeleteLoginAsync(LoginItemViewModel item)
     {
-        await _vaultService.DeleteItemAsync(item.Id).ConfigureAwait(true);
-        await RefreshAsync().ConfigureAwait(true);
-        StatusMessage = "Item deleted.";
+        try
+        {
+            await _vaultService.DeleteItemAsync(item.Id).ConfigureAwait(true);
+            await RefreshAsync().ConfigureAwait(true);
+            StatusMessage = "Item deleted.";
+        }
+        catch (Exception ex)
+        {
+            // A command that lets an exception escape takes the whole application down.
+            StatusMessage = UserFacingError.Describe(ex);
+        }
     }
 
     [RelayCommand]
     private async Task ToggleFavoriteAsync(LoginItemViewModel item)
     {
-        await _vaultService.ToggleFavoriteAsync(item.Id).ConfigureAwait(true);
-        await RefreshAsync().ConfigureAwait(true);
+        try
+        {
+            await _vaultService.ToggleFavoriteAsync(item.Id).ConfigureAwait(true);
+            await RefreshAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = UserFacingError.Describe(ex);
+        }
     }
 
     [RelayCommand]
@@ -134,8 +149,7 @@ public sealed partial class VaultPageViewModel : ViewModelBase
     {
         if (!string.IsNullOrEmpty(item.Username))
         {
-            await _clipboard.CopySecretAsync(item.Username).ConfigureAwait(true);
-            StatusMessage = $"Username copied. Clipboard clears in {_clipboard.ClearDelay.TotalSeconds:0}s.";
+            await CopyAsync(item.Username, "Username").ConfigureAwait(true);
         }
     }
 
@@ -144,8 +158,21 @@ public sealed partial class VaultPageViewModel : ViewModelBase
     {
         if (item.Model.Password is { Length: > 0 } password)
         {
-            await _clipboard.CopySecretAsync(password).ConfigureAwait(true);
-            StatusMessage = $"Password copied. Clipboard clears in {_clipboard.ClearDelay.TotalSeconds:0}s.";
+            await CopyAsync(password, "Password").ConfigureAwait(true);
+        }
+    }
+
+    private async Task CopyAsync(string value, string what)
+    {
+        try
+        {
+            await _clipboard.CopySecretAsync(value).ConfigureAwait(true);
+            StatusMessage = $"{what} copied. Clipboard clears in {_clipboard.ClearDelay.TotalSeconds:0}s.";
+        }
+        catch (Exception)
+        {
+            // The clipboard is shared with every other application and can be busy.
+            StatusMessage = $"{what} could not be copied. Please try again.";
         }
     }
 }

@@ -57,6 +57,8 @@ public static class ServiceConfiguration
         // Platform
         services.AddSingleton<IClipboardAccessor>(_ => new AvaloniaClipboardAccessor(GetMainWindowClipboard));
         services.AddSingleton<IClipboardService, ClipboardService>();
+        services.AddSingleton<ClipboardSessionGuard>();
+        services.AddSingleton<ExitClipboardCleaner>();
         services.AddSingleton<ISecureStorage, UnavailableSecureStorage>();
         services.AddSingleton<IFilePicker>(_ => new AvaloniaFilePicker(GetMainWindow));
         services.AddSingleton<ISystemSessionEvents>(_ =>

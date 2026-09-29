@@ -15,6 +15,13 @@ public static class VaultSerializer
     {
         WriteIndented = false,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+
+        // Strict parsing of the decrypted document. Duplicate properties are rejected so a field can
+        // never have an ambiguous second value, and unknown properties are rejected rather than
+        // ignored: silently dropping a field this build does not understand would destroy it on the
+        // next save.
+        AllowDuplicateProperties = false,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
     /// <summary>Serializes a vault to UTF-8 JSON bytes.</summary>
@@ -29,7 +36,11 @@ public static class VaultSerializer
         return JsonSerializer.SerializeToUtf8Bytes(document, Options);
     }
 
-    /// <summary>Deserializes a vault from UTF-8 JSON bytes. Throws <see cref="VaultValidationException"/> on invalid content.</summary>
+    /// <summary>
+    /// Deserializes and validates a vault from UTF-8 JSON bytes. Every failure — malformed JSON, an
+    /// unknown item type, a missing type discriminator, an unknown or duplicated property, or an item
+    /// that fails validation — is reported as <see cref="VaultValidationException"/>.
+    /// </summary>
     public static Vault Deserialize(ReadOnlySpan<byte> utf8Json)
     {
         VaultDocument? document;
@@ -37,10 +48,12 @@ public static class VaultSerializer
         {
             document = JsonSerializer.Deserialize<VaultDocument>(utf8Json, Options);
         }
-        catch (JsonException)
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             // Intentionally does not include the parser message: it can echo fragments of the
             // decrypted (secret) content. The exception is swallowed rather than logged.
+            // NotSupportedException is what the serializer raises for an item without a usable
+            // type discriminator.
             throw new VaultValidationException("The decrypted vault content is not valid JSON.");
         }
 
@@ -61,6 +74,6 @@ public static class VaultSerializer
     private sealed class VaultDocument
     {
         [JsonPropertyName("schemaVersion")] public int SchemaVersion { get; set; }
-        [JsonPropertyName("items")] public List<VaultItem>? Items { get; set; }
+        [JsonPropertyName("items")] public List<VaultItem?>? Items { get; set; }
     }
 }

@@ -1,4 +1,5 @@
 using BitosX.Core.Domain;
+using BitosX.Crypto;
 
 namespace BitosX.Core.Services;
 
@@ -29,6 +30,13 @@ public interface IVaultService
 
     /// <summary>The unlocked vault's items, or an empty list when locked.</summary>
     IReadOnlyList<VaultItem> Items { get; }
+
+    /// <summary>
+    /// The key-derivation parameters protecting the unlocked vault — the ones stored in its header,
+    /// which may differ from the parameters this build would use for a new vault — or
+    /// <see langword="null"/> when locked.
+    /// </summary>
+    Argon2Parameters? KdfParameters { get; }
 
     /// <summary>Refreshes <see cref="State"/> from storage (NoVault vs Locked). Call at startup.</summary>
     Task<VaultState> RefreshStateAsync(CancellationToken cancellationToken = default);

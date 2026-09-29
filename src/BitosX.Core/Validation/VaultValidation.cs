@@ -44,10 +44,29 @@ public static class VaultValidation
         }
     }
 
+    /// <summary>
+    /// Repairs harmless metadata on an item read from a stored vault, so that an anomaly which is
+    /// not a security or integrity concern can never make a vault or backup impossible to open.
+    /// Currently: an <see cref="VaultItem.UpdatedAt"/> earlier than <see cref="VaultItem.CreatedAt"/>
+    /// (written by earlier versions after the system clock was moved back) is raised to CreatedAt.
+    /// Everything else is left untouched and must pass <see cref="Validate"/>.
+    /// </summary>
+    public static VaultItem NormalizeLoaded(VaultItem item)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+        return item.UpdatedAt < item.CreatedAt ? item with { UpdatedAt = item.CreatedAt } : item;
+    }
+
     private static void ValidateLogin(LoginItem login)
     {
         ValidateOptionalLength(login.Username, MaxUsernameLength, "Username");
         ValidateOptionalLength(login.Password, MaxPasswordLength, "Password");
+
+        // Not reachable through the editor, but a stored document can carry an explicit null.
+        if (login.Urls is null)
+        {
+            throw new VaultValidationException("The URL list must not be null.");
+        }
 
         if (login.Urls.Count > MaxUrlCount)
         {

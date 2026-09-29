@@ -1,6 +1,7 @@
 using BitosX.ApiClient;
 using BitosX.App.Services;
 using BitosX.Core.Domain;
+using BitosX.Core.Security;
 using BitosX.Core.Services;
 using BitosX.Core.Settings;
 using BitosX.Crypto;
@@ -28,6 +29,9 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
 
     public string VaultLocation { get; }
     public string KdfDescription { get; }
+
+    /// <summary>Set when the open vault is protected by weaker key derivation than this build uses for new vaults.</summary>
+    public string? KdfWarning { get; }
     public string AlgorithmDescription { get; }
     public string ClipboardClearDescription { get; }
     public string ServerIntegrationDescription { get; }
@@ -47,10 +51,16 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
     public partial bool LockOnMinimize { get; set; }
 
     [ObservableProperty]
+    public partial string? AutoLockStatus { get; set; }
+
+    [ObservableProperty]
     public partial string CurrentPassword { get; set; } = string.Empty;
 
     [ObservableProperty]
     public partial string NewPassword { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string NewPasswordStrengthText { get; set; } = string.Empty;
 
     [ObservableProperty]
     public partial string ConfirmPassword { get; set; } = string.Empty;
@@ -146,7 +156,16 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         _filePicker = filePicker;
 
         VaultLocation = storage.VaultFilePath;
-        KdfDescription = $"Argon2id — {kdfParameters.MemoryKiB / 1024} MiB, {kdfParameters.Iterations} iterations, parallelism {kdfParameters.DegreeOfParallelism}";
+        // Describe the vault that is actually open, not what a new vault would get.
+        Argon2Parameters inUse = vaultService.KdfParameters ?? kdfParameters;
+        KdfDescription = $"Argon2id — {inUse.MemoryKiB / 1024.0:0.##} MiB, {inUse.Iterations} iterations, parallelism {inUse.DegreeOfParallelism}";
+        if (inUse.MemoryKiB < kdfParameters.MemoryKiB || inUse.Iterations < kdfParameters.Iterations)
+        {
+            KdfWarning =
+                "This vault uses weaker key-derivation settings than BitosX uses for new vaults "
+                + $"({kdfParameters.MemoryKiB / 1024.0:0.##} MiB, {kdfParameters.Iterations} iterations). "
+                + "It is easier to attack if the file is stolen. Changing the master password does not change these settings.";
+        }
         AlgorithmDescription = "AES-256-GCM (authenticated encryption)";
         ClipboardClearDescription = $"Copied secrets are cleared after {clipboard.ClearDelay.TotalSeconds:0} seconds.";
         ServerIntegrationDescription = apiClient.IsServerIntegrationEnabled
@@ -169,6 +188,11 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         _loading = false;
     }
 
+    partial void OnNewPasswordChanged(string value)
+        => NewPasswordStrengthText = string.IsNullOrEmpty(value)
+            ? string.Empty
+            : $"Strength: {PasswordStrength.Estimate(value)}";
+
     partial void OnAutoLockOnInactivityChanged(bool value) => Persist();
 
     partial void OnInactivityMinutesChanged(int value) => Persist();
@@ -190,8 +214,18 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
             LockOnMinimize = LockOnMinimize,
         }.Normalized();
 
-        _settingsStore.Save(updated);
+        // Apply first: the running session must honor the choice even if it cannot be saved.
         _autoLock.UpdateSettings(updated);
+
+        try
+        {
+            _settingsStore.Save(updated);
+            AutoLockStatus = null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            AutoLockStatus = "These settings apply now but could not be saved, so they will be lost when BitosX closes.";
+        }
     }
 
     [RelayCommand]
@@ -220,6 +254,14 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         {
             ChangePasswordStatus = "The current password is incorrect.";
         }
+        catch (VaultChangedExternallyException ex)
+        {
+            ChangePasswordStatus = ex.Message;
+        }
+        catch (VaultInconsistentStateException ex)
+        {
+            ChangePasswordStatus = ex.Message;
+        }
         catch (BitosXCryptographicException)
         {
             ChangePasswordStatus = "The vault could not be processed. The master password was not changed.";
@@ -231,6 +273,14 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         catch (InvalidOperationException ex)
         {
             ChangePasswordStatus = ex.Message;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            ChangePasswordStatus = "BitosX does not have permission to write the vault file. The master password was not changed.";
+        }
+        catch (OperationCanceledException)
+        {
+            ChangePasswordStatus = "The vault was locked before the change finished. Unlock it to see which password applies.";
         }
         catch (IOException)
         {
@@ -269,6 +319,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         {
             RotateStatus = ex.Message;
         }
+        catch (UnauthorizedAccessException)
+        {
+            RotateStatus = "BitosX does not have permission to write the vault file. The vault key was not rotated.";
+        }
         catch (IOException)
         {
             RotateStatus = "Could not save the vault. The vault key was not rotated.";
@@ -296,6 +350,14 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         catch (InvalidOperationException ex)
         {
             BackupStatus = ex.Message;
+        }
+        catch (ArgumentException ex)
+        {
+            BackupStatus = ex.Message;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            BackupStatus = "BitosX does not have permission to write to that location. The vault was not changed.";
         }
         catch (IOException)
         {
@@ -372,6 +434,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         {
             RestoreStatus = ex.Message;
         }
+        catch (UnauthorizedAccessException)
+        {
+            RestoreStatus = "BitosX does not have permission to read the backup file.";
+        }
         catch (IOException)
         {
             RestoreStatus = "Could not read the backup file.";
@@ -393,6 +459,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         {
             await _backupService.CommitRestoreAsync(preview).ConfigureAwait(true);
             // On success the vault locks and the shell navigates to the Unlock screen automatically.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            RestoreStatus = "BitosX does not have permission to replace the vault. Your current vault is unchanged.";
         }
         catch (IOException)
         {

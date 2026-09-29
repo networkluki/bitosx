@@ -14,7 +14,13 @@ internal static class UserFacingError
         // Wrong password and tampering are intentionally indistinguishable.
         VaultAuthenticationException => "Incorrect master password, or the vault file has been modified.",
         UnsupportedVaultFormatException => "This vault file is not compatible with this version of BitosX.",
+
+        // These carry a fixed, non-secret message that tells the user what to do next.
+        VaultChangedExternallyException changed => changed.Message,
+        VaultInconsistentStateException inconsistent => inconsistent.Message,
+
         VaultValidationException validation => validation.Message,
+        VaultException => "That item is no longer available. It may have been changed or removed.",
         ArgumentException argument => argument.Message,
         FileNotFoundException => "No vault file was found.",
         UnauthorizedAccessException => "BitosX does not have permission to access the vault file.",

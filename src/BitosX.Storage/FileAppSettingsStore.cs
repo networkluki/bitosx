@@ -1,19 +1,28 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BitosX.Core.Settings;
+using BitosX.Crypto;
 
 namespace BitosX.Storage;
 
 /// <summary>
 /// Stores non-secret <see cref="AppSettings"/> as a JSON file next to the vault (but separate from
 /// it). Contains only preferences — never keys, passwords, or vault contents. Loading fails safe:
-/// a missing or unreadable file returns <see cref="AppSettings.Default"/>. Saving is atomic
-/// (temp file + replace) so a crash cannot leave a half-written settings file.
+/// a missing, unreadable, or oversized file returns <see cref="AppSettings.Default"/>. Saving is
+/// atomic (temp file + replace) so a crash cannot leave a half-written settings file.
 /// </summary>
+/// <remarks>
+/// The settings file is not authenticated. Software that can write to the user's profile can change
+/// these preferences (for example turn automatic locking off); that is the same trust boundary as the
+/// rest of the application (see docs/THREAT_MODEL.md). Values are always clamped to their accepted
+/// ranges, and a file that cannot be parsed falls back to the secure defaults.
+/// </remarks>
 public sealed class FileAppSettingsStore : IAppSettingsStore
 {
+    /// <summary>Maximum accepted settings file size; the real file is a few hundred bytes.</summary>
+    public const long MaxFileSizeBytes = 64 * 1024;
+
     private readonly string _path;
-    private readonly string _tempPath;
     private readonly string _directory;
 
     private static readonly JsonSerializerOptions Options = new() { WriteIndented = true };
@@ -24,7 +33,6 @@ public sealed class FileAppSettingsStore : IAppSettingsStore
         _path = Path.GetFullPath(path);
         _directory = Path.GetDirectoryName(_path)
             ?? throw new ArgumentException("The settings path must include a directory.", nameof(path));
-        _tempPath = _path + ".tmp";
     }
 
     /// <summary>The default per-user settings file location (e.g. %APPDATA%\BitosX\settings.json).</summary>
@@ -45,8 +53,9 @@ public sealed class FileAppSettingsStore : IAppSettingsStore
                 return AppSettings.Default;
             }
 
-            string json = File.ReadAllText(_path);
-            SettingsDocument? doc = JsonSerializer.Deserialize<SettingsDocument>(json);
+            byte[] bytes = StorageFiles.ReadBounded(_path, MaxFileSizeBytes, "settings file");
+            SettingsDocument? doc = JsonSerializer.Deserialize<SettingsDocument>(
+                StorageFiles.WithoutByteOrderMark(bytes));
             if (doc is null)
             {
                 return AppSettings.Default;
@@ -59,9 +68,12 @@ public sealed class FileAppSettingsStore : IAppSettingsStore
                 LockOnMinimize = doc.LockOnMinimize,
             }.Normalized();
         }
-        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException
+                                       or JsonException
+                                       or UnauthorizedAccessException
+                                       or BitosXCryptographicException)
         {
-            // Preferences are non-critical: never let a corrupt file block startup.
+            // Preferences are non-critical: never let a corrupt or oversized file block startup.
             return AppSettings.Default;
         }
     }
@@ -79,44 +91,8 @@ public sealed class FileAppSettingsStore : IAppSettingsStore
             LockOnMinimize = settings.LockOnMinimize,
         };
 
-        Directory.CreateDirectory(_directory);
-        string json = JsonSerializer.Serialize(doc, Options);
-
-        try
-        {
-            File.WriteAllText(_tempPath, json);
-            if (File.Exists(_path))
-            {
-                File.Replace(_tempPath, _path, destinationBackupFileName: null);
-            }
-            else
-            {
-                File.Move(_tempPath, _path);
-            }
-        }
-        finally
-        {
-            TryDeleteTempFile();
-        }
-    }
-
-    private void TryDeleteTempFile()
-    {
-        try
-        {
-            if (File.Exists(_tempPath))
-            {
-                File.Delete(_tempPath);
-            }
-        }
-        catch (IOException)
-        {
-            // A leftover temp file is harmless; it is overwritten on the next save.
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Ignored for the same reason.
-        }
+        StorageFiles.CreatePrivateDirectory(_directory);
+        StorageFiles.WriteAtomic(_path, JsonSerializer.SerializeToUtf8Bytes(doc, Options));
     }
 
     private sealed class SettingsDocument

@@ -24,13 +24,14 @@ public sealed class AvaloniaClipboardAccessor : IClipboardAccessor
         _clipboardProvider = clipboardProvider ?? throw new ArgumentNullException(nameof(clipboardProvider));
     }
 
-    public Task SetTextAsync(string text, CancellationToken cancellationToken = default)
+    public Task SetSecretTextAsync(string text, CancellationToken cancellationToken = default)
         => RunOnUiThreadAsync(async () =>
         {
             IClipboard? clipboard = _clipboardProvider();
             if (clipboard is not null)
             {
-                await clipboard.SetTextAsync(text).ConfigureAwait(true);
+                // The clipboard takes ownership of the data object and disposes it when it is replaced.
+                await clipboard.SetDataAsync(SensitiveClipboardData.Create(text)).ConfigureAwait(true);
             }
 
             return true;

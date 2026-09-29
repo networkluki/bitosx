@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using BitosX.Core.Diagnostics;
 using BitosX.Core.Domain;
@@ -10,15 +11,34 @@ namespace BitosX.Core.Services;
 
 /// <summary>
 /// Default <see cref="IVaultService"/> implementation. Coordinates <see cref="VaultCryptor"/>
-/// and <see cref="ILocalVaultStorage"/>. Assumes single-threaded (UI-thread) access.
+/// and <see cref="ILocalVaultStorage"/>.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Memory handling: the master password is converted to a byte buffer, used transiently, and
 /// wiped; it is NOT retained after create/unlock. The vault key is retained (as a byte array)
 /// only while unlocked and is wiped on <see cref="Lock"/>. Decrypted item values live in
 /// managed <see cref="string"/> objects that cannot be reliably wiped (see docs/SECURITY_MODEL.md).
+/// </para>
+/// <para>
+/// Concurrency: operations that read or replace the stored vault run one at a time. <see cref="Lock"/>
+/// never waits for them — it clears the session immediately, and an operation that was in flight
+/// finishes against its own private copy of the key and then finds that the session it started in is
+/// gone, so it discards its result instead of putting key material back into a locked service.
+/// </para>
+/// <para>
+/// Consistency: every operation that replaces the stored vault first verifies that the stored vault
+/// is still the one this session loaded or last wrote (see <see cref="EncryptedVaultFingerprint"/>),
+/// and fails closed with <see cref="VaultChangedExternallyException"/> if it is not. Changes are
+/// applied to a copy of the vault and published only after they have been persisted, so
+/// <see cref="Items"/> never shows state that is not on disk.
+/// </para>
+/// <para>
+/// <see cref="StateChanged"/> is raised while the session is held, so notifications arrive in the
+/// order the transitions happened. Handlers must not block waiting on another thread.
+/// </para>
 /// </remarks>
-public sealed class VaultService : IVaultService
+public sealed class VaultService : IVaultService, IDisposable
 {
     /// <summary>Minimum accepted master password length.</summary>
     public const int MinMasterPasswordLength = 8;
@@ -29,18 +49,29 @@ public sealed class VaultService : IVaultService
     /// <summary>Upper bound to reject absurd input; passwords are never silently truncated.</summary>
     public const int MaxMasterPasswordLength = 1024;
 
+    private const string NotUnlockedMessage = "The vault is not unlocked.";
+
     private readonly VaultCryptor _cryptor;
     private readonly ILocalVaultStorage _storage;
     private readonly Argon2Parameters _creationParameters;
     private readonly ILogger<VaultService> _logger;
 
+    // Serializes every operation that reads or replaces the stored vault.
+    private readonly SemaphoreSlim _operationGate = new(1, 1);
+
+    // Guards the session fields below. Lock() takes only this, so it never waits on I/O or the KDF.
+    private readonly Lock _sessionLock = new();
+
     private Vault? _vault;
     private byte[]? _vaultKey;
     private EncryptedVaultHeader? _header;
-    // SHA-256 of the encrypted envelope this session last loaded or persisted. Lets destructive
-    // operations verify the on-disk vault still corresponds to the current session before replacing it.
+    // SHA-256 of the encrypted envelope this session last loaded or persisted. Lets every write verify
+    // the on-disk vault still corresponds to the current session before replacing it.
     private byte[]? _persistedFingerprint;
-    private VaultState _state = VaultState.NoVault;
+    // Identifies the current session; changes whenever a session is opened or cleared.
+    private long _sessionId;
+    private volatile VaultState _state = VaultState.NoVault;
+    private volatile bool _disposed;
 
     public VaultService(
         VaultCryptor cryptor,
@@ -59,7 +90,39 @@ public sealed class VaultService : IVaultService
 
     public event EventHandler<VaultState>? StateChanged;
 
-    public IReadOnlyList<VaultItem> Items => _vault?.Items ?? [];
+    /// <summary>Whether a vault key is currently held in memory. For tests of the locking guarantees.</summary>
+    internal bool HoldsKeyMaterial
+    {
+        get
+        {
+            lock (_sessionLock)
+            {
+                return _vaultKey is not null;
+            }
+        }
+    }
+
+    public IReadOnlyList<VaultItem> Items
+    {
+        get
+        {
+            lock (_sessionLock)
+            {
+                return _vault?.Items ?? [];
+            }
+        }
+    }
+
+    public Argon2Parameters? KdfParameters
+    {
+        get
+        {
+            lock (_sessionLock)
+            {
+                return _header?.KdfParameters;
+            }
+        }
+    }
 
     public async Task<VaultState> RefreshStateAsync(CancellationToken cancellationToken = default)
     {
@@ -69,45 +132,59 @@ public sealed class VaultService : IVaultService
         }
 
         bool exists = await _storage.ExistsAsync(cancellationToken).ConfigureAwait(false);
-        SetState(exists ? VaultState.Locked : VaultState.NoVault);
-        return _state;
+        lock (_sessionLock)
+        {
+            // The vault may have been unlocked while storage was being queried.
+            if (_state != VaultState.Unlocked)
+            {
+                TransitionTo(exists ? VaultState.Locked : VaultState.NoVault);
+            }
+
+            return _state;
+        }
     }
 
     public async Task CreateVaultAsync(string masterPassword, CancellationToken cancellationToken = default)
     {
         ValidateMasterPassword(masterPassword);
 
-        if (await _storage.ExistsAsync(cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException("A vault already exists.");
-        }
-
-        var vault = new Vault();
-        byte[] plaintext = VaultSerializer.SerializeToUtf8Bytes(vault);
-        byte[] passwordBytes = Encoding.UTF8.GetBytes(masterPassword);
-        VaultCreationResult? created = null;
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            created = _cryptor.Create(passwordBytes, plaintext, _creationParameters);
-            await _storage.WriteAsync(created.Encrypted, cancellationToken).ConfigureAwait(false);
+            long sessionId = CurrentSessionId();
 
-            _vault = vault;
-            _vaultKey = created.VaultKey; // ownership transferred to the service
-            _header = created.Encrypted.Header;
-            _persistedFingerprint = EncryptedVaultFingerprint.Compute(created.Encrypted);
-            SetState(VaultState.Unlocked);
-            VaultLog.VaultCreated(_logger);
-        }
-        catch
-        {
-            // Creation or the initial write failed: do not leave key material dangling.
-            CryptoBuffers.Wipe(created?.VaultKey);
-            throw;
+            if (await _storage.ExistsAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("A vault already exists.");
+            }
+
+            var vault = new Vault();
+            byte[] plaintext = VaultSerializer.SerializeToUtf8Bytes(vault);
+            byte[] passwordBytes = Encoding.UTF8.GetBytes(masterPassword);
+            byte[]? vaultKey = null;
+            try
+            {
+                VaultCreationResult created = _cryptor.Create(passwordBytes, plaintext, _creationParameters);
+                vaultKey = created.VaultKey;
+                await _storage.WriteAsync(created.Encrypted, cancellationToken).ConfigureAwait(false);
+                byte[] fingerprint = EncryptedVaultFingerprint.Compute(created.Encrypted);
+
+                byte[] adopted = vaultKey;
+                vaultKey = null; // ownership passes to the session (or is wiped by OpenSession on failure)
+                OpenSession(sessionId, vault, adopted, created.Encrypted.Header, fingerprint);
+                VaultLog.VaultCreated(_logger);
+            }
+            finally
+            {
+                // Only ever a key the session did not take: creation or the initial write failed.
+                CryptoBuffers.Wipe(vaultKey);
+                CryptoBuffers.Wipe(passwordBytes);
+                CryptoBuffers.Wipe(plaintext);
+            }
         }
         finally
         {
-            CryptoBuffers.Wipe(passwordBytes);
-            CryptoBuffers.Wipe(plaintext);
+            _operationGate.Release();
         }
     }
 
@@ -115,64 +192,73 @@ public sealed class VaultService : IVaultService
     {
         ArgumentNullException.ThrowIfNull(masterPassword);
 
-        EncryptedVault encrypted = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
-
-        byte[] passwordBytes = Encoding.UTF8.GetBytes(masterPassword);
-        UnlockResult unlocked;
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            unlocked = _cryptor.Unlock(encrypted, passwordBytes);
-        }
-        catch (BitosXCryptographicException)
-        {
-            VaultLog.VaultUnlockFailed(_logger);
-            throw;
+            long sessionId = CurrentSessionId();
+            EncryptedVault encrypted = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+            byte[] passwordBytes = Encoding.UTF8.GetBytes(masterPassword);
+            UnlockResult unlocked;
+            try
+            {
+                unlocked = _cryptor.Unlock(encrypted, passwordBytes);
+            }
+            catch (BitosXCryptographicException)
+            {
+                VaultLog.VaultUnlockFailed(_logger);
+                throw;
+            }
+            finally
+            {
+                CryptoBuffers.Wipe(passwordBytes);
+            }
+
+            byte[]? vaultKey = unlocked.VaultKey;
+            try
+            {
+                Vault vault = VaultSerializer.Deserialize(unlocked.Plaintext); // validates every item
+                byte[] fingerprint = EncryptedVaultFingerprint.Compute(encrypted);
+
+                byte[] adopted = vaultKey;
+                vaultKey = null; // ownership passes to the session (or is wiped by OpenSession on failure)
+                OpenSession(sessionId, vault, adopted, unlocked.Header, fingerprint);
+                VaultLog.VaultUnlocked(_logger, vault.Items.Count);
+            }
+            finally
+            {
+                // Only ever a key the session did not take: the decrypted content was rejected.
+                CryptoBuffers.Wipe(vaultKey);
+                CryptoBuffers.Wipe(unlocked.Plaintext);
+            }
         }
         finally
         {
-            CryptoBuffers.Wipe(passwordBytes);
-        }
-
-        try
-        {
-            Vault vault = VaultSerializer.Deserialize(unlocked.Plaintext);
-            _vault = vault;
-            _vaultKey = unlocked.VaultKey; // ownership transferred to the service
-            _header = unlocked.Header;
-            _persistedFingerprint = EncryptedVaultFingerprint.Compute(encrypted);
-            SetState(VaultState.Unlocked);
-            VaultLog.VaultUnlocked(_logger, vault.Items.Count);
-        }
-        catch
-        {
-            CryptoBuffers.Wipe(unlocked.VaultKey);
-            throw;
-        }
-        finally
-        {
-            CryptoBuffers.Wipe(unlocked.Plaintext);
+            _operationGate.Release();
         }
     }
 
     public void Lock()
     {
-        CryptoBuffers.Wipe(_vaultKey);
-        _vaultKey = null;
-        _vault = null;
-        _header = null;
-        _persistedFingerprint = null;
-        SetState(VaultState.Locked);
-        VaultLog.VaultLocked(_logger);
+        lock (_sessionLock)
+        {
+            ClearSession();
+            VaultLog.VaultLocked(_logger);
+            TransitionTo(VaultState.Locked);
+        }
     }
 
     public async Task ChangeMasterPasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
     {
+        const string notUnlocked = "The vault must be unlocked to change the master password.";
+
         ArgumentNullException.ThrowIfNull(currentPassword);
         ValidateMasterPassword(newPassword);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (_state != VaultState.Unlocked)
         {
-            throw new InvalidOperationException("The vault must be unlocked to change the master password.");
+            throw new InvalidOperationException(notUnlocked);
         }
 
         if (string.Equals(currentPassword, newPassword, StringComparison.Ordinal))
@@ -180,209 +266,188 @@ public sealed class VaultService : IVaultService
             throw new ArgumentException("The new master password must be different from the current password.", nameof(newPassword));
         }
 
-        // Read the current on-disk vault; re-wrapping carries its content over unchanged.
-        EncryptedVault current = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
-
-        byte[] currentBytes = Encoding.UTF8.GetBytes(currentPassword);
-        byte[] newBytes = Encoding.UTF8.GetBytes(newPassword);
-        EncryptedVault reWrapped;
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Verifies the current password (authenticated unwrap) and produces a re-wrapped vault.
-            reWrapped = _cryptor.ChangeMasterPassword(current, currentBytes, newBytes);
-        }
-        catch (BitosXCryptographicException)
-        {
-            VaultLog.MasterPasswordChangeFailed(_logger);
-            throw;
+            SessionSnapshot session = CaptureSession(notUnlocked);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Re-wrapping carries the stored content over unchanged, so the stored vault must be
+                // exactly the one this session holds the key for. Otherwise the new header would wrap a
+                // key the session does not have, and the next save would produce an unreadable vault.
+                EncryptedVault current = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
+                if (!MatchesSession(current, session))
+                {
+                    VaultLog.MasterPasswordChangeFailed(_logger);
+                    throw new VaultChangedExternallyException();
+                }
+
+                byte[] currentBytes = Encoding.UTF8.GetBytes(currentPassword);
+                byte[] newBytes = Encoding.UTF8.GetBytes(newPassword);
+                EncryptedVault reWrapped;
+                try
+                {
+                    // Verifies the current password (authenticated unwrap) and produces a re-wrapped vault.
+                    reWrapped = _cryptor.ChangeMasterPassword(current, currentBytes, newBytes);
+                }
+                catch (BitosXCryptographicException)
+                {
+                    VaultLog.MasterPasswordChangeFailed(_logger);
+                    throw;
+                }
+                finally
+                {
+                    CryptoBuffers.Wipe(currentBytes);
+                    CryptoBuffers.Wipe(newBytes);
+                }
+
+                // Last safe cancellation point: nothing has been written yet.
+                cancellationToken.ThrowIfCancellationRequested();
+
+                byte[] fingerprint = EncryptedVaultFingerprint.Compute(reWrapped);
+                try
+                {
+                    await CommitAsync(reWrapped, fingerprint, session.Fingerprint).ConfigureAwait(false);
+                }
+                catch
+                {
+                    VaultLog.MasterPasswordChangeFailed(_logger);
+                    throw;
+                }
+
+                // Only after the new vault is on disk: adopt the new header so later saves use the new
+                // wrapping. The retained vault key and decrypted contents are unchanged.
+                lock (_sessionLock)
+                {
+                    if (_sessionId == session.SessionId)
+                    {
+                        _header = reWrapped.Header;
+                        _persistedFingerprint = fingerprint;
+                    }
+                }
+
+                VaultLog.MasterPasswordChanged(_logger);
+            }
+            finally
+            {
+                CryptoBuffers.Wipe(session.VaultKey);
+            }
         }
         finally
         {
-            CryptoBuffers.Wipe(currentBytes);
-            CryptoBuffers.Wipe(newBytes);
+            _operationGate.Release();
         }
-
-        // Atomic write; on failure the previous vault (old password) is left intact.
-        await _storage.WriteAsync(reWrapped, cancellationToken).ConfigureAwait(false);
-
-        // Only after successful persistence: adopt the new header so later saves use the new wrapping.
-        // The retained vault key and decrypted contents are unchanged.
-        _header = reWrapped.Header;
-        _persistedFingerprint = EncryptedVaultFingerprint.Compute(reWrapped);
-        VaultLog.MasterPasswordChanged(_logger);
     }
 
     public async Task RotateVaultKeyAsync(string currentPassword, CancellationToken cancellationToken = default)
     {
+        const string notUnlocked = "The vault must be unlocked to rotate the vault key.";
+
         ArgumentNullException.ThrowIfNull(currentPassword);
+        ObjectDisposedException.ThrowIf(_disposed, this);
 
         if (_state != VaultState.Unlocked)
         {
-            throw new InvalidOperationException("The vault must be unlocked to rotate the vault key.");
+            throw new InvalidOperationException(notUnlocked);
         }
 
-        // The unlocked session always has a known persisted fingerprint (set on create/unlock/save).
-        byte[] expectedFingerprint = _persistedFingerprint
-            ?? throw new InvalidOperationException("The vault must be unlocked to rotate the vault key.");
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        // Read the current on-disk vault (cancellable — nothing has been written yet).
-        EncryptedVault current = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
-
-        // Consistency gate: the on-disk vault must be byte-for-byte the state this session last loaded or
-        // persisted. This catches BOTH a different cryptographic identity (key/header) AND a same-key
-        // external content change (different content nonce/ciphertext), because the fingerprint covers the
-        // whole envelope. If it changed, fail closed and write nothing.
-        byte[] actualFingerprint = EncryptedVaultFingerprint.Compute(current);
-        if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(actualFingerprint, expectedFingerprint))
-        {
-            VaultLog.VaultKeyRotationFailed(_logger);
-            throw new VaultChangedExternallyException();
-        }
-
-        byte[] currentBytes = Encoding.UTF8.GetBytes(currentPassword);
-        VaultKeyRotationResult rotated;
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // Verifies the current password (authenticated decrypt), re-encrypts under a fresh key, and
-            // self-checks. All expensive/cancellable-in-spirit work happens here, before any write.
-            rotated = _cryptor.RotateVaultKey(current, currentBytes);
-        }
-        catch (BitosXCryptographicException)
-        {
-            VaultLog.VaultKeyRotationFailed(_logger);
-            throw;
+            SessionSnapshot session = CaptureSession(notUnlocked);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // Read the current on-disk vault (cancellable — nothing has been written yet).
+                EncryptedVault current = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
+
+                // Consistency gate: the on-disk vault must be byte-for-byte the state this session last
+                // loaded or persisted. This catches BOTH a different cryptographic identity (key/header)
+                // AND a same-key external content change (different content nonce/ciphertext), because
+                // the fingerprint covers the whole envelope. If it changed, fail closed and write nothing.
+                if (!MatchesSession(current, session))
+                {
+                    VaultLog.VaultKeyRotationFailed(_logger);
+                    throw new VaultChangedExternallyException();
+                }
+
+                byte[] currentBytes = Encoding.UTF8.GetBytes(currentPassword);
+                VaultKeyRotationResult rotated;
+                try
+                {
+                    // Verifies the current password (authenticated decrypt), re-encrypts under a fresh
+                    // key, and self-checks. All expensive work happens here, before any write.
+                    rotated = _cryptor.RotateVaultKey(current, currentBytes);
+                }
+                catch (BitosXCryptographicException)
+                {
+                    VaultLog.VaultKeyRotationFailed(_logger);
+                    throw;
+                }
+                finally
+                {
+                    CryptoBuffers.Wipe(currentBytes);
+                }
+
+                byte[]? newKey = rotated.NewVaultKey;
+                try
+                {
+                    // Last safe cancellation point: before any destructive write. After this,
+                    // cancellation is not honored so we can never end with disk = rotated vault but
+                    // memory = old key/header.
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    byte[] fingerprint = EncryptedVaultFingerprint.Compute(rotated.Encrypted);
+                    try
+                    {
+                        await CommitAsync(rotated.Encrypted, fingerprint, session.Fingerprint).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        VaultLog.VaultKeyRotationFailed(_logger);
+                        throw;
+                    }
+
+                    // Disk holds the rotated vault: adopt the new key so memory matches it.
+                    lock (_sessionLock)
+                    {
+                        if (_sessionId == session.SessionId)
+                        {
+                            CryptoBuffers.Wipe(_vaultKey);
+                            _vaultKey = newKey;
+                            newKey = null; // ownership passed to the session
+                            _header = rotated.Encrypted.Header;
+                            _persistedFingerprint = fingerprint;
+                        }
+                    }
+
+                    VaultLog.VaultKeyRotated(_logger);
+                }
+                finally
+                {
+                    // Not adopted: the commit failed, or the vault was locked while rotating.
+                    CryptoBuffers.Wipe(newKey);
+                }
+            }
+            finally
+            {
+                CryptoBuffers.Wipe(session.VaultKey);
+            }
         }
         finally
         {
-            CryptoBuffers.Wipe(currentBytes);
+            _operationGate.Release();
         }
-
-        // Last safe cancellation point: before any destructive write. After this, cancellation is not
-        // honored so we can never end with disk = rotated vault but memory = old key/header.
-        if (cancellationToken.IsCancellationRequested)
-        {
-            CryptoBuffers.Wipe(rotated.NewVaultKey);
-            throw new OperationCanceledException(cancellationToken);
-        }
-
-        // ---- Non-cancellable commit section ----
-        // The atomic replacement is issued with CancellationToken.None so it cannot be interrupted, and
-        // the in-memory key/header are adopted immediately afterward with no awaited step in between.
-        byte[] rotatedFingerprint = EncryptedVaultFingerprint.Compute(rotated.Encrypted);
-        Exception? writeException = null;
-        try
-        {
-            await _storage.WriteAsync(rotated.Encrypted, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            writeException = ex;
-        }
-
-        if (writeException is not null)
-        {
-            // The write threw AFTER we committed to replacing the vault. A correct atomic store leaves the
-            // old file intact on failure, but the service must not depend on that: the replacement MAY have
-            // taken effect before the throw. Reconcile against disk so the in-memory session can never end
-            // up disagreeing with the on-disk vault (never disk = rotated while memory = old key).
-            await ReconcileFailedRotationCommitAsync(rotated, rotatedFingerprint, expectedFingerprint, writeException)
-                .ConfigureAwait(false);
-            return;
-        }
-
-        AdoptRotatedVault(rotated, rotatedFingerprint);
-    }
-
-    /// <summary>Adopts rotated key material into the unlocked session (disk already holds the rotated vault).</summary>
-    private void AdoptRotatedVault(VaultKeyRotationResult rotated, byte[] rotatedFingerprint)
-    {
-        byte[]? previousKey = _vaultKey;
-        _vaultKey = rotated.NewVaultKey;
-        _header = rotated.Encrypted.Header;
-        _persistedFingerprint = rotatedFingerprint;
-        CryptoBuffers.Wipe(previousKey);
-        VaultLog.VaultKeyRotated(_logger);
-    }
-
-    /// <summary>
-    /// Reconciles the in-memory session with disk after the rotation commit write threw. Reads the actual
-    /// on-disk vault and compares its fingerprint against the pre-rotation and rotated fingerprints:
-    /// <list type="bullet">
-    /// <item>disk == old → replacement did not take effect: keep the old key, surface the write failure.</item>
-    /// <item>disk == rotated → replacement took effect before the throw: adopt the new key (success).</item>
-    /// <item>disk == neither, or unreadable → indeterminate: lock the session and fail closed.</item>
-    /// </list>
-    /// </summary>
-    private async Task ReconcileFailedRotationCommitAsync(
-        VaultKeyRotationResult rotated, byte[] rotatedFingerprint, byte[] oldFingerprint, Exception writeException)
-    {
-        EncryptedVault onDisk;
-        try
-        {
-            onDisk = await _storage.ReadAsync(CancellationToken.None).ConfigureAwait(false);
-        }
-        catch
-        {
-            // The on-disk state cannot even be read — treat as indeterminate and fail closed.
-            CryptoBuffers.Wipe(rotated.NewVaultKey);
-            LockAfterIndeterminateState();
-            throw new VaultInconsistentStateException();
-        }
-
-        byte[] diskFingerprint = EncryptedVaultFingerprint.Compute(onDisk);
-
-        if (System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(diskFingerprint, oldFingerprint))
-        {
-            // Replacement did NOT take effect: the old vault is intact on disk. Keep the still-valid old
-            // key and surface the genuine write failure. Nothing was rotated.
-            CryptoBuffers.Wipe(rotated.NewVaultKey);
-            VaultLog.VaultKeyRotationFailed(_logger);
-            throw writeException;
-        }
-
-        if (System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(diskFingerprint, rotatedFingerprint))
-        {
-            // Replacement DID take effect before the throw: disk holds the rotated vault. Adopt the new
-            // key so memory matches disk — the rotation is effectively complete.
-            AdoptRotatedVault(rotated, rotatedFingerprint);
-            return;
-        }
-
-        // Disk matches neither the old nor the rotated vault — indeterminate/corrupt. Lock and fail closed.
-        CryptoBuffers.Wipe(rotated.NewVaultKey);
-        LockAfterIndeterminateState();
-        throw new VaultInconsistentStateException();
-    }
-
-    /// <summary>Wipes all key material and locks the session after an indeterminate destructive-write outcome.</summary>
-    private void LockAfterIndeterminateState()
-    {
-        CryptoBuffers.Wipe(_vaultKey);
-        _vaultKey = null;
-        _vault = null;
-        _header = null;
-        _persistedFingerprint = null;
-        SetState(VaultState.Locked);
-        VaultLog.VaultKeyRotationFailed(_logger);
     }
 
     public async Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
-        Vault vault = RequireUnlockedVault();
 
-        vault.Add(item);
-        try
-        {
-            await SaveAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            vault.Remove(item.Id); // roll back in-memory change to stay consistent with disk
-            throw;
-        }
+        await ApplyAsync(vault => vault.Add(item), cancellationToken).ConfigureAwait(false);
 
         VaultLog.VaultItemAdded(_logger, item.ItemType);
         return item;
@@ -391,78 +456,375 @@ public sealed class VaultService : IVaultService
     public async Task<VaultItem> UpdateItemAsync(VaultItem item, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
-        Vault vault = RequireUnlockedVault();
 
-        VaultItem previous = vault.Find(item.Id) ?? throw new ItemNotFoundException(item.Id);
-        VaultItem stored = vault.Update(item);
-        try
-        {
-            await SaveAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            vault.Update(previous); // restore previous version
-            throw;
-        }
+        VaultItem? stored = null;
+        await ApplyAsync(vault => stored = vault.Update(item), cancellationToken).ConfigureAwait(false);
 
         VaultLog.VaultItemUpdated(_logger, item.ItemType);
-        return stored;
+        return stored!;
     }
 
     public async Task DeleteItemAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        Vault vault = RequireUnlockedVault();
-
-        VaultItem previous = vault.Find(id) ?? throw new ItemNotFoundException(id);
-        vault.Remove(id);
-        try
-        {
-            await SaveAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            vault.Add(previous); // restore removed item
-            throw;
-        }
+        await ApplyAsync(
+            vault =>
+            {
+                if (!vault.Remove(id))
+                {
+                    throw new ItemNotFoundException(id);
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
 
         VaultLog.VaultItemDeleted(_logger);
     }
 
-    public Task<VaultItem> ToggleFavoriteAsync(Guid id, CancellationToken cancellationToken = default)
+    public async Task<VaultItem> ToggleFavoriteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        Vault vault = RequireUnlockedVault();
-        VaultItem existing = vault.Find(id) ?? throw new ItemNotFoundException(id);
-        VaultItem toggled = existing with { Favorite = !existing.Favorite };
-        return UpdateItemAsync(toggled, cancellationToken);
+        VaultItem? stored = null;
+        await ApplyAsync(
+            vault =>
+            {
+                VaultItem existing = vault.Find(id) ?? throw new ItemNotFoundException(id);
+                stored = vault.Update(existing with { Favorite = !existing.Favorite });
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        VaultLog.VaultItemUpdated(_logger, stored!.ItemType);
+        return stored;
     }
 
-    private async Task SaveAsync(CancellationToken cancellationToken)
+    public void Dispose()
     {
-        Vault vault = RequireUnlockedVault();
-        byte[] vaultKey = _vaultKey ?? throw new InvalidOperationException("The vault is not unlocked.");
-        EncryptedVaultHeader header = _header ?? throw new InvalidOperationException("The vault is not unlocked.");
+        if (_disposed)
+        {
+            return;
+        }
 
-        byte[] plaintext = VaultSerializer.SerializeToUtf8Bytes(vault);
+        _disposed = true;
+        lock (_sessionLock)
+        {
+            // Shutting down: wipe the key without notifying subscribers that are being torn down too.
+            ClearSession();
+            _state = VaultState.Locked;
+        }
+
+        _operationGate.Dispose();
+    }
+
+    /// <summary>
+    /// Applies <paramref name="change"/> to a copy of the vault, persists the result, and only then
+    /// publishes it. If anything fails the session keeps showing the vault that is on disk.
+    /// </summary>
+    private async Task ApplyAsync(Action<Vault> change, CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            EncryptedVault encrypted = _cryptor.ReEncryptContent(header, vaultKey, plaintext);
-            await _storage.WriteAsync(encrypted, cancellationToken).ConfigureAwait(false);
-            _persistedFingerprint = EncryptedVaultFingerprint.Compute(encrypted);
-            VaultLog.VaultSaved(_logger);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            VaultLog.VaultSaveFailed(_logger);
-            throw;
+            SessionSnapshot session = CaptureSession(NotUnlockedMessage);
+            byte[]? plaintext = null;
+            try
+            {
+                Vault candidate = session.Vault.Clone();
+                change(candidate); // validates; rejects before anything is encrypted or written
+
+                try
+                {
+                    plaintext = VaultSerializer.SerializeToUtf8Bytes(candidate);
+                    EncryptedVault encrypted = _cryptor.ReEncryptContent(session.Header, session.VaultKey, plaintext);
+                    byte[] fingerprint = EncryptedVaultFingerprint.Compute(encrypted);
+
+                    byte[]? storedFingerprint =
+                        await VerifyStoredVaultForSaveAsync(session, cancellationToken).ConfigureAwait(false);
+
+                    // Last safe cancellation point: nothing has been written yet.
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    await CommitAsync(encrypted, fingerprint, storedFingerprint).ConfigureAwait(false);
+
+                    lock (_sessionLock)
+                    {
+                        if (_sessionId == session.SessionId)
+                        {
+                            _vault = candidate;
+                            _persistedFingerprint = fingerprint;
+                        }
+                    }
+
+                    VaultLog.VaultSaved(_logger);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    VaultLog.VaultSaveFailed(_logger);
+                    throw;
+                }
+            }
+            finally
+            {
+                CryptoBuffers.Wipe(session.VaultKey);
+                CryptoBuffers.Wipe(plaintext);
+            }
         }
         finally
         {
-            CryptoBuffers.Wipe(plaintext);
+            _operationGate.Release();
         }
     }
 
-    private Vault RequireUnlockedVault()
-        => _vault ?? throw new InvalidOperationException("The vault is not unlocked.");
+    /// <summary>
+    /// Verifies that saving will not overwrite a vault this session does not know about. Returns the
+    /// fingerprint of the stored vault, or <see langword="null"/> when no stored vault exists: a
+    /// missing file has nothing to lose, and the session holds the last copy of the data, so writing
+    /// it back is the safe outcome. A stored vault that differs from the session's — or that cannot be
+    /// read at all — is left untouched.
+    /// </summary>
+    private async Task<byte[]?> VerifyStoredVaultForSaveAsync(SessionSnapshot session, CancellationToken cancellationToken)
+    {
+        if (!await _storage.ExistsAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        EncryptedVault stored;
+        try
+        {
+            stored = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (BitosXCryptographicException)
+        {
+            // Present but not parseable by this build (corrupted, or written by a newer version).
+            throw new VaultChangedExternallyException();
+        }
+
+        if (!MatchesSession(stored, session))
+        {
+            throw new VaultChangedExternallyException();
+        }
+
+        return session.Fingerprint;
+    }
+
+    /// <summary>
+    /// Replaces the stored vault with <paramref name="next"/> and returns only once the stored vault
+    /// is known to be <paramref name="next"/>. The write is not cancellable. If it throws, the outcome
+    /// is reconciled against storage rather than assumed:
+    /// <list type="bullet">
+    /// <item>storage still holds the previous vault → the write failure is rethrown; nothing changed.</item>
+    /// <item>storage holds <paramref name="next"/> → the replacement took effect before the throw; success.</item>
+    /// <item>anything else, or storage cannot be read → the session is locked and
+    /// <see cref="VaultInconsistentStateException"/> is thrown.</item>
+    /// </list>
+    /// </summary>
+    /// <param name="next">The envelope to store.</param>
+    /// <param name="nextFingerprint">Fingerprint of <paramref name="next"/>.</param>
+    /// <param name="previousFingerprint">
+    /// Fingerprint of the vault being replaced, or <see langword="null"/> if there was none.
+    /// </param>
+    private async Task CommitAsync(EncryptedVault next, byte[] nextFingerprint, byte[]? previousFingerprint)
+    {
+        try
+        {
+            await _storage.WriteAsync(next, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // A correct atomic store leaves the old file intact on failure, but the service must not
+            // depend on that: the replacement MAY have taken effect before the throw.
+            byte[]? stored = await ReadStoredFingerprintAfterFailedWriteAsync().ConfigureAwait(false);
+
+            if (FingerprintsEqual(stored, previousFingerprint))
+            {
+                throw; // the previous state is intact; surface the genuine write failure
+            }
+
+            if (FingerprintsEqual(stored, nextFingerprint))
+            {
+                return; // the replacement took effect before the throw
+            }
+
+            LockAfterIndeterminateState();
+            throw new VaultInconsistentStateException();
+        }
+    }
+
+    private async Task<byte[]?> ReadStoredFingerprintAfterFailedWriteAsync()
+    {
+        try
+        {
+            if (!await _storage.ExistsAsync(CancellationToken.None).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            EncryptedVault stored = await _storage.ReadAsync(CancellationToken.None).ConfigureAwait(false);
+            return EncryptedVaultFingerprint.Compute(stored);
+        }
+        catch
+        {
+            // The on-disk state cannot even be read — treat as indeterminate and fail closed.
+            LockAfterIndeterminateState();
+            throw new VaultInconsistentStateException();
+        }
+    }
+
+    private static bool FingerprintsEqual(byte[]? left, byte[]? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        return CryptographicOperations.FixedTimeEquals(left, right);
+    }
+
+    private static bool MatchesSession(EncryptedVault stored, SessionSnapshot session)
+        => CryptographicOperations.FixedTimeEquals(EncryptedVaultFingerprint.Compute(stored), session.Fingerprint);
+
+    /// <summary>Wipes all key material and locks the session after an indeterminate write outcome.</summary>
+    private void LockAfterIndeterminateState()
+    {
+        lock (_sessionLock)
+        {
+            ClearSession();
+            try
+            {
+                TransitionTo(VaultState.Locked);
+            }
+            catch
+            {
+                // The caller is already failing with VaultInconsistentStateException, which is the
+                // error the user has to see; the session is locked either way.
+            }
+        }
+    }
+
+    /// <summary>Waits for the operation gate. The caller must release it.</summary>
+    private async Task EnterAsync(CancellationToken cancellationToken)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private long CurrentSessionId()
+    {
+        lock (_sessionLock)
+        {
+            return _sessionId;
+        }
+    }
+
+    /// <summary>
+    /// Takes a consistent view of the unlocked session, including a private copy of the vault key, so
+    /// an operation is unaffected by <see cref="Lock"/> wiping the session's key while it runs. The
+    /// caller owns and must wipe <see cref="SessionSnapshot.VaultKey"/>.
+    /// </summary>
+    private SessionSnapshot CaptureSession(string notUnlockedMessage)
+    {
+        lock (_sessionLock)
+        {
+            if (_state != VaultState.Unlocked
+                || _vault is null
+                || _vaultKey is null
+                || _header is null
+                || _persistedFingerprint is null)
+            {
+                throw new InvalidOperationException(notUnlockedMessage);
+            }
+
+            return new SessionSnapshot(_sessionId, _vault, (byte[])_vaultKey.Clone(), _header, _persistedFingerprint);
+        }
+    }
+
+    /// <summary>
+    /// Opens an unlocked session, taking ownership of <paramref name="vaultKey"/> in every outcome:
+    /// it either becomes the session key or is wiped here.
+    /// </summary>
+    private void OpenSession(long expectedSessionId, Vault vault, byte[] vaultKey, EncryptedVaultHeader header, byte[] fingerprint)
+    {
+        lock (_sessionLock)
+        {
+            if (_sessionId != expectedSessionId)
+            {
+                // Lock() was called while the vault was being opened: the lock request wins.
+                CryptoBuffers.Wipe(vaultKey);
+                throw new OperationCanceledException("The vault was locked while it was being opened.");
+            }
+
+            ClearSession(); // wipes the key of a session being replaced, if any
+            _vault = vault;
+            _vaultKey = vaultKey;
+            _header = header;
+            _persistedFingerprint = fingerprint;
+
+            try
+            {
+                TransitionTo(VaultState.Unlocked);
+            }
+            catch
+            {
+                // A subscriber could not be told the vault is open (the UI could not show it, or
+                // auto-lock could not arm). Do not stay unlocked behind its back.
+                ClearSession();
+                try
+                {
+                    TransitionTo(VaultState.Locked);
+                }
+                catch
+                {
+                    // Already failing with the original error; the session is locked either way.
+                }
+
+                throw;
+            }
+        }
+    }
+
+    /// <summary>Wipes the vault key and drops all session state. Must be called under the session lock.</summary>
+    private void ClearSession()
+    {
+        CryptoBuffers.Wipe(_vaultKey);
+        _vaultKey = null;
+        _vault = null;
+        _header = null;
+        _persistedFingerprint = null;
+        _sessionId++;
+    }
+
+    /// <summary>
+    /// Sets the state and notifies every subscriber, even if one of them throws; the first failure is
+    /// rethrown once all have been notified. Must be called under the session lock.
+    /// </summary>
+    private void TransitionTo(VaultState state)
+    {
+        if (_state == state)
+        {
+            return;
+        }
+
+        _state = state;
+
+        EventHandler<VaultState>? handlers = StateChanged;
+        if (handlers is null)
+        {
+            return;
+        }
+
+        System.Runtime.ExceptionServices.ExceptionDispatchInfo? firstFailure = null;
+        foreach (EventHandler<VaultState> handler in handlers.GetInvocationList().Cast<EventHandler<VaultState>>())
+        {
+            try
+            {
+                handler(this, state);
+            }
+            catch (Exception ex)
+            {
+                firstFailure ??= System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex);
+            }
+        }
+
+        firstFailure?.Throw();
+    }
 
     private static void ValidateMasterPassword(string masterPassword)
     {
@@ -481,14 +843,11 @@ public sealed class VaultService : IVaultService
         }
     }
 
-    private void SetState(VaultState state)
-    {
-        if (_state == state)
-        {
-            return;
-        }
-
-        _state = state;
-        StateChanged?.Invoke(this, state);
-    }
+    /// <summary>A consistent view of one unlocked session. <see cref="VaultKey"/> is a private copy.</summary>
+    private sealed record SessionSnapshot(
+        long SessionId,
+        Vault Vault,
+        byte[] VaultKey,
+        EncryptedVaultHeader Header,
+        byte[] Fingerprint);
 }
