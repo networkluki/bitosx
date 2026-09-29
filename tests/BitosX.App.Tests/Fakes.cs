@@ -1,4 +1,5 @@
 using BitosX.Core.Domain;
+using BitosX.Core.Security;
 using BitosX.Core.Services;
 using BitosX.Core.Settings;
 using BitosX.Crypto;
@@ -16,6 +17,23 @@ internal sealed class FakeVaultService : IVaultService
     public event EventHandler<VaultState>? StateChanged;
 
     public Argon2Parameters? KdfParameters { get; set; }
+    public bool UsesLegacyPasswordEncoding { get; set; }
+    public int StrengthenCount { get; private set; }
+
+    public Task StrengthenKeyDerivationAsync(
+        string currentPassword, Argon2Parameters newParameters, CancellationToken cancellationToken = default)
+    {
+        StrengthenCount++;
+        if (OperationThrow is not null)
+        {
+            return Task.FromException(OperationThrow);
+        }
+
+        KdfParameters = newParameters;
+        UsesLegacyPasswordEncoding = false;
+        return Task.CompletedTask;
+    }
+
     public List<VaultItem> Stored { get; } = [];
     public IReadOnlyList<VaultItem> Items => Stored;
 
@@ -175,5 +193,19 @@ internal sealed class FakeAppSettingsStore : IAppSettingsStore
         }
 
         Saved = settings;
+    }
+}
+
+/// <summary>Reports a fixed duration, or a device without enough memory.</summary>
+internal sealed class FakeKeyDerivationBenchmark : IKeyDerivationBenchmark
+{
+    public TimeSpan Elapsed { get; set; } = TimeSpan.FromMilliseconds(210);
+    public Exception? MeasureThrow { get; set; }
+    public List<Argon2Parameters> Measured { get; } = [];
+
+    public Task<TimeSpan> MeasureAsync(Argon2Parameters parameters, CancellationToken cancellationToken = default)
+    {
+        Measured.Add(parameters);
+        return MeasureThrow is not null ? Task.FromException<TimeSpan>(MeasureThrow) : Task.FromResult(Elapsed);
     }
 }

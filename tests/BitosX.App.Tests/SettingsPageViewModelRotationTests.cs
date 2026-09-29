@@ -43,7 +43,8 @@ public sealed class SettingsPageViewModelRotationTests : IDisposable
             autoLock,
             new NullSystemSessionEvents(),
             new FakeVaultBackupService(),
-            new FakeFilePicker());
+            new FakeFilePicker(),
+            new FakeKeyDerivationBenchmark());
 
         return (vm, vault);
     }

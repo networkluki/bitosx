@@ -45,7 +45,8 @@ public sealed class SettingsPageViewModelRestoreTests : IDisposable
             autoLock,
             new NullSystemSessionEvents(),
             backup,
-            picker);
+            picker,
+            new FakeKeyDerivationBenchmark());
 
         return (vm, backup, picker, vault);
     }

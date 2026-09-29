@@ -285,6 +285,54 @@ public sealed class VaultBackupServiceTests : IDisposable
         Assert.Equal("Foreign", only.Name); // replace-only
     }
 
+    // ---- Master password encoding and key-derivation settings (0.6.0) ----
+
+    [Theory]
+    [InlineData("lösenord-räksmörgås", "lösenord-räksmörgås")]   // keyed composed, typed decomposed
+    [InlineData("lösenord-räksmörgås", "lösenord-räksmörgås")]   // keyed decomposed, typed composed
+    [InlineData("mitt hemliga lösenord", "mitt hemliga lösenord")]              // keyed and typed with no-break spaces
+    public async Task Restore_BackupFromBefore060_IsAccepted_HoweverItWasKeyed(string keyedWith, string typedNow)
+    {
+        // As a version before 0.6.0 wrote it: keyed with the password exactly as typed.
+        EncryptedVault legacy = _cryptor.Create(
+            System.Text.Encoding.UTF8.GetBytes(keyedWith),
+            System.Text.Encoding.UTF8.GetBytes(ItemJson("\"Favorite\":true")),
+            Argon2Parameters.ForTesting).Encrypted;
+        await File.WriteAllBytesAsync(_backupPath, EncryptedVaultSerializer.SerializeToUtf8Bytes(legacy));
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+
+        BackupPreview preview = await backup.PrepareRestoreAsync(_backupPath, typedNow);
+        await backup.CommitRestoreAsync(preview);
+        await svc.UnlockAsync(typedNow);
+
+        Assert.Equal(1, preview.ItemCount);
+        Assert.Equal("Example", Assert.Single(svc.Items).Name);
+    }
+
+    [Fact]
+    public async Task Backup_KeepsTheKeyDerivationSettingsItWasMadeWith()
+    {
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+        await svc.AddLoginAsync(SampleLogin());
+        await backup.ExportAsync(_backupPath);
+
+        var stronger = new Argon2Parameters(4096, 2, 1, 32);
+        await svc.StrengthenKeyDerivationAsync(MasterPassword, stronger);
+
+        // Strengthening is not retroactive: the earlier backup is a copy with the earlier settings.
+        BackupPreview preview = await backup.PrepareRestoreAsync(_backupPath, MasterPassword);
+        Assert.Equal(Argon2Parameters.ForTesting, preview.Envelope.KdfParameters);
+        Assert.Equal(stronger, svc.KdfParameters);
+
+        // Restoring it brings those settings back, and the page will say so.
+        await backup.CommitRestoreAsync(preview);
+        await svc.UnlockAsync(MasterPassword);
+        Assert.Equal(Argon2Parameters.ForTesting, svc.KdfParameters);
+        Assert.Single(svc.Items);
+    }
+
     // ---- Hardening (0.5.1) ----
 
     /// <summary>Writes a backup whose decrypted content is exactly <paramref name="plaintextJson"/>.</summary>
