@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Diagnostic-only tool: exercises the production clipboard code against the real Windows
+    clipboard and clipboard history. Windows-only, so it is deliberately NOT part of BitosX.slnx
+    (the solution must keep building on every platform). Not shipped. See docs/VERIFICATION.md.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BitosX.App\BitosX.App.csproj" />
+  </ItemGroup>
+
+</Project>
