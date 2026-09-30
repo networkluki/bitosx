@@ -14,3 +14,6 @@
 # Binary types (never normalize)
 *.ico     binary
 *.png     binary
+
+# Shell scripts run on Unix, whatever system they were checked out on.
+*.sh      text eol=lf

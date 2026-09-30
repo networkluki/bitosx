@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Diagnostic-only tool: starts the real application, in a real window, on a data directory of
+    its own, and carries out the manual checklists of docs/VERIFICATION.md through the
+    accessibility interface of Windows (UI Automation) — the way a screen reader or a test robot
+    operates an application. Windows-only, so it is deliberately NOT part of BitosX.slnx (the
+    solution must keep building on every platform). Not shipped.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- For the UI Automation client, which is part of the Windows desktop framework. -->
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Console diagnostic tool: user-facing string localization analyzers do not apply. -->
+    <NoWarn>$(NoWarn);CA1303</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\BitosX.ClipboardProbe\NativeClipboard.cs" Link="NativeClipboard.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Only to read the envelope of a vault file: what changed on disk, never what is in it. -->
+    <ProjectReference Include="..\..\src\BitosX.Crypto\BitosX.Crypto.csproj" />
+  </ItemGroup>
+
+</Project>

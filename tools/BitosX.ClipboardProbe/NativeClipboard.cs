@@ -105,6 +105,43 @@ internal static class NativeClipboard
         }
     }
 
+    /// <summary>
+    /// Replaces the clipboard content with text that Windows is asked to keep out of the clipboard
+    /// history, so that a check leaves nothing behind there.
+    /// </summary>
+    public static bool SetTextOutsideHistory(string text)
+    {
+        if (!Open())
+        {
+            return false;
+        }
+
+        try
+        {
+            EmptyClipboard();
+            return Place(UnicodeText, Encoding.Unicode.GetBytes(text + "\0"))
+                   && Place(RegisterClipboardFormatW("ExcludeClipboardContentFromMonitorProcessing"), BitConverter.GetBytes(1));
+        }
+        finally
+        {
+            CloseClipboard();
+        }
+    }
+
+    private static bool Place(uint format, byte[] bytes)
+    {
+        nint memory = GlobalAlloc(Moveable, (nuint)bytes.Length);
+        if (format == 0 || memory == 0)
+        {
+            return false;
+        }
+
+        nint pointer = GlobalLock(memory);
+        Marshal.Copy(bytes, 0, pointer, bytes.Length);
+        GlobalUnlock(memory);
+        return SetClipboardData(format, memory) != 0; // the clipboard now owns the memory
+    }
+
     /// <summary>Empties the clipboard.</summary>
     public static void Clear()
     {
@@ -149,6 +186,10 @@ internal static class NativeClipboard
     [DllImport("user32.dll", ExactSpelling = true, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     private static extern uint EnumClipboardFormats(uint format);
+
+    [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    private static extern uint RegisterClipboardFormatW(string name);
 
     [DllImport("user32.dll", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
