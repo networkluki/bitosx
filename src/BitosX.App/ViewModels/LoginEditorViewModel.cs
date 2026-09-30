@@ -35,7 +35,11 @@ public sealed partial class LoginEditorViewModel : ViewModelBase
     public partial bool Favorite { get; set; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PasswordToggleText))]
     public partial bool IsPasswordVisible { get; set; }
+
+    /// <summary>What the button next to the password does when pressed.</summary>
+    public string PasswordToggleText => IsPasswordVisible ? "Hide" : "Show";
 
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }

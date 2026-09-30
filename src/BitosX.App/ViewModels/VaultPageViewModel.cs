@@ -110,9 +110,34 @@ public sealed partial class VaultPageViewModel : ViewModelBase
 
     private void CloseEditor() => Editor = null;
 
+    /// <summary>
+    /// Asks for an item to be deleted. Nothing is deleted yet: deleting cannot be undone, so the
+    /// item shows a question that has to be answered first.
+    /// </summary>
+    [RelayCommand]
+    private void RequestDelete(LoginItemViewModel item)
+    {
+        foreach (LoginItemViewModel other in _all)
+        {
+            other.IsDeletePending = false; // one question at a time
+        }
+
+        item.IsDeletePending = true;
+    }
+
+    [RelayCommand]
+    private static void CancelDelete(LoginItemViewModel item) => item.IsDeletePending = false;
+
     [RelayCommand]
     private async Task DeleteLoginAsync(LoginItemViewModel item)
     {
+        // Enforced here and not only by what the view shows: nothing is deleted that was not asked
+        // for and then confirmed.
+        if (!item.IsDeletePending)
+        {
+            return;
+        }
+
         try
         {
             await _vaultService.DeleteItemAsync(item.Id).ConfigureAwait(true);

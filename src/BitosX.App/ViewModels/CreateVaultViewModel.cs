@@ -34,8 +34,7 @@ public sealed partial class CreateVaultViewModel : ViewModelBase
 
     partial void OnMasterPasswordChanged(string value)
     {
-        PasswordStrengthLevel level = PasswordStrength.Estimate(value);
-        StrengthText = string.IsNullOrEmpty(value) ? string.Empty : $"Strength: {level}";
+        StrengthText = StrengthDisplay.Rating(value);
     }
 
     private bool CanCreate()

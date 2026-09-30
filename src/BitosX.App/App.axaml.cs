@@ -1,11 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
-using BitosX.App.Services;
-using BitosX.App.ViewModels;
-using BitosX.App.Views;
 using BitosX.Core.Diagnostics;
-using BitosX.Platform.Clipboard;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -13,7 +9,20 @@ namespace BitosX.App;
 
 public partial class App : Application
 {
+    private readonly AppLocation _location;
     private ServiceProvider? _services;
+
+    /// <summary>The application at the default per-user location. Also used by the visual designer.</summary>
+    public App()
+        : this(AppLocation.Default)
+    {
+    }
+
+    /// <summary>The application with its files at <paramref name="location"/>.</summary>
+    public App(AppLocation location)
+    {
+        _location = location ?? throw new ArgumentNullException(nameof(location));
+    }
 
     public override void Initialize()
     {
@@ -24,28 +33,16 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            _services = ServiceConfiguration.Build();
+            _services = ServiceConfiguration.Build(_location);
 
             ILogger logger = _services.GetRequiredService<ILoggerFactory>().CreateLogger("BitosX.App");
             VaultLog.ApplicationStarted(logger);
 
-            MainWindowViewModel viewModel = _services.GetRequiredService<MainWindowViewModel>();
-            var window = new MainWindow { DataContext = viewModel };
-
-            AutoLockService autoLock = _services.GetRequiredService<AutoLockService>();
-            autoLock.Attach(window);
-
-            // Clipboard hygiene beyond the timed clear: on workstation lock / suspend, and on exit.
-            ClipboardSessionGuard clipboardGuard = _services.GetRequiredService<ClipboardSessionGuard>();
-            _services.GetRequiredService<ExitClipboardCleaner>().Attach(window);
-
-            window.Opened += async (_, _) => await viewModel.InitializeAsync().ConfigureAwait(true);
-            desktop.MainWindow = window;
+            MainWindowSession session = MainWindowSession.Create(_services);
+            desktop.MainWindow = session.Window;
             desktop.ShutdownRequested += (_, _) =>
             {
-                clipboardGuard.Dispose();
-                autoLock.Dispose();
-                viewModel.Dispose();
+                session.Dispose();
                 _services?.Dispose(); // also wipes the vault key held by the vault service
             };
         }

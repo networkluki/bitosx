@@ -33,18 +33,19 @@ public enum ClipboardPlatform
 /// </para>
 /// <para>
 /// <b>macOS.</b> <c>org.nspasteboard.ConcealedType</c> is the convention published at
-/// nspasteboard.org and honored by the common clipboard managers. <b>Not verified</b>: no Mac was
-/// available.
+/// nspasteboard.org. Verified to be on the real pasteboard next to the text
+/// (tools/BitosX.ClipboardCheck). No clipboard manager for macOS has been asked what it does with it.
 /// </para>
 /// <para>
 /// <b>Linux.</b> <c>x-kde-passwordManagerHint</c> with the value <c>secret</c> is the convention
-/// introduced by KDE's clipboard manager and adopted by others. <b>Not verified</b>: no Linux
-/// desktop was available.
+/// introduced by KDE's clipboard manager. Verified to be on the real clipboard (X11) next to the
+/// text, and that KDE's clipboard manager does not record a copy that carries it. CopyQ 7.1.0
+/// does record it.
 /// </para>
 /// <para>
-/// All of these are requests. The operating system and well-behaved clipboard managers honor them;
-/// an application that reads the clipboard directly still sees the text. Pasting is unaffected.
-/// See docs/SECURITY_MODEL.md.
+/// All of these are requests. The operating system and some clipboard managers honor them; others
+/// do not, and an application that reads the clipboard directly still sees the text. Pasting is
+/// unaffected. See docs/SECURITY_MODEL.md.
 /// </para>
 /// </remarks>
 public static class SensitiveClipboardData
@@ -130,10 +131,10 @@ public static class SensitiveClipboardData
 
     /// <summary>
     /// Whether a copy may fall back to plain text when the clipboard refuses the marked content.
-    /// Only where the marker could not be tested: there, copying must keep working, and an unmarked
-    /// copy is what every version before 0.6.0 made. Never on Windows, where the markers are
-    /// verified and an unmarked copy would put the secret into the clipboard history — the copy
-    /// fails instead, and the user is told.
+    /// On macOS and Linux, where there are more kinds of clipboard than the two the marker has been
+    /// verified on (macOS 15, and X11): there copying must keep working, and an unmarked copy is
+    /// what every version before 0.6.0 made. Never on Windows, where an unmarked copy would put the
+    /// secret into the clipboard history — the copy fails instead, and the user is told.
     /// </summary>
     public static bool MayCopyWithoutMarker(ClipboardPlatform platform)
         => platform is ClipboardPlatform.MacOS or ClipboardPlatform.Linux;

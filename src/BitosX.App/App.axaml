@@ -33,6 +33,9 @@
         <SolidColorBrush x:Key="BitosXDangerBrush" Color="{StaticResource BitosXDanger}" />
         <SolidColorBrush x:Key="BitosXWarningBrush" Color="{StaticResource BitosXWarning}" />
         <SolidColorBrush x:Key="BitosXSuccessBrush" Color="{StaticResource BitosXSuccess}" />
+
+        <!-- A padlock: the body, and the shackle with the opening cut out of it. -->
+        <StreamGeometry x:Key="BitosXLockIcon">M6,10 V7 A6,6 0 0 1 18,7 V10 H19 A1,1 0 0 1 20,11 V21 A1,1 0 0 1 19,22 H5 A1,1 0 0 1 4,21 V11 A1,1 0 0 1 5,10 Z M8,10 H16 V7 A4,4 0 0 0 8,7 Z</StreamGeometry>
     </Application.Resources>
 
     <Application.Styles>
@@ -77,6 +80,11 @@
         </Style>
         <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
             <Setter Property="Background" Value="#6E9BF2" />
+        </Style>
+
+        <!-- The star of a favourite keeps its colour when the pointer is over it. -->
+        <Style Selector="Button.star:pointerover /template/ ContentPresenter">
+            <Setter Property="Foreground" Value="{StaticResource BitosXWarningBrush}" />
         </Style>
 
         <!-- Navigation button -->

@@ -56,6 +56,7 @@ public sealed class VaultService : IVaultService, IDisposable
     private readonly VaultCryptor _cryptor;
     private readonly ILocalVaultStorage _storage;
     private readonly Argon2Parameters _creationParameters;
+    private readonly Argon2Parameters? _fallbackCreationParameters;
     private readonly ILogger<VaultService> _logger;
 
     // Serializes every operation that reads or replaces the stored vault.
@@ -83,12 +84,44 @@ public sealed class VaultService : IVaultService, IDisposable
         ILocalVaultStorage storage,
         Argon2Parameters creationParameters,
         ILogger<VaultService> logger)
+        : this(cryptor, storage, creationParameters, fallbackCreationParameters: null, logger)
+    {
+    }
+
+    /// <param name="cryptor">The cryptography.</param>
+    /// <param name="storage">Where the vault is kept.</param>
+    /// <param name="creationParameters">The key-derivation settings a new vault is created with.</param>
+    /// <param name="fallbackCreationParameters">
+    /// The settings a new vault is created with on a device that cannot spare the memory of
+    /// <paramref name="creationParameters"/> — so that a vault can be created, and then opened, on
+    /// the device it is created on. Must not be stronger than <paramref name="creationParameters"/>.
+    /// <see langword="null"/> for none: creating the vault then fails on such a device.
+    /// </param>
+    /// <param name="logger">The log.</param>
+    public VaultService(
+        VaultCryptor cryptor,
+        ILocalVaultStorage storage,
+        Argon2Parameters creationParameters,
+        Argon2Parameters? fallbackCreationParameters,
+        ILogger<VaultService> logger)
     {
         _cryptor = cryptor ?? throw new ArgumentNullException(nameof(cryptor));
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
         _creationParameters = creationParameters ?? throw new ArgumentNullException(nameof(creationParameters));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _creationParameters.Validate();
+
+        if (fallbackCreationParameters is not null)
+        {
+            fallbackCreationParameters.Validate();
+            if (!_creationParameters.IsStrongerThan(fallbackCreationParameters))
+            {
+                // Equal, stronger, or not comparable: there is nothing to fall back to.
+                fallbackCreationParameters = null;
+            }
+        }
+
+        _fallbackCreationParameters = fallbackCreationParameters;
     }
 
     public VaultState State => _state;
@@ -160,6 +193,27 @@ public sealed class VaultService : IVaultService, IDisposable
         }
     }
 
+    /// <summary>
+    /// Creates the encrypted vault with the settings for new vaults — or, on a device that cannot
+    /// spare the memory they ask for, with the fallback settings. A vault is created on the device
+    /// it will be opened on; settings that device cannot afford would produce a vault it cannot
+    /// open. Settings shows what the vault was created with, and that it can be strengthened.
+    /// </summary>
+    private VaultCreationResult Create(byte[] passwordBytes, byte[] plaintext)
+    {
+        try
+        {
+            return _cryptor.Create(passwordBytes, plaintext, _creationParameters);
+        }
+        catch (KeyDerivationResourceException) when (_fallbackCreationParameters is not null)
+        {
+            VaultCreationResult created = _cryptor.Create(passwordBytes, plaintext, _fallbackCreationParameters);
+            VaultLog.VaultCreatedWithLessMemory(
+                _logger, _creationParameters.MemoryKiB / 1024, _fallbackCreationParameters.MemoryKiB / 1024);
+            return created;
+        }
+    }
+
     public async Task CreateVaultAsync(string masterPassword, CancellationToken cancellationToken = default)
     {
         string canonicalPassword = ValidateNewMasterPassword(masterPassword);
@@ -180,7 +234,7 @@ public sealed class VaultService : IVaultService, IDisposable
             byte[]? vaultKey = null;
             try
             {
-                VaultCreationResult created = _cryptor.Create(passwordBytes, plaintext, _creationParameters);
+                VaultCreationResult created = Create(passwordBytes, plaintext);
                 vaultKey = created.VaultKey;
                 await _storage.WriteAsync(created.Encrypted, cancellationToken).ConfigureAwait(false);
                 byte[] fingerprint = EncryptedVaultFingerprint.Compute(created.Encrypted);

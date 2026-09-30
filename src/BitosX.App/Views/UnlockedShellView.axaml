@@ -17,17 +17,24 @@
                     <TextBlock Text="Local vault" Classes="muted" FontSize="12" />
                 </StackPanel>
 
-                <Button DockPanel.Dock="Bottom" Content="🔒  Lock Vault" Classes="nav"
-                        Command="{Binding LockCommand}" Margin="0,10,0,0" />
+                <!-- The padlock is drawn, not an emoji: it looks the same whatever fonts the system has. -->
+                <Button Name="LockButton" DockPanel.Dock="Bottom" Classes="nav" AutomationProperties.Name="Lock Vault"
+                        Command="{Binding LockCommand}" Margin="0,10,0,0">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <PathIcon Data="{StaticResource BitosXLockIcon}" Width="14" Height="14"
+                                  Foreground="{StaticResource BitosXWarningBrush}" />
+                        <TextBlock Text="Lock Vault" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
 
                 <StackPanel Spacing="4" VerticalAlignment="Top">
-                    <Button Content="Vault" Classes="nav" Classes.selected="{Binding IsVaultSelected}"
+                    <Button Name="VaultNavButton" Content="Vault" Classes="nav" Classes.selected="{Binding IsVaultSelected}"
                             Command="{Binding ShowVaultCommand}" />
-                    <Button Content="Generator" Classes="nav" Classes.selected="{Binding IsGeneratorSelected}"
+                    <Button Name="GeneratorNavButton" Content="Generator" Classes="nav" Classes.selected="{Binding IsGeneratorSelected}"
                             Command="{Binding ShowGeneratorCommand}" />
-                    <Button Content="Security Center" Classes="nav" Classes.selected="{Binding IsSecuritySelected}"
+                    <Button Name="SecurityNavButton" Content="Security Center" Classes="nav" Classes.selected="{Binding IsSecuritySelected}"
                             Command="{Binding ShowSecurityCommand}" />
-                    <Button Content="Settings" Classes="nav" Classes.selected="{Binding IsSettingsSelected}"
+                    <Button Name="SettingsNavButton" Content="Settings" Classes="nav" Classes.selected="{Binding IsSettingsSelected}"
                             Command="{Binding ShowSettingsCommand}" />
                 </StackPanel>
             </DockPanel>

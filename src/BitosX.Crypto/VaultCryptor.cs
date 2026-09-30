@@ -39,7 +39,7 @@ public sealed class VaultCryptor
         parameters.Validate();
 
         byte[] salt = SecureRandom.GetBytes(CryptoConstants.SaltSizeBytes);
-        byte[] kek = _keyDerivation.DeriveKey(masterPassword, salt, parameters);
+        byte[] kek = DeriveToProtect(masterPassword, salt, parameters);
         byte[] vaultKey = SecureRandom.GetBytes(CryptoConstants.KeySizeBytes);
         try
         {
@@ -83,7 +83,7 @@ public sealed class VaultCryptor
         ArgumentNullException.ThrowIfNull(encrypted);
         ValidateFormat(encrypted);
 
-        byte[] kek = _keyDerivation.DeriveKey(masterPassword, encrypted.Salt, encrypted.KdfParameters);
+        byte[] kek = DeriveToOpen(masterPassword, encrypted.Salt, encrypted.KdfParameters);
         byte[]? vaultKey = null;
         try
         {
@@ -201,7 +201,7 @@ public sealed class VaultCryptor
         ReadOnlySpan<byte> wrapPassword,
         Argon2Parameters wrapParameters)
     {
-        byte[] oldKek = _keyDerivation.DeriveKey(unwrapPassword, current.Salt, current.KdfParameters);
+        byte[] oldKek = DeriveToOpen(unwrapPassword, current.Salt, current.KdfParameters);
         byte[]? vaultKey = null;
         byte[]? newKek = null;
         try
@@ -212,7 +212,7 @@ public sealed class VaultCryptor
 
             // Fresh salt and key-wrap nonce.
             byte[] newSalt = SecureRandom.GetBytes(CryptoConstants.SaltSizeBytes);
-            newKek = _keyDerivation.DeriveKey(wrapPassword, newSalt, wrapParameters);
+            newKek = DeriveToProtect(wrapPassword, newSalt, wrapParameters);
 
             byte[] newKeyWrapNonce = SecureRandom.GetBytes(CryptoConstants.NonceSizeBytes);
             byte[] newKeyWrapAad = BuildKeyWrapAad(current.Version, wrapParameters, newSalt);
@@ -282,7 +282,7 @@ public sealed class VaultCryptor
         ArgumentNullException.ThrowIfNull(current);
         ValidateFormat(current);
 
-        byte[] currentKek = _keyDerivation.DeriveKey(currentPassword, current.Salt, current.KdfParameters);
+        byte[] currentKek = DeriveToOpen(currentPassword, current.Salt, current.KdfParameters);
         byte[]? oldVaultKey = null;
         byte[]? plaintext = null;
         byte[]? newVaultKey = null;
@@ -300,7 +300,7 @@ public sealed class VaultCryptor
             // Fresh cryptographic material (D3): new vault key, salt, key-wrap nonce, content nonce.
             newVaultKey = SecureRandom.GetBytes(CryptoConstants.KeySizeBytes);
             byte[] newSalt = SecureRandom.GetBytes(CryptoConstants.SaltSizeBytes);
-            newKek = _keyDerivation.DeriveKey(wrapPassword, newSalt, current.KdfParameters);
+            newKek = DeriveToProtect(wrapPassword, newSalt, current.KdfParameters);
 
             byte[] newKeyWrapNonce = SecureRandom.GetBytes(CryptoConstants.NonceSizeBytes);
             byte[] newKeyWrapAad = BuildKeyWrapAad(current.Version, current.KdfParameters, newSalt);
@@ -360,6 +360,32 @@ public sealed class VaultCryptor
             CryptoBuffers.Wipe(plaintext);
             CryptoBuffers.Wipe(newVaultKey);
         }
+    }
+
+    /// <summary>
+    /// Derives the key for a password that is an attempt at opening a vault. No vault is keyed with
+    /// an empty password (see <see cref="DeriveToProtect"/>), so as an attempt it is a wrong one,
+    /// and is answered like every other wrong password.
+    /// </summary>
+    private byte[] DeriveToOpen(ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, Argon2Parameters parameters)
+    {
+        if (password.IsEmpty)
+        {
+            throw new VaultAuthenticationException();
+        }
+
+        return _keyDerivation.DeriveKey(password, salt, parameters);
+    }
+
+    /// <summary>Derives the key for a password that is to protect a vault, which an empty one cannot.</summary>
+    private byte[] DeriveToProtect(ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, Argon2Parameters parameters)
+    {
+        if (password.IsEmpty)
+        {
+            throw new ArgumentException("A vault cannot be protected by an empty password.", nameof(password));
+        }
+
+        return _keyDerivation.DeriveKey(password, salt, parameters);
     }
 
     private static void ValidateFormat(EncryptedVault encrypted)

@@ -17,6 +17,9 @@ public static partial class VaultLog
     [LoggerMessage(EventId = 1001, EventName = "vault_created", Level = LogLevel.Information, Message = "Vault created.")]
     public static partial void VaultCreated(ILogger logger);
 
+    [LoggerMessage(EventId = 1020, EventName = "vault_created_with_less_memory", Level = LogLevel.Warning, Message = "This device could not spare {WantedMiB} MiB to derive the key; the vault was created with {UsedMiB} MiB.")]
+    public static partial void VaultCreatedWithLessMemory(ILogger logger, int wantedMiB, int usedMiB);
+
     [LoggerMessage(EventId = 1002, EventName = "vault_unlocked", Level = LogLevel.Information, Message = "Vault unlocked with {ItemCount} item(s).")]
     public static partial void VaultUnlocked(ILogger logger, int itemCount);
 

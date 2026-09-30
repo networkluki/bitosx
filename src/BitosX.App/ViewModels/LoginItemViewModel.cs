@@ -20,6 +20,9 @@ public sealed partial class LoginItemViewModel : ViewModelBase
     public string? Username => Model.Username;
     public bool Favorite => Model.Favorite;
     public string FavoriteGlyph => Favorite ? "★" : "☆";
+
+    /// <summary>What pressing the star does, in words: for the tooltip and for a screen reader.</summary>
+    public string FavoriteLabel => Favorite ? "Remove from favorites" : "Add to favorites";
     public string? PrimaryUrl => Model.Urls.Count > 0 ? Model.Urls[0] : null;
     public bool HasPassword => !string.IsNullOrEmpty(Model.Password);
 
@@ -31,4 +34,8 @@ public sealed partial class LoginItemViewModel : ViewModelBase
     public string DisplayedPassword => IsPasswordVisible ? (Model.Password ?? string.Empty) : Mask;
 
     public string PasswordToggleGlyph => IsPasswordVisible ? "Hide" : "Show";
+
+    /// <summary>Whether deleting this item has been asked for and is waiting to be confirmed.</summary>
+    [ObservableProperty]
+    public partial bool IsDeletePending { get; set; }
 }

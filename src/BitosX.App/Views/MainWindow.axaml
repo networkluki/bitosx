@@ -11,6 +11,20 @@
         Width="1000" Height="680" MinWidth="760" MinHeight="540"
         Title="BitosX">
 
-    <ContentControl Content="{Binding Content}" />
+    <DockPanel>
+        <!-- Something the application has to say that does not belong to the screen at hand. -->
+        <Border Name="NoticeBar" DockPanel.Dock="Top" IsVisible="{Binding Notice.IsShown}"
+                Background="#33F87171" BorderBrush="{StaticResource BitosXDangerBrush}" BorderThickness="0,0,0,1"
+                Padding="16,10">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Name="NoticeText" Grid.Column="0" Text="{Binding Notice.Message}" TextWrapping="Wrap"
+                           VerticalAlignment="Center" />
+                <Button Name="DismissNoticeButton" Grid.Column="1" Content="Dismiss" Margin="12,0,0,0"
+                        VerticalAlignment="Center" Command="{Binding Notice.DismissCommand}" />
+            </Grid>
+        </Border>
+
+        <ContentControl Content="{Binding Content}" />
+    </DockPanel>
 
 </Window>

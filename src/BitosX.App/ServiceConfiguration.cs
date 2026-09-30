@@ -1,7 +1,3 @@
-using Avalonia;
-using Avalonia.Controls;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Input.Platform;
 using BitosX.ApiClient;
 using BitosX.App.Services;
 using BitosX.App.ViewModels;
@@ -24,8 +20,16 @@ namespace BitosX.App;
 /// <summary>Composition root: wires up services and view models for dependency injection.</summary>
 public static class ServiceConfiguration
 {
-    public static ServiceProvider Build()
+    /// <summary>The services of the application at the default per-user location.</summary>
+    public static ServiceProvider Build() => Build(AppLocation.Default);
+
+    /// <summary>The services of the application with its files at <paramref name="location"/>.</summary>
+    /// <param name="location">Where the vault and the settings are kept.</param>
+    /// <param name="configure">Replaces services after the defaults are registered; for tests.</param>
+    public static ServiceProvider Build(AppLocation location, Action<IServiceCollection>? configure = null)
     {
+        ArgumentNullException.ThrowIfNull(location);
+
         var services = new ServiceCollection();
 
         services.AddLogging(builder =>
@@ -34,37 +38,56 @@ public static class ServiceConfiguration
             builder.SetMinimumLevel(LogLevel.Information);
         });
 
+        services.AddSingleton(location);
+
         // Cryptography
         services.AddSingleton(VaultCryptor.CreateDefault());
-        services.AddSingleton(Argon2Parameters.Default);
+        // What new vaults are created with; an existing vault keeps its own settings.
+        services.AddSingleton(KeyDerivationProfile.ForNewVaults.Parameters);
 
-        // Storage (default per-user location)
-        services.AddSingleton(FileLocalVaultStorage.CreateDefault());
+        // Storage
+        services.AddSingleton(new FileLocalVaultStorage(location.VaultFilePath));
         services.AddSingleton<ILocalVaultStorage>(sp => sp.GetRequiredService<FileLocalVaultStorage>());
         services.AddSingleton<IVaultBackup>(sp => new FileVaultBackup(sp.GetRequiredService<FileLocalVaultStorage>().VaultFilePath));
 
         // Core services
-        services.AddSingleton<IVaultService, VaultService>();
+        services.AddSingleton<IVaultService>(sp => new VaultService(
+            sp.GetRequiredService<VaultCryptor>(),
+            sp.GetRequiredService<ILocalVaultStorage>(),
+            sp.GetRequiredService<Argon2Parameters>(),
+            fallbackCreationParameters: KeyDerivationProfile.Standard.Parameters,
+            sp.GetRequiredService<ILogger<VaultService>>()));
         services.AddSingleton<IVaultBackupService, VaultBackupService>();
         services.AddSingleton<IPasswordGenerator, PasswordGenerator>();
         services.AddSingleton<ISecurityAnalyzer, SecurityAnalyzer>();
         services.AddSingleton<IKeyDerivationBenchmark>(_ => new KeyDerivationBenchmark(new Argon2idKeyDerivation()));
 
         // Settings (non-secret preferences, stored separately from the vault)
-        services.AddSingleton<IAppSettingsStore>(_ => FileAppSettingsStore.CreateDefault());
+        services.AddSingleton<IAppSettingsStore>(_ => new FileAppSettingsStore(location.SettingsFilePath));
         services.AddSingleton(sp => sp.GetRequiredService<IAppSettingsStore>().Load());
         services.AddSingleton(TimeProvider.System);
 
         // Platform
-        services.AddSingleton<IClipboardAccessor>(sp => new AvaloniaClipboardAccessor(
-            GetMainWindowClipboard,
-            SensitiveClipboardData.CurrentPlatform,
-            sp.GetRequiredService<ILogger<AvaloniaClipboardAccessor>>()));
+        services.AddSingleton<MainWindowReference>();
+        services.AddSingleton<IClipboardAccessor>(sp =>
+        {
+            MainWindowReference mainWindow = sp.GetRequiredService<MainWindowReference>();
+            return new AvaloniaClipboardAccessor(
+                () => mainWindow.Window?.Clipboard,
+                SensitiveClipboardData.CurrentPlatform,
+                sp.GetRequiredService<ILogger<AvaloniaClipboardAccessor>>());
+        });
         services.AddSingleton<IClipboardService, ClipboardService>();
         services.AddSingleton<ClipboardSessionGuard>();
         services.AddSingleton<ExitClipboardCleaner>();
+        services.AddSingleton<AppNotice>();
+        services.AddSingleton<UnexpectedErrorGuard>();
         services.AddSingleton<ISecureStorage, UnavailableSecureStorage>();
-        services.AddSingleton<IFilePicker>(_ => new AvaloniaFilePicker(GetMainWindow));
+        services.AddSingleton<IFilePicker>(sp =>
+        {
+            MainWindowReference mainWindow = sp.GetRequiredService<MainWindowReference>();
+            return new AvaloniaFilePicker(() => mainWindow.Window);
+        });
         services.AddSingleton<ISystemSessionEvents>(_ =>
             OperatingSystem.IsWindows() ? new WindowsSystemSessionEvents() : new NullSystemSessionEvents());
 
@@ -78,12 +101,7 @@ public static class ServiceConfiguration
         // View models
         services.AddSingleton<MainWindowViewModel>();
 
+        configure?.Invoke(services);
         return services.BuildServiceProvider();
     }
-
-    private static IClipboard? GetMainWindowClipboard()
-        => (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow?.Clipboard;
-
-    private static Window? GetMainWindow()
-        => (Application.Current?.ApplicationLifetime as IClassicDesktopStyleApplicationLifetime)?.MainWindow;
 }

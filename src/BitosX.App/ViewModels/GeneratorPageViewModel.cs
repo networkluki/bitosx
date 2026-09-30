@@ -49,6 +49,19 @@ public sealed partial class GeneratorPageViewModel : ViewModelBase
         Generate();
     }
 
+    // The password shown always belongs to the settings shown: changing one makes a new password.
+    partial void OnLengthChanged(int value) => Generate();
+
+    partial void OnIncludeLowercaseChanged(bool value) => Generate();
+
+    partial void OnIncludeUppercaseChanged(bool value) => Generate();
+
+    partial void OnIncludeDigitsChanged(bool value) => Generate();
+
+    partial void OnIncludeSymbolsChanged(bool value) => Generate();
+
+    partial void OnExcludeAmbiguousChanged(bool value) => Generate();
+
     [RelayCommand]
     private void Generate()
     {
@@ -67,7 +80,7 @@ public sealed partial class GeneratorPageViewModel : ViewModelBase
             };
 
             GeneratedPassword = _generator.Generate(options);
-            StrengthText = $"Strength: {PasswordStrength.Estimate(GeneratedPassword)}";
+            StrengthText = StrengthDisplay.Rating(GeneratedPassword);
         }
         catch (Exception ex)
         {

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:controls="using:BitosX.App.Controls"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -9,51 +10,60 @@
              x:DataType="vm:LoginEditorViewModel">
 
     <Border Classes="card" Width="460">
-        <StackPanel Spacing="12">
-            <TextBlock Text="{Binding Title}" Classes="h2" />
+        <!-- The title and the buttons stay in place; the fields between them scroll when the
+             window is too small for all of them. -->
+        <DockPanel>
+            <TextBlock Name="EditorTitle" DockPanel.Dock="Top" Text="{Binding Title}" Classes="h2" Margin="0,0,0,12" />
 
-            <StackPanel Spacing="5">
-                <TextBlock Text="Name *" />
-                <TextBox Name="NameBox" Text="{Binding Name}" PlaceholderText="e.g. GitHub" />
-            </StackPanel>
-
-            <StackPanel Spacing="5">
-                <TextBlock Text="Username" />
-                <TextBox Text="{Binding Username}" />
-            </StackPanel>
-
-            <StackPanel Spacing="5">
-                <TextBlock Text="Password" />
-                <Grid ColumnDefinitions="*,Auto,Auto">
-                    <TextBox Grid.Column="0" Text="{Binding Password}" PasswordChar="●"
-                             RevealPassword="{Binding IsPasswordVisible}" />
-                    <Button Grid.Column="1" Content="👁" Margin="6,0,0,0"
-                            Command="{Binding TogglePasswordVisibilityCommand}" ToolTip.Tip="Show/hide" />
-                    <Button Grid.Column="2" Content="Generate" Margin="6,0,0,0"
-                            Command="{Binding GeneratePasswordCommand}" />
-                </Grid>
-            </StackPanel>
-
-            <StackPanel Spacing="5">
-                <TextBlock Text="URLs (one per line)" />
-                <TextBox Text="{Binding UrlsText}" AcceptsReturn="True" Height="66"
-                         PlaceholderText="https://example.com" TextWrapping="Wrap" />
-            </StackPanel>
-
-            <StackPanel Spacing="5">
-                <TextBlock Text="Notes" />
-                <TextBox Text="{Binding Notes}" AcceptsReturn="True" Height="66" TextWrapping="Wrap" />
-            </StackPanel>
-
-            <CheckBox Content="Favorite" IsChecked="{Binding Favorite}" />
-
-            <TextBlock Name="ErrorMessage" Text="{Binding ErrorMessage}" Classes="error"
-                       IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
-
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10">
-                <Button Content="Cancel" Command="{Binding CancelCommand}" />
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10"
+                        Margin="0,12,0,0">
+                <Button Name="CancelButton" Content="Cancel" Command="{Binding CancelCommand}" />
                 <Button Name="SaveButton" Content="Save" Classes="accent" Command="{Binding SaveCommand}" />
             </StackPanel>
-        </StackPanel>
+
+            <TextBlock Name="ErrorMessage" DockPanel.Dock="Bottom" Text="{Binding ErrorMessage}" Classes="error"
+                       Margin="0,12,0,0"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+            <ScrollViewer Name="EditorFields" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <!-- The margin on the right leaves room for the scroll bar. -->
+                <StackPanel Spacing="12" Margin="0,0,14,0">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Name *" />
+                        <TextBox Name="NameBox" AutomationProperties.Name="Name" Text="{Binding Name}" PlaceholderText="e.g. GitHub" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Username" />
+                        <TextBox Name="UsernameBox" AutomationProperties.Name="Username" Text="{Binding Username}" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Password" />
+                        <Grid ColumnDefinitions="*,Auto,Auto">
+                            <controls:SecretBox Name="PasswordBox" AutomationProperties.Name="Password" Grid.Column="0" Text="{Binding Password}"
+                                     RevealPassword="{Binding IsPasswordVisible}" />
+                            <Button Name="RevealPasswordButton" Grid.Column="1" Content="{Binding PasswordToggleText}" Margin="6,0,0,0"
+                                    Command="{Binding TogglePasswordVisibilityCommand}" ToolTip.Tip="Show or hide the password" />
+                            <Button Name="GeneratePasswordButton" Grid.Column="2" Content="Generate" Margin="6,0,0,0"
+                                    Command="{Binding GeneratePasswordCommand}" />
+                        </Grid>
+                    </StackPanel>
+
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="URLs (one per line)" />
+                        <TextBox Name="UrlsBox" AutomationProperties.Name="URLs, one per line" Text="{Binding UrlsText}" AcceptsReturn="True" Height="66"
+                                 PlaceholderText="https://example.com" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Notes" />
+                        <TextBox Name="NotesBox" AutomationProperties.Name="Notes" Text="{Binding Notes}" AcceptsReturn="True" Height="66" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <CheckBox Name="FavoriteCheckBox" Content="Favorite" IsChecked="{Binding Favorite}" />
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
     </Border>
 </UserControl>

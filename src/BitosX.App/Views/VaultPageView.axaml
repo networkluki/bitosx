@@ -10,7 +10,8 @@
              x:Name="Root">
 
     <Panel>
-        <DockPanel Margin="24">
+        <!-- Out of reach of the keyboard while the editor is open in front of it. -->
+        <DockPanel Name="VaultContent" Margin="24" IsEnabled="{Binding !IsEditorOpen}">
             <!-- Header -->
             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
                 <TextBlock Grid.Column="0" Text="Vault" Classes="h1" VerticalAlignment="Center" />
@@ -18,13 +19,13 @@
                         Command="{Binding AddLoginCommand}" />
             </Grid>
 
-            <TextBox DockPanel.Dock="Top" Text="{Binding SearchText}" PlaceholderText="Search by name, username, or URL"
+            <TextBox Name="SearchBox" AutomationProperties.Name="Search" DockPanel.Dock="Top" Text="{Binding SearchText}" PlaceholderText="Search by name, username, or URL"
                      Margin="0,0,0,12" />
 
             <TextBlock Name="StatusMessage" DockPanel.Dock="Top" Text="{Binding StatusMessage}" Classes="muted" Margin="0,0,0,8"
                        IsVisible="{Binding StatusMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
-            <TextBlock DockPanel.Dock="Top" Classes="muted" Margin="0,20,0,0"
+            <TextBlock Name="EmptyVaultNote" DockPanel.Dock="Top" Classes="muted" Margin="0,20,0,0"
                        Text="No logins yet. Click “Add Login” to create your first entry."
                        IsVisible="{Binding IsEmpty}" />
 
@@ -33,44 +34,65 @@
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:LoginItemViewModel">
                             <Border Classes="card" Margin="0,0,0,10" Padding="16,12">
-                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                <!-- The details have the full width of the card and the actions their own row,
+                                     so neither squeezes the other in a narrow window. -->
+                                <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
                                     <!-- Favorite -->
-                                    <Button Grid.Column="0" Content="{Binding FavoriteGlyph}" Background="Transparent"
+                                    <Button Name="FavoriteButton" Classes="star" Grid.Row="0" Grid.Column="0" Content="{Binding FavoriteGlyph}" Background="Transparent"
+                                            AutomationProperties.Name="{Binding FavoriteLabel}"
                                             Foreground="{StaticResource BitosXWarningBrush}" FontSize="18" Padding="6"
                                             VerticalAlignment="Top"
                                             Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).ToggleFavoriteCommand}"
-                                            CommandParameter="{Binding}" ToolTip.Tip="Toggle favorite" />
+                                            CommandParameter="{Binding}" ToolTip.Tip="{Binding FavoriteLabel}" />
 
-                                    <!-- Details -->
-                                    <StackPanel Grid.Column="1" Spacing="3" Margin="8,0">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="15" />
-                                        <TextBlock Text="{Binding Username}" Classes="muted" FontSize="13"
+                                    <!-- Details. A text too long for its line is shortened, and shown in full on hover. -->
+                                    <StackPanel Grid.Row="0" Grid.Column="1" Spacing="3" Margin="8,0,0,0">
+                                        <TextBlock Name="ItemName" Text="{Binding Name}" FontWeight="SemiBold" FontSize="15"
+                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                                        <TextBlock Name="ItemUsername" Text="{Binding Username}" Classes="muted" FontSize="13"
+                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Username}"
                                                    IsVisible="{Binding Username, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
-                                        <TextBlock Text="{Binding PrimaryUrl}" Classes="muted" FontSize="12"
+                                        <TextBlock Name="ItemUrl" Text="{Binding PrimaryUrl}" Classes="muted" FontSize="12"
+                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PrimaryUrl}"
                                                    IsVisible="{Binding PrimaryUrl, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
-                                        <SelectableTextBlock Text="{Binding DisplayedPassword}" FontFamily="Cascadia Code,Consolas,monospace"
-                                                             FontSize="13" Margin="0,3,0,0" />
+                                        <SelectableTextBlock Name="ItemPassword" Text="{Binding DisplayedPassword}" FontFamily="Cascadia Code,Consolas,monospace"
+                                                             FontSize="13" Margin="0,3,0,0" TextWrapping="Wrap" />
                                     </StackPanel>
 
+                                    <!-- Deleting cannot be undone, so it is asked for twice. -->
+                                    <Grid Name="DeleteConfirmation" Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,Auto,Auto"
+                                          Margin="8,10,0,0" IsVisible="{Binding IsDeletePending}">
+                                        <TextBlock Name="DeleteQuestion" Grid.Column="0" TextWrapping="Wrap" VerticalAlignment="Center"
+                                                   Text="Delete this login? This cannot be undone." />
+                                        <Button Name="KeepButton" Grid.Column="1" Content="Keep" Margin="8,0,0,0"
+                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CancelDeleteCommand}"
+                                                CommandParameter="{Binding}" />
+                                        <Button Name="ConfirmDeleteButton" Grid.Column="2" Content="Delete" Margin="8,0,0,0"
+                                                Foreground="{StaticResource BitosXDangerBrush}"
+                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).DeleteLoginCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+
                                     <!-- Actions -->
-                                    <WrapPanel Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <Button Content="{Binding PasswordToggleGlyph}" Margin="4,2"
+                                    <WrapPanel Name="ItemActions" Grid.Row="1" Grid.Column="1" Margin="4,8,0,0"
+                                               IsVisible="{Binding !IsDeletePending}">
+                                        <Button Name="ShowPasswordButton" Content="{Binding PasswordToggleGlyph}" Margin="4,2"
                                                 IsVisible="{Binding HasPassword}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).TogglePasswordVisibilityCommand}"
                                                 CommandParameter="{Binding}" />
-                                        <Button Content="Copy user" Margin="4,2"
+                                        <Button Name="CopyUsernameButton" Content="Copy user" Margin="4,2"
                                                 IsVisible="{Binding Username, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CopyUsernameCommand}"
                                                 CommandParameter="{Binding}" />
-                                        <Button Content="Copy pass" Margin="4,2"
+                                        <Button Name="CopyPasswordButton" Content="Copy pass" Margin="4,2"
                                                 IsVisible="{Binding HasPassword}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CopyPasswordCommand}"
                                                 CommandParameter="{Binding}" />
-                                        <Button Content="Edit" Margin="4,2"
+                                        <Button Name="EditButton" Content="Edit" Margin="4,2"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).EditLoginCommand}"
                                                 CommandParameter="{Binding}" />
-                                        <Button Content="Delete" Margin="4,2" Foreground="{StaticResource BitosXDangerBrush}"
-                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).DeleteLoginCommand}"
+                                        <Button Name="DeleteButton" Content="Delete" Margin="4,2" Foreground="{StaticResource BitosXDangerBrush}"
+                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).RequestDeleteCommand}"
                                                 CommandParameter="{Binding}" />
                                     </WrapPanel>
                                 </Grid>
@@ -81,8 +103,8 @@
             </ScrollViewer>
         </DockPanel>
 
-        <!-- Editor overlay -->
-        <Border Background="#B3000000" IsVisible="{Binding IsEditorOpen}">
+        <!-- Editor overlay. The margin keeps the editor inside the window; it scrolls when it does not fit. -->
+        <Border Name="EditorOverlay" Background="#B3000000" IsVisible="{Binding IsEditorOpen}" Padding="16">
             <ContentControl Content="{Binding Editor}" HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Border>
     </Panel>

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:controls="using:BitosX.App.Controls"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -15,11 +16,11 @@
 
             <StackPanel Spacing="6">
                 <TextBlock Text="Master password" />
-                <TextBox Name="MasterPasswordBox" Text="{Binding MasterPassword}" PasswordChar="●" PlaceholderText="Enter your master password">
-                    <TextBox.KeyBindings>
+                <controls:SecretBox Name="MasterPasswordBox" AutomationProperties.Name="Master password" Text="{Binding MasterPassword}" PlaceholderText="Enter your master password">
+                    <controls:SecretBox.KeyBindings>
                         <KeyBinding Gesture="Enter" Command="{Binding UnlockCommand}" />
-                    </TextBox.KeyBindings>
-                </TextBox>
+                    </controls:SecretBox.KeyBindings>
+                </controls:SecretBox>
             </StackPanel>
 
             <TextBlock Name="ErrorMessage" Text="{Binding ErrorMessage}" Classes="error"

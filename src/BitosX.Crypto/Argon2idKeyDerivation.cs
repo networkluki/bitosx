@@ -21,6 +21,13 @@ public sealed class Argon2idKeyDerivation : IKeyDerivation
     {
         parameters.Validate();
 
+        if (password.IsEmpty)
+        {
+            // The library refuses it too, with a message of its own; callers decide what an empty
+            // password means to them before they get here.
+            throw new ArgumentException("A key cannot be derived from an empty password.", nameof(password));
+        }
+
         if (salt.Length < MinSaltLengthBytes)
         {
             throw new UnsupportedVaultFormatException("The vault salt is too short.");

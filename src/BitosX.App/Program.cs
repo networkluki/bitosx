@@ -4,7 +4,6 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
 using BitosX.Platform.Instance;
-using BitosX.Storage;
 
 namespace BitosX.App;
 
@@ -13,31 +12,48 @@ sealed class Program
     /// <summary>Exit code when another instance is already running on the same vault.</summary>
     public const int AlreadyRunningExitCode = 2;
 
+    /// <summary>Exit code when the command line cannot be used (the <c>EX_USAGE</c> of sysexits.h).</summary>
+    public const int UsageErrorExitCode = 64;
+
     // Initialization code. Don't use any Avalonia, third-party APIs or any
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
     // yet and stuff might break.
     [STAThread]
     public static int Main(string[] args)
     {
+        AppLocation location;
+        try
+        {
+            location = AppLocation.FromArguments(args);
+        }
+        catch (AppLocationException ex)
+        {
+            // Never the default vault instead of the one that was asked for.
+            Console.Error.WriteLine(ex.Message);
+            return UsageErrorExitCode;
+        }
+
         // One instance per vault: a second one would hold its own copy of the contents and could
         // only ever be refused when it tried to save over the first one's changes.
-        using SingleInstanceGuard? instance = SingleInstanceGuard.TryAcquire(FileLocalVaultStorage.DefaultVaultFilePath);
+        using SingleInstanceGuard? instance = SingleInstanceGuard.TryAcquire(location.VaultFilePath);
         if (instance is null)
         {
             if (OperatingSystem.IsWindows())
             {
-                ShowRunningInstance();
+                ShowRunningInstance(location.WindowTitle);
             }
 
             return AlreadyRunningExitCode;
         }
 
-        return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        return BuildAvaloniaApp(location).StartWithClassicDesktopLifetime(args);
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.
-    public static AppBuilder BuildAvaloniaApp()
-        => AppBuilder.Configure<App>()
+    public static AppBuilder BuildAvaloniaApp() => BuildAvaloniaApp(AppLocation.Default);
+
+    private static AppBuilder BuildAvaloniaApp(AppLocation location)
+        => AppBuilder.Configure(() => new App(location))
             .UsePlatformDetect()
 #if DEBUG
             .WithDeveloperTools()
@@ -45,9 +61,12 @@ sealed class Program
             .WithInterFont()
             .LogToTrace();
 
-    /// <summary>Brings the window of the instance that is already running to the front.</summary>
+    /// <summary>
+    /// Brings the window of the instance that is already running to the front. Instances on other
+    /// vaults are told apart by their window title.
+    /// </summary>
     [SupportedOSPlatform("windows")]
-    private static void ShowRunningInstance()
+    private static void ShowRunningInstance(string windowTitle)
     {
         try
         {
@@ -56,7 +75,9 @@ sealed class Program
             {
                 using (other)
                 {
-                    if (other.Id == current.Id || other.SessionId != current.SessionId)
+                    if (other.Id == current.Id
+                        || other.SessionId != current.SessionId
+                        || !string.Equals(other.MainWindowTitle, windowTitle, StringComparison.Ordinal))
                     {
                         continue;
                     }

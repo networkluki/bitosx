@@ -44,7 +44,7 @@ public sealed partial class SecurityPageViewModel : ViewModelBase
         ReusedPasswords = [.. report.ReusedPasswords.Select(
             f => $"Reused by {f.Items.Count} items: {string.Join(", ", f.Items.Select(i => i.Name))}")];
 
-        WeakPasswords = [.. report.WeakPasswords.Select(f => $"{f.Item.Name} — {f.Strength}")];
+        WeakPasswords = [.. report.WeakPasswords.Select(f => $"{f.Item.Name} — {StrengthDisplay.Phrase(f.Strength)}")];
 
         DuplicateEntries = [.. report.DuplicateEntries.Select(
             f => $"Duplicate: {string.Join(", ", f.Items.Select(i => i.Name))}")];

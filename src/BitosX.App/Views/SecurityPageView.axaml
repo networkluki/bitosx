@@ -11,10 +11,10 @@
         <StackPanel Margin="24" Spacing="16">
             <Grid ColumnDefinitions="*,Auto">
                 <TextBlock Grid.Column="0" Text="Security Center" Classes="h1" VerticalAlignment="Center" />
-                <Button Grid.Column="1" Content="Re-run checks" Classes="accent" Command="{Binding AnalyzeCommand}" />
+                <Button Name="RerunChecksButton" Grid.Column="1" Content="Re-run checks" Classes="accent" Command="{Binding AnalyzeCommand}" />
             </Grid>
 
-            <TextBlock Text="{Binding SummaryText}" Classes="muted" />
+            <TextBlock Name="SummaryText" Text="{Binding SummaryText}" Classes="muted" />
             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
                        Text="All checks run locally on this device. No passwords or vault contents are uploaded anywhere." />
 

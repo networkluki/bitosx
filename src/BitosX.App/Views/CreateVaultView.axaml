@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:controls="using:BitosX.App.Controls"
              xmlns:conv="using:Avalonia.Data.Converters"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -15,12 +16,12 @@
 
             <StackPanel Spacing="6">
                 <TextBlock Text="Master password" />
-                <TextBox Name="MasterPasswordBox" Text="{Binding MasterPassword}" PasswordChar="●" PlaceholderText="At least 8 characters" />
+                <controls:SecretBox Name="MasterPasswordBox" AutomationProperties.Name="Master password" Text="{Binding MasterPassword}" PlaceholderText="At least 8 characters" />
             </StackPanel>
 
             <StackPanel Spacing="6">
                 <TextBlock Text="Confirm master password" />
-                <TextBox Name="ConfirmPasswordBox" Text="{Binding ConfirmPassword}" PasswordChar="●" />
+                <controls:SecretBox Name="ConfirmPasswordBox" AutomationProperties.Name="Confirm master password" Text="{Binding ConfirmPassword}" />
             </StackPanel>
 
             <TextBlock Name="StrengthText" Text="{Binding StrengthText}" Classes="muted"

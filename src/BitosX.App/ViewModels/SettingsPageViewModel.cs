@@ -182,7 +182,6 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         IClipboardService clipboard,
         IBitosXApiClient apiClient,
         Argon2Parameters kdfParameters,
-        AppSettings settings,
         IAppSettingsStore settingsStore,
         AutoLockService autoLock,
         ISystemSessionEvents sessionEvents,
@@ -214,7 +213,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
             ? "Supported — the vault locks when the system sleeps."
             : "Not available on this platform.";
 
-        // Seed the editable controls from current settings without triggering a save.
+        // Seed the editable controls without triggering a save — from the settings that apply now,
+        // not from those the application started with: this page is built anew every time the
+        // vault is unlocked, and what was changed since must be what it shows and what it saves.
+        AppSettings settings = autoLock.Settings;
         _loading = true;
         AutoLockOnInactivity = settings.AutoLockOnInactivity;
         InactivityMinutes = (int)Math.Round(settings.InactivityTimeout.TotalMinutes);
@@ -223,9 +225,7 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
     }
 
     partial void OnNewPasswordChanged(string value)
-        => NewPasswordStrengthText = string.IsNullOrEmpty(value)
-            ? string.Empty
-            : $"Strength: {PasswordStrength.Estimate(value)}";
+        => NewPasswordStrengthText = StrengthDisplay.Rating(value);
 
     // A measurement belongs to the settings it was made for.
     partial void OnSelectedKeyDerivationChanged(KeyDerivationChoice? value) => KeyDerivationTestResult = null;
@@ -242,9 +242,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         KdfWarning = inUse.IsAtLeastAsStrongAs(_newVaultParameters)
             ? null
             : "This vault uses weaker key-derivation settings than BitosX uses for new vaults "
-              + $"({Mebibytes(_newVaultParameters)} MiB, {_newVaultParameters.Iterations} iterations). "
-              + "It is easier to attack if the file is stolen. Changing the master password does not change "
-              + "these settings; “Strengthen key derivation” below does.";
+              + $"({Mebibytes(_newVaultParameters)} MiB, {_newVaultParameters.Iterations} iterations): "
+              + "each guess at the master password is cheaper for someone who has a copy of the file. "
+              + "Changing the master password does not change these settings; "
+              + "“Strengthen key derivation” below does.";
 
         PasswordEncodingNote = _vaultService.UsesLegacyPasswordEncoding
             ? "This vault is keyed with the master password exactly as it was typed when the vault was created. "

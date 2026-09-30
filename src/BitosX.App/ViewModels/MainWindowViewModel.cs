@@ -18,10 +18,14 @@ public sealed partial class MainWindowViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial ViewModelBase? Content { get; set; }
 
-    public MainWindowViewModel(IServiceProvider services, IVaultService vaultService)
+    /// <summary>What is shown at the top of the window, whatever the screen.</summary>
+    public AppNotice Notice { get; }
+
+    public MainWindowViewModel(IServiceProvider services, IVaultService vaultService, AppNotice notice)
     {
         _services = services;
         _vaultService = vaultService;
+        Notice = notice;
         _vaultService.StateChanged += OnStateChanged;
     }
 

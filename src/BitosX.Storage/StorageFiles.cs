@@ -75,6 +75,8 @@ internal static class StorageFiles
     /// <item>It is flushed to the physical disk, so the rename below can never expose a file whose
     /// data is still only in the operating system's cache.</item>
     /// <item>It is renamed over the target in a single step.</item>
+    /// <item>On Unix the directory is flushed as well, so that the rename itself survives a power
+    /// loss (see <see cref="UnixDirectory"/>).</item>
     /// </list>
     /// </summary>
     public static async Task WriteAtomicAsync(string path, ReadOnlyMemory<byte> content, CancellationToken cancellationToken)
@@ -166,6 +168,9 @@ internal static class StorageFiles
         {
             File.Move(tempPath, path);
         }
+
+        // On Unix the rename is a change to the directory, which is flushed on its own.
+        UnixDirectory.TryFlush(Path.GetDirectoryName(path));
     }
 
     private static string NewTempPath(string path) => $"{path}.{Guid.NewGuid():N}{TempSuffix}";

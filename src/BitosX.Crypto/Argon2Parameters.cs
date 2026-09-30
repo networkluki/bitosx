@@ -19,7 +19,7 @@ public sealed record Argon2Parameters(
     // nonsensical or dangerously weak values; the UPPER bounds are a denial-of-service defence.
     // Argon2 runs BEFORE the wrapped key is authenticated, so a tampered or malicious file could
     // otherwise request absurd memory/iteration/parallelism costs and exhaust the machine on unlock.
-    // The ceilings sit far above the interactive default (64 MiB / 3 / 4) to leave headroom for
+    // The ceilings sit above what new vaults are created with (256 MiB / 3 / 4) to leave headroom for
     // future, stronger device-aware profiles; a profile beyond these bounds requires a format
     // version bump that widens them (see docs/CRYPTOGRAPHY.md — "KDF parameter bounds").
     private const int MinMemoryKiB = 8;              // 8 KiB absolute floor accepted from a file
@@ -30,7 +30,8 @@ public sealed record Argon2Parameters(
     private const int MaxParallelism = 64;
 
     /// <summary>
-    /// Interactive default profile: 64 MiB, 3 passes, 4 lanes, 32-byte key.
+    /// The standard profile: 64 MiB, 3 passes, 4 lanes, 32-byte key. What vaults were created with
+    /// before 0.7.0; new vaults get <see cref="Strong"/> (see KeyDerivationProfile.ForNewVaults).
     /// Aligned with current OWASP guidance for Argon2id on interactive logins.
     /// </summary>
     public static Argon2Parameters Default { get; } = new(
@@ -40,7 +41,7 @@ public sealed record Argon2Parameters(
         KeyLengthBytes: CryptoConstants.KeySizeBytes);
 
     /// <summary>
-    /// Stronger profile a user can opt into: 256 MiB, 3 passes, 4 lanes. Four times the memory an
+    /// The strong profile: 256 MiB, 3 passes, 4 lanes. Four times the memory an
     /// attacker needs per guess compared with <see cref="Default"/>.
     /// </summary>
     public static Argon2Parameters Strong { get; } = new(

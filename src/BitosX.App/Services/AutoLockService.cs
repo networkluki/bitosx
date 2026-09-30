@@ -19,21 +19,33 @@ public sealed class AutoLockService : IDisposable
 {
     // How often the inactivity timeout is evaluated. Fine-grained enough for minute-scale timeouts
     // without waking frequently.
-    private static readonly TimeSpan CheckInterval = TimeSpan.FromSeconds(15);
+    public static readonly TimeSpan DefaultCheckInterval = TimeSpan.FromSeconds(15);
 
     private readonly AutoLockController _controller;
     private readonly ISystemSessionEvents _sessionEvents;
     private readonly EventHandler<RoutedEventArgs> _activityHandler;
+    private readonly TimeSpan _checkInterval;
 
     private DispatcherTimer? _timer;
     private Window? _window;
+    private Point? _pointerPosition;
     private bool _attached;
     private bool _disposed;
 
     public AutoLockService(AutoLockController controller, ISystemSessionEvents sessionEvents)
+        : this(controller, sessionEvents, DefaultCheckInterval)
+    {
+    }
+
+    /// <param name="controller">The policy that decides when to lock.</param>
+    /// <param name="sessionEvents">The operating system's session signals.</param>
+    /// <param name="checkInterval">How often the inactivity timeout is evaluated.</param>
+    public AutoLockService(AutoLockController controller, ISystemSessionEvents sessionEvents, TimeSpan checkInterval)
     {
         _controller = controller ?? throw new ArgumentNullException(nameof(controller));
         _sessionEvents = sessionEvents ?? throw new ArgumentNullException(nameof(sessionEvents));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(checkInterval, TimeSpan.Zero);
+        _checkInterval = checkInterval;
         _activityHandler = OnActivity;
     }
 
@@ -60,15 +72,35 @@ public sealed class AutoLockService : IDisposable
         _sessionEvents.Suspending += OnSuspending;
         _sessionEvents.Start();
 
-        _timer = new DispatcherTimer { Interval = CheckInterval };
+        _timer = new DispatcherTimer { Interval = _checkInterval };
         _timer.Tick += OnTimerTick;
         _timer.Start();
     }
 
+    /// <summary>The settings that apply now.</summary>
+    public AppSettings Settings => _controller.Settings;
+
     /// <summary>Applies updated settings to the underlying policy.</summary>
     public void UpdateSettings(AppSettings settings) => _controller.UpdateSettings(settings);
 
-    private void OnActivity(object? sender, RoutedEventArgs e) => _controller.NotifyActivity();
+    private void OnActivity(object? sender, RoutedEventArgs e)
+    {
+        // A pointer that is reported where it already was has not been moved by anyone. Operating
+        // systems send such reports on their own — Windows whenever something changes under a
+        // resting pointer — and they must not keep an unattended vault open.
+        if (e.RoutedEvent == InputElement.PointerMovedEvent && e is PointerEventArgs pointer && _window is not null)
+        {
+            Point position = pointer.GetPosition(_window);
+            if (position == _pointerPosition)
+            {
+                return;
+            }
+
+            _pointerPosition = position;
+        }
+
+        _controller.NotifyActivity();
+    }
 
     private void OnTimerTick(object? sender, EventArgs e) => _controller.CheckInactivity();
 
