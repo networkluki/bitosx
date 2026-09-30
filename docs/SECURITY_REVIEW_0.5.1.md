@@ -235,6 +235,12 @@ code** — the cryptographic core of 0.5.0 was sound.
 > to stronger key-derivation settings ([KEY_DERIVATION.md](KEY_DERIVATION.md)), and the clipboard
 > markers for macOS and Linux are set — though still not verified on those systems. The text below
 > is left as it was written for 0.5.1.
+>
+> **Update, 0.7.0.** The markers were verified on the real clipboard of Linux and macOS; the file
+> permissions of finding 18 were verified on both; the directory is flushed after the rename on
+> Unix; and what could not be checked by a person in the GUI is now checked by a program, on the
+> real application. See [SECURITY_REVIEW_0.7.0.md](SECURITY_REVIEW_0.7.0.md) — which also lists
+> what this review did not find.
 
 - **Master passwords are not Unicode-normalized.** A password with accented characters can be
   encoded differently by different keyboards or operating systems and then fail to unlock. Fixing it

@@ -116,3 +116,9 @@ preservation, old key can no longer decrypt, format/parameters preserved, wrong-
 fail closed, external same-key and different-key change detection, the cancellation boundary, and the
 write-failure reconciliation terminal states. Manual GUI verification on Windows 11 is recorded in
 [VERIFICATION.md](VERIFICATION.md).
+
+Since 0.7.0 the scenarios of that manual run are carried out for every change, by a program
+instead of a person: on the whole application without a display (`ChecklistTests`) and on the real
+application in a real window (`tools/BitosX.GuiCheck`). What changed on disk is read from the
+envelope of the vault file after every step, as it was then. Pressing "Rotate vault key" with
+nothing typed is answered as a wrong password; before 0.7.0 it ended the application.

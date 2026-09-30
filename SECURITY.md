@@ -38,19 +38,30 @@ lifecycle events (see `BitosX.Core.Diagnostics.VaultLog`).
 - Managed .NET memory cannot be guaranteed to be wiped; secrets in `string` objects may persist
   in process memory. BitosX minimizes secret lifetime and wipes byte buffers on a best-effort basis.
 - A copied secret is marked so that the operating system and clipboard managers leave it alone.
-  On Windows this was verified against the real clipboard history; on macOS and Linux the markers
-  are set but **not verified**. Nowhere can BitosX take back a copy that another application has
-  already made of the clipboard.
+  The marker is a request. It was verified against the real clipboard of Windows (and its
+  clipboard history), Linux and macOS, and the clipboard manager of KDE honors it — but CopyQ
+  7.1.0 records a secret that carries it, and no clipboard manager for macOS or Windows has been
+  asked. Nowhere can BitosX take back a copy that another application has already made of the
+  clipboard.
+- What is shown on screen is also told to the accessibility interface of the operating system,
+  and with it to whatever software uses that interface. Password fields tell it the dots they
+  show; they cannot tell it that they are password fields, so a screen reader may speak what is
+  typed.
 - A weak master password undermines all protection, because it is the root of the key hierarchy.
   The strength rating shown in the application is a heuristic without a dictionary. Stronger
   key-derivation settings make every guess more expensive; they do not rescue a password that can
   be guessed in a few thousand attempts.
 - Improving a vault's protection — a new master password, a rotated key, stronger key derivation —
   applies from then on. Copies and backups made earlier keep the protection they were made with.
-- BitosX has only been run on Windows. macOS and Linux are **not verified**.
+- The application itself has only been run on Windows. On Linux and macOS its tests run for every
+  change — including the whole application without a display — but the application has **not**
+  been started there, and locking on workstation lock and suspend is not implemented there.
+- Nobody has looked at a real window since 0.5.0. The screens are drawn and checked without a
+  display, and the manual checklists are carried out on the real application by a tool.
 
-See [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md) for the full list, and
-[docs/SECURITY_REVIEW_0.5.1.md](docs/SECURITY_REVIEW_0.5.1.md) for the findings of the latest
+See [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md) for the full list,
+[docs/VERIFICATION.md](docs/VERIFICATION.md) for what has and has not been verified, and
+[docs/SECURITY_REVIEW_0.7.0.md](docs/SECURITY_REVIEW_0.7.0.md) for the findings of the latest
 security review and what was done about them.
 
 ## Reporting a vulnerability

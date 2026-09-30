@@ -108,3 +108,10 @@ Manual H1–H6 method and full results are recorded in
 [VERIFICATION.md](VERIFICATION.md#manual-restore-hardening-verification--h1h6-2026-09-13-windows-11-real-avalonia-ui):
 each destructive-input attempt was checked against the on-disk encrypted vault by SHA-256, and no
 attempt other than the explicit "Replace my vault" click ever wrote the vault.
+
+**Since 0.7.0 H1–H6 are carried out for every change**, by a program instead of a person: on the
+whole application without a display (`ChecklistTests`, on Windows, Linux and macOS, with the file
+dialogs answered by the test), and on the real application in a real window with the real file
+dialogs of Windows (`tools/BitosX.GuiCheck`). The file is compared byte for byte after every
+attempt, as before. An empty password field at "Validate backup" is a wrong password; before
+0.7.0 it ended the application. The file dialogs of Linux and macOS remain **NOT VERIFIED**.

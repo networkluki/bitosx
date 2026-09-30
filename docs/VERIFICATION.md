@@ -11,12 +11,16 @@ actually confirmed is marked `NOT VERIFIED`.
 | **VERIFIED** | Confirmed by code review / static reasoning of the current source. |
 | **AUTOMATED TESTED** | Covered by an automated test in the suite that currently passes. |
 | **MANUALLY VERIFIED** | A person ran the application and confirmed the behavior end to end. |
+| **AUTOMATED ON THE REAL APPLICATION** | A program started the real application as a process of its own, in a real window, and operated it through the accessibility interface of the operating system (since 0.7.0). Nobody looked at the window. |
 | **NOT VERIFIED** | Not confirmed by any of the above. |
 
 > The manual GUI click-through (all 17 steps) was performed on **2026-09-13** on a
 > Windows 11 / .NET 10.0.12 machine, alongside the build, automated tests, and KDF benchmark.
 > It surfaced a real clipboard-clear defect that automated tests missed; the defect was fixed and
 > the affected steps re-verified (see "Clipboard auto-clear defect" below).
+>
+> Nobody has gone through it by hand since 0.5.0. Since 0.7.0 programs do, for every change, on
+> Windows, Linux and macOS; what that does and does not amount to is said in the section on 0.7.0.
 
 ## Status matrix
 
@@ -43,8 +47,9 @@ actually confirmed is marked `NOT VERIFIED`.
 | Clipboard does not erase content the user copied afterward | AUTOMATED TESTED + MANUALLY VERIFIED (2026-09-13) | `ClipboardServiceTests.AutoClear_DoesNotEraseContentTheUserReplaced`; confirmed live. |
 | Repeated copies / dispose / accessor failure handled safely | AUTOMATED TESTED | `ClipboardServiceTests`. |
 | Lock removes decrypted state; no navigation back without re-auth | VERIFIED + AUTOMATED TESTED + MANUALLY VERIFIED (2026-09-13) | State-driven shell (`MainWindowViewModel`); `VaultServiceTests` locking tests; GUI steps 13–15. |
-| Argon2id production-profile unlock latency | VERIFIED | `tools/BitosX.KdfBenchmark` (~46 ms median on the reference machine). |
-| **End-to-end GUI behavior (create/unlock/edit/copy/lock/persist)** | **MANUALLY VERIFIED (2026-09-13)** | All 17 checklist steps passed; corroborated by on-disk checks (vault created, no plaintext leak, add/edit/delete persisted). |
+| Argon2id unlock latency | VERIFIED | `tools/BitosX.KdfBenchmark`, on four machines since 0.7.0; see the section on 0.7.0. |
+| **End-to-end GUI behavior (create/unlock/edit/copy/lock/persist)** | **MANUALLY VERIFIED (2026-09-13)** + AUTOMATED ON THE REAL APPLICATION (since 0.7.0) | All 17 checklist steps passed by hand for 0.1.0; corroborated by on-disk checks (vault created, no plaintext leak, add/edit/delete persisted). Since 0.7.0 a program carries them out on the real application for every change. |
+| Linux and macOS | AUTOMATED TESTED (since 0.7.0) | All tests run there for every change. The application itself has not been started there. |
 | Secure erasure of secrets held as managed `string` | NOT VERIFIED (not achievable) | Documented limitation in `SECURITY_MODEL.md`. |
 
 ## Automatic locking (milestone after v0.1.0) — verified 2026-09-13
@@ -264,7 +269,8 @@ This also shows that the application starts and shuts down cleanly with the chan
 
 Since 0.6.0 the first, third and fourth of these are covered by tests that run the real views
 without a display — to the extent described in the next section. None has been looked at by a
-person.
+person. Since 0.7.0 the second, the fifth and the sixth are covered as far as a program can cover
+them; see the section on 0.7.0.
 
 ## Master password encoding, key derivation, clipboard markers (0.6.0) — verified 2026-09-29
 
@@ -394,6 +400,244 @@ and the settings file were unchanged (SHA-256), and no temporary file was left.
 | The cloud clipboard, and third-party clipboard managers | Not enabled / not installed on the development machine |
 | Normalization with a different Unicode version than the one of this runtime and operating system | One machine |
 
+## Verifying what was not verified (0.7.0) — 2026-09-30
+
+0.6.0 ended with a list of what had not been verified. This release is what came of going through
+that list. The findings are in [SECURITY_REVIEW_0.7.0.md](SECURITY_REVIEW_0.7.0.md); this section
+records what was verified, where, and how. The on-disk format is unchanged (v1).
+
+| Machine | System | Logical CPUs | Memory |
+|---|---|---|---|
+| Development machine | Windows 11 Pro, .NET SDK 10.0.401 | 16 | 64 GiB |
+| Build service | Ubuntu 24.04.5 LTS, .NET SDK 10.0.401 | 2 | 8 GiB |
+| Build service | macOS 15.7.9, .NET SDK 10.0.401 | 5 | 14 GiB |
+| Build service | Windows Server 2025, .NET SDK 10.0.401 | 2 | 16 GiB |
+
+The build service is GitHub Actions (`.github/workflows/ci.yml`). Its machines are created for a
+run and discarded after it; nobody sits at them.
+
+### Automated, on three systems
+
+819 tests (684 in 0.6.0), in Debug and in Release, with 0 build warnings (warnings are errors on
+the build service).
+
+| Project | 0.6.0 | 0.7.0 |
+|---|---|---|
+| `BitosX.Core.Tests` | 318 | 333 |
+| `BitosX.Crypto.Tests` | 142 | 152 |
+| `BitosX.App.Tests` | 133 | 232 |
+| `BitosX.Storage.Tests` | 56 | 67 |
+| `BitosX.Platform.Tests` | 35 | 35 |
+
+| System | Passed | Skipped |
+|---|---|---|
+| Windows 11 (development machine) | 811 | 8 — what only Unix has |
+| Windows Server 2025 | 811 | 8 — what only Unix has |
+| Ubuntu 24.04 | 818 | 1 — what only Windows has |
+| macOS 15 | 818 | 1 — what only Windows has |
+
+A test of something one kind of system does not have is reported as skipped there. Until 0.7.0
+such a test returned at once and was reported as passed.
+
+| Item | Status |
+|---|---|
+| Everything the 684 tests of 0.6.0 cover, on Linux and macOS | AUTOMATED TESTED — all of them passed there the first time they were run |
+| The vault, the settings, a backup and the recovery copy are readable by their owner only, and the directory can be entered by its owner only (Unix) | AUTOMATED TESTED on Linux and macOS (`UnixFilesTests`), with a control that an ordinary new file is *not* owner-only |
+| The directory is flushed after a file in it was replaced (Unix) | AUTOMATED TESTED on Linux and macOS: the flush succeeds, also for a name that is not ASCII. **Not** tested: that it makes the rename survive a power loss |
+| The master password is encoded to the same bytes by the Unicode library of each system | AUTOMATED TESTED on all three (`MasterPasswordEncodingTests`, known answers) |
+| The single-instance guard, atomic replacement and temporary files behave the same | AUTOMATED TESTED on all three |
+| An empty password is a wrong password when opening, refused when protecting, at every layer | AUTOMATED TESTED (`EmptyPasswordTests`, `VaultServiceEmptyPasswordTests`, `VaultBackupServiceTests`, `ChecklistTests`) |
+| What a new vault is created with, and what it falls back to on a device without the memory | AUTOMATED TESTED (`VaultServiceCreationSettingsTests`) |
+| A password field tells the accessibility interface what it shows, never the hidden text; every field that shows dots is such a field | AUTOMATED TESTED (`SecretBoxTests`), with a control that an ordinary text box *does* hand out its text |
+| Every input on every screen has a name for a screen reader | AUTOMATED TESTED (`AccessibilityTests`) |
+| `--data-directory`: what it accepts, and that what it cannot use is refused rather than ignored | AUTOMATED TESTED (`AppLocationTests`) |
+| A fault that reaches the user interface locks the vault, clears the clipboard, tells the user, and shows and logs nothing of what the fault says | AUTOMATED TESTED (`UnexpectedErrorGuardTests`, `ChecklistTests`) |
+| The generator shows a password that belongs to its settings | AUTOMATED TESTED (`GeneratorPageViewModelTests`) |
+
+### The whole application, without a display
+
+`ChecklistTests` (27 tests) puts the application together the way the application does — the
+same services, main window, cryptography with the same settings, and file storage, in a data
+directory of its own — and carries out the manual checklists of this document on it. Replaced are
+the things that reach outside the process: the session signals of the operating system, the clock
+that automatic locking reads, the file dialogs, and how long a copied value stays on the
+clipboard. It runs on all three systems.
+
+| Checklist | Status |
+|---|---|
+| The 17 steps | AUTOMATED TESTED, in the order of the checklist, in one run |
+| A1–A8 (automatic locking) | AUTOMATED TESTED. A5 and A6 with the session signal raised by the test |
+| H1–H6 (the confirmation before a restore) | AUTOMATED TESTED, with the keys pressed in the window and the file compared byte for byte after each |
+| The rotation scenarios | AUTOMATED TESTED, with the envelope of the vault file read after each step |
+| Changing the master password from Settings (was "needs manual run") | AUTOMATED TESTED |
+| After lock and unlock, Settings shows and saves what applies | AUTOMATED TESTED |
+| A pointer that rests does not keep the vault open; one that moves does | AUTOMATED TESTED |
+| Closing the window clears a secret that was just copied; locking the vault by hand does not | AUTOMATED TESTED |
+
+### The real application, in a real window
+
+`tools/BitosX.GuiCheck` starts the application as a process of its own on a data directory of its
+own and operates it through UI Automation, the accessibility interface of Windows: it enters
+text, activates buttons and check boxes, and reads what the window shows. Keys, mouse movement
+and the session messages of Windows are posted to the window of the application — never to
+whatever window is in front. The clipboard is read the way another application reads it, the
+vault file is compared byte for byte, and its envelope is read after each step. The real file
+dialogs of Windows are answered the same way.
+
+On Windows Server 2025, on the build service, for every change. For the change that is released:
+**all 118 checks passed, none left out.**
+
+| Part | Checks | Status |
+|---|---|---|
+| Starting: an option that cannot be used ends the application with code 64 and writes nothing; the window title names the data directory; a second instance on the same directory ends by itself with code 2, one on another directory runs next to it | 11 | AUTOMATED ON THE REAL APPLICATION |
+| The 17 steps, with the real clipboard and its thirty seconds, and with what is on disk read after each | 35 | AUTOMATED ON THE REAL APPLICATION |
+| What the password fields tell other programs: dots, read from another process | 5 | AUTOMATED ON THE REAL APPLICATION |
+| A1–A8. A1 and A2 in real time, with the timeout at one minute: the vault stays open for a minute and a half while the mouse is moved in the window, and locks between 55 and 85 seconds after it was last touched | 13 | AUTOMATED ON THE REAL APPLICATION. A5 and A6 with the message Windows sends, not with a locked workstation |
+| Changing the master password | 8 | AUTOMATED ON THE REAL APPLICATION |
+| The rotation scenarios, with a backup exported and chosen through the file dialogs of Windows | 12 | AUTOMATED ON THE REAL APPLICATION |
+| Strengthening the key derivation, from 256 MiB to 1 GiB | 9 | AUTOMATED ON THE REAL APPLICATION |
+| H1–H6, with the keys Enter, Space and Escape sent to the window | 16 | AUTOMATED ON THE REAL APPLICATION |
+| A device without the memory: the application with its memory limited to 200 MiB creates the vault with 64 MiB, says so, and opens it again | 7 | AUTOMATED ON THE REAL APPLICATION |
+| Afterwards: nothing of the run is left | 2 | — |
+
+On the development machine (Windows 11) the tool was run in full once, on an earlier state of
+this release: 108 of 109 checks passed. The one that did not was the tool's mistake, not the
+application's — somebody was sitting at that machine and moved the mouse over the window, which
+the application rightly counted as activity (see "A mistake of this review" in
+[SECURITY_REVIEW_0.7.0.md](SECURITY_REVIEW_0.7.0.md)). A shorter run before it is what found that Settings
+put settings back after a lock and unlock. It was not repeated there for the final state.
+
+What this is and is not. It is the real application, its real window, the real clipboard and the
+real file dialogs. It is not a person: nobody looked at the window. The workstation was not
+locked and the system not put to sleep; the application was sent the messages Windows sends for
+them. And it is Windows only: the application has not been started on Linux or macOS.
+
+### How the views look
+
+`ViewAppearanceTests` lays out and draws every screen with the renderer and the font of the
+application, at the size the window opens with (1000 × 680) and at the smallest it can be given
+(760 × 540): creating a vault, unlocking, the vault empty and with items, the editor, the question
+before deleting, the generator, the Security Center, Settings with every message it can show at
+once, and the notice after an unexpected error. 30 images per system.
+
+| Item | Status |
+|---|---|
+| No text is cut off; nothing is outside what is shown unless it can be scrolled to; a shortened text can be read in full on hover | AUTOMATED TESTED, on all three systems |
+| The images look right | Looked at — by the assistant that made the changes, not by a person. The images of the development machine, and a sample of those of Linux and macOS |
+| A real window on a real screen: its title bar, another display scaling | **NOT VERIFIED** |
+
+Looking at the images found what the tests of 0.6.0 could not: a vault list unreadable in a
+narrow window, an editor taller than the smallest window, and a generator showing a password that
+did not belong to its settings.
+
+### Against 0.6.0
+
+Each finding as a test that states how the application ought to behave, written with only what
+0.6.0 has, and run on a checkout of the tag `v0.6.0-password-key-derivation`:
+
+| What the test states | 0.6.0 | 0.7.0 |
+|---|---|---|
+| An empty password is a wrong password: unlock, change password, rotate, strengthen (11 tests at two layers) | **fails** — the exception of the library | passes |
+| Rotating with nothing typed is reported, not thrown | **fails** — the exception leaves the command | passes |
+| The Settings page built after unlocking shows what applies, and keeps it | **fails** | passes |
+| Changing the length in the generator makes a password of that length | **fails** — 20 characters for a length of 128 | passes |
+| A typed master password is not handed out through the accessibility interface | **fails** — handed out in full | passes |
+| The vault page is laid out with nothing cut off, at two widths | **fails** — a name given 35 of the 480 pixels it needs | passes |
+| The editor fits the smallest window when it has an error to show | **fails** — Save and Cancel below the edge | passes |
+| One command does not delete an item | **fails** | passes |
+| A rating is written in words | **fails** — "VeryWeak" | passes |
+| The page behind the editor is out of reach | **fails** | passes |
+
+21 of the 25 fail on 0.6.0. The four that pass there state that an empty password cannot protect
+a vault, which was true before, by the library's doing.
+
+### Taking the fixes out
+
+For tests that use what 0.6.0 does not have, eight fixes were taken out of 0.7.0 again, one line
+each, and the suite was run:
+
+| Taken out | Tests that then fail |
+|---|---|
+| A pointer reported where it was is not activity | 1 |
+| Clearing the clipboard when the window closes | 1 |
+| Clearing the clipboard when the user leaves | 2 of the whole application, 3 of the policy |
+| The fallback when a device cannot spare the memory for a new vault | 3 |
+| The name of one input field | 1 |
+| Locking the vault on an unexpected error | 3 |
+| Attaching the guard against unexpected errors to the user interface | 1 |
+| Refusing a misspelled `--data-directory` | 7 |
+
+The third was not caught in full at first: one of the two cases of the test of the whole
+application passed. Its check that a copied secret is cleared at once waited up to thirty seconds,
+which is when the timer clears it anyway; and the tests of the views ran at the same time on one
+clipboard, so that one test could clear what another was waiting to see cleared. Both were
+corrected, and the table is what came after.
+
+### The clipboard of Linux and macOS
+
+`tools/BitosX.ClipboardCheck` places a secret on the real clipboard with the clipboard code of
+the application, and reads the clipboard back with the tools of the system: `xclip` on Linux (an
+X11 display, provided by Xvfb), the pasteboard of AppKit on macOS. All 10 checks passed on both.
+
+| Check | Ubuntu 24.04 | macOS 15 |
+|---|---|---|
+| The copied text can be pasted | PASS | PASS |
+| It carries the marker | PASS — `x-kde-passwordManagerHint` | PASS — `org.nspasteboard.ConcealedType` |
+| The marker has the value it should have | PASS — `secret` | PASS — one byte |
+| The marker does not repeat the secret | PASS | PASS |
+| The clipboard accepted the marker (no fall back to an unmarked copy) | PASS | PASS |
+| The application reads back what it copied | PASS | PASS |
+| After its time the text is gone from the clipboard | PASS | PASS |
+| What was copied by someone else afterwards is not cleared | PASS | PASS |
+| An ordinary copy carries no marker (control) | PASS | PASS |
+| Cleared at once when asked to | PASS | PASS |
+
+### Clipboard managers
+
+The marker is a request, and what a clipboard manager does with it is a fact about that clipboard
+manager. `tools/ci/clipboard-managers.sh` asks two of them, on Ubuntu 24.04. For each: a text
+copied *without* the marker must turn up in its history — otherwise it is not recording, and
+nothing can be said — and a text copied *with* the marker, by the clipboard code of the
+application, must not.
+
+| Clipboard manager | Unmarked text | Marked text | |
+|---|---|---|---|
+| Klipper 5.27.12 (KDE) | recorded | **not recorded** | Honors the marker |
+| CopyQ 7.1.0 | recorded | **recorded** | Does not honor the marker |
+
+The build fails if Klipper starts recording a marked text: that would mean the marker is no
+longer set the way it has to be. What CopyQ does is reported, and cannot be changed from here.
+
+### What the key derivation costs
+
+`tools/BitosX.KdfBenchmark`, median of five derivations, in Release. The machines of the build
+service are virtual, shared, and not the same from one run to the next; the ranges are what four
+runs gave.
+
+| Machine | 64 MiB | 256 MiB | 1 GiB |
+|---|---|---|---|
+| Development machine (16 CPUs) | about 0.05 s | about 0.2 s | about 0.85 s |
+| macOS 15 (5 CPUs) | 0.14 – 0.18 s | 0.3 – 0.5 s | 1.3 – 1.6 s |
+| Ubuntu 24.04 (2 CPUs) | 0.12 – 0.41 s | 0.5 – 1.6 s | 2.0 – 6.5 s |
+| Windows Server 2025 (2 CPUs) | 0.26 – 0.61 s | 1.0 – 2.5 s | 4.3 – 6.9 s |
+
+On these figures new vaults are created with 256 MiB since this release; see
+[KEY_DERIVATION.md](KEY_DERIVATION.md).
+
+### NOT VERIFIED
+
+| Item | Why |
+|---|---|
+| A person looking at a real window | The screens are drawn and checked without a display; the real window is operated by a program |
+| **The application itself on Linux and macOS** | Its tests run there, including the whole application without a display, and its clipboard code in a window of a tool. The application has not been started there |
+| Locking the workstation and putting the system to sleep, for real | The application is sent the messages Windows sends for them. The real signals were last verified by hand for 0.2.0 |
+| The clipboard on Wayland | The Linux machine has an X11 display |
+| Clipboard managers for macOS and Windows; the clipboard history of macOS; the cloud clipboard of Windows; handing the clipboard to other devices | None was available |
+| That the password fields are announced as password fields by a screen reader | The user-interface framework cannot report it. What is typed may be spoken |
+| That flushing the directory makes a rename survive a power loss | Only that the flush succeeds |
+| The file dialogs of Linux and macOS | The application has not been started there |
+| That Windows keeps a copied secret out of its clipboard history, for this release | `tools/BitosX.ClipboardProbe` ran on Windows Server 2025, where the history is turned off: its 16 other checks passed and the two of the history were left out. They were last made on a desktop with the history turned on for 0.6.0; the code they exercise is unchanged |
+
 ## Version display fix (2026-09-13)
 
 The Settings → About line previously read "BitosX version 0.3.0.0" — the CLR/Windows 4-part
@@ -439,20 +683,30 @@ Fix (App/Platform layers only — no crypto/vault changes):
   `SECURITY_MODEL.md`.
 - ~~Decrypted vault content is not re-validated on load.~~ **Closed in 0.5.1**: loading validates
   every item with the same rules as editing (`VaultLoadValidationTests`).
-- **The production KDF profile is fast on high-end hardware** (~46 ms median on a 16-core desktop).
-  It is comfortably interactive but on the low side for offline brute-force cost. The default for
-  new vaults is still not retuned from a single machine; **since 0.6.0 an existing vault can be
-  moved to stronger settings by its user**, with a measurement from the device
-  ([KEY_DERIVATION.md](KEY_DERIVATION.md)).
+- ~~The production KDF profile is fast on high-end hardware~~ (~46 ms median on a 16-core
+  desktop for 64 MiB) **— addressed in two steps.** Since 0.6.0 an existing vault can be moved to
+  stronger settings by its user, with a measurement from the device. Since 0.7.0, with the
+  derivation measured on four machines instead of one, a new vault is created with 256 MiB
+  ([KEY_DERIVATION.md](KEY_DERIVATION.md)). A vault created before keeps its settings until its
+  user strengthens it.
 
 ## Manual GUI checklist — COMPLETED 2026-09-13 (all 17 steps PASS)
 
 Run the app with `dotnet run --project src/BitosX.App`. Perform each step and confirm the expected
 result. **All 17 steps were performed and passed on 2026-09-13** on Windows 11 / .NET 10.0.12
-(step 11 passed after the clipboard fix above). Re-run this checklist for future releases.
+(step 11 passed after the clipboard fix above).
 
-> The default vault lives at `%APPDATA%\BitosX\vault.bitosx` (Windows). To test "first launch"
-> cleanly, ensure no vault file exists there first (back it up if it does).
+**Since 0.7.0 these steps are carried out for every change by a program** — on the whole
+application without a display (`ChecklistTests`) and on the real application in a real window
+(`tools/BitosX.GuiCheck`) — and no longer depend on someone finding the time. A person going
+through them is still worth what it always was: it is how the clipboard defect above was found,
+and a program does not notice what it was not told to look for.
+
+> Do not use the vault at the default location for this. Start the application on a directory of
+> its own: `dotnet run --project src/BitosX.App -- --data-directory <full path>`. A directory
+> that does not exist yet gives a clean "first launch".
+
+Step 16 has changed in 0.7.0: deleting is asked for and then confirmed.
 
 | # | Step | Expected result |
 |---|---|---|
@@ -471,7 +725,7 @@ result. **All 17 steps were performed and passed on 2026-09-13** on Windows 11 /
 | 13 | **Lock the vault** (Lock command) | The app returns to the Unlock screen. |
 | 14 | **Verify secrets disappear** | After locking, no item list, selected item, or password field is visible; there is no navigation path back into the vault without re-entering the master password. |
 | 15 | **Unlock again** with the correct password | The vault and all items reappear unchanged. |
-| 16 | **Delete an item** | The item disappears from the list and does not return after save. |
+| 16 | **Delete an item**, and confirm | Nothing is deleted until the question is answered; "Keep" calls it off. Once confirmed, the item disappears from the list and does not return after save. |
 | 17 | **Restart and verify persistence** | After a full restart and unlock, previously added/edited items are present and the deleted item is gone. |
 
 All steps passed; on-disk checks corroborated the visual results (vault created at 888 bytes with no

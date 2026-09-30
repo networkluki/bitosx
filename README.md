@@ -8,7 +8,8 @@ and stays on the local device.
 
 ## What works in this milestone
 
-- Create a local vault protected by a master password (Argon2id + AES-256-GCM).
+- Create a local vault protected by a master password (Argon2id with 256 MiB of memory,
+  AES-256-GCM).
 - Unlock / lock the vault; incorrect passwords are rejected.
 - Automatic locking: inactivity timeout (configurable), workstation lock and system suspend
   (Windows), and optional lock-on-minimize. See [docs/AUTO_LOCK.md](docs/AUTO_LOCK.md).
@@ -23,7 +24,7 @@ and stays on the local device.
   password and on-disk format are unchanged). See [docs/KEY_ROTATION.md](docs/KEY_ROTATION.md).
 - Encrypted backup / export and restore (the encrypted envelope copied byte-for-byte; restore is
   authenticated and validated before it replaces the vault). See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
-- Add, edit, delete, favorite, and search login items.
+- Add, edit, delete, favorite, and search login items; deleting is asked for and then confirmed.
 - Copy username / password to the clipboard with an automatic timed clear.
 - Show/hide passwords (hidden by default).
 - Cryptographically secure password generator.
@@ -32,14 +33,21 @@ and stays on the local device.
 - Refuses to overwrite a vault that changed on disk while it was open, and runs only one instance
   per vault.
 - Copied secrets are marked so that the system does not keep them: on Windows this keeps them out
-  of the clipboard history and the cloud clipboard (verified); on macOS and Linux the markers are
-  set but not verified. The clipboard is also cleared on exit and when the workstation is locked
-  or suspended.
+  of the clipboard history; on Linux and macOS the marker is on the clipboard, and the clipboard
+  manager of KDE honors it. Not every clipboard manager does (see
+  [docs/SECURITY_MODEL.md](docs/SECURITY_MODEL.md)). The clipboard is also cleared on exit and
+  when the workstation is locked or suspended.
+- Password fields do not hand what is typed into them to other programs through the accessibility
+  interface of the operating system, and every input says what it is for to a screen reader.
+- Fails closed on an unexpected error: the vault is locked and a copied secret is cleared.
+- Can be run on a data directory of its own (`--data-directory`), next to the vault at the default
+  location. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## Requirements
 
 - .NET SDK **10.0** (developed against 10.0.401).
-- Windows, Linux, or macOS (the crypto and storage are cross-platform; the app is Avalonia).
+- Windows, Linux, or macOS (the crypto and storage are cross-platform; the app is Avalonia). The
+  tests run on all three for every change. The application itself has only been run on Windows.
 
 ## Build, test, run
 
@@ -61,7 +69,7 @@ src/
   BitosX.Platform   Platform policy (clipboard, single instance, OS session signals), secure-storage hook
   BitosX.ApiClient  Local-only API abstraction (no production server in this milestone)
 tests/
-  BitosX.App.Tests        View models, and the real views run without a display
+  BitosX.App.Tests        View models; the real views and the whole application, run without a display
   BitosX.Core.Tests
   BitosX.Crypto.Tests
   BitosX.Platform.Tests   Clipboard policy and single-instance tests
@@ -69,10 +77,13 @@ tests/
 tools/
   BitosX.KdfBenchmark     Diagnostic-only Argon2id unlock-latency benchmark, per profile (not shipped)
   BitosX.ClipboardProbe   Diagnostic-only check against the real Windows clipboard (not shipped, not in the solution)
+  BitosX.ClipboardCheck   Diagnostic-only check against the real clipboard of Linux and macOS (not shipped)
+  BitosX.GuiCheck         Diagnostic-only: the manual checklists, on the real application (not shipped, not in the solution)
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
   VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md  KEY_ROTATION.md
-  SECURITY_REVIEW_0.5.1.md  KEY_DERIVATION.md  MASTER_PASSWORD.md
+  KEY_DERIVATION.md  MASTER_PASSWORD.md  SECURITY_REVIEW_0.5.1.md  SECURITY_REVIEW_0.7.0.md
+.github/workflows/ci.yml  Builds and tests on Linux, macOS and Windows for every change
 ```
 
 `BitosX.Core` and `BitosX.Crypto` do not depend on Avalonia.
@@ -81,6 +92,7 @@ docs/
 
 By default the encrypted vault lives at your per-user application data directory, e.g.
 `%APPDATA%\BitosX\vault.bitosx` on Windows. The plaintext vault contents are never written to disk.
+`--data-directory <full path>` keeps the vault and the settings somewhere else.
 
 ## Security
 
@@ -89,7 +101,8 @@ documents under [`docs/`](docs/) for the security model, threat model, and crypt
 **including an explicit list of what BitosX does and does not protect against.**
 
 The findings of the latest security review, and what was done about each, are in
-[docs/SECURITY_REVIEW_0.5.1.md](docs/SECURITY_REVIEW_0.5.1.md).
+[docs/SECURITY_REVIEW_0.7.0.md](docs/SECURITY_REVIEW_0.7.0.md). What has and has not been
+verified, and how, is in [docs/VERIFICATION.md](docs/VERIFICATION.md).
 
 If you forget your master password, your vault cannot be recovered. There is no backdoor,
 recovery key, or universal decryption key.

@@ -38,16 +38,24 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.6.0`** — the three things the 0.5.1 review left open. The master password is encoded
-canonically, so a vault opens however the same password is typed
-([MASTER_PASSWORD.md](MASTER_PASSWORD.md)); an existing vault can be moved to stronger
-key-derivation settings ([KEY_DERIVATION.md](KEY_DERIVATION.md)); and copied secrets carry the
-clipboard marker of macOS and Linux as well as that of Windows. No new cryptographic primitive, and
-the on-disk vault format is unchanged (still v1): every existing vault and backup opens as before.
-Verified on Windows, including the real views run without a display; **not verified on macOS or
-Linux**, and the manual GUI checklist has not been re-run.
+**`0.7.0`** — verifying what 0.6.0 had left unverified, and fixing what that turned up. The tests
+now run on Linux and macOS as well as on Windows, for every change; the manual checklists are
+carried out on the whole application and on the real application in a real window; every screen
+is drawn and checked; and the clipboard markers were verified on the real clipboard of Linux and
+macOS. That found, among other things, that a typed master password could be read by other
+programs through the accessibility interface, that an empty password field could end the
+application, and that Settings could silently put settings back
+([SECURITY_REVIEW_0.7.0.md](SECURITY_REVIEW_0.7.0.md)). New in this version: new vaults are created
+with 256 MiB of key-derivation memory instead of 64 MiB
+([KEY_DERIVATION.md](KEY_DERIVATION.md)), deleting an item is confirmed, and the application can be
+run on a data directory of its own (`--data-directory`). No new cryptographic primitive, and the
+on-disk vault format is unchanged (still v1): every existing vault and backup opens as before, with
+the settings it has. **Not verified:** a person looking at a real window, and the application
+itself on Linux or macOS.
 
-Builds on `0.5.1` security hardening (tag `v0.5.1-security-hardening`, see
+Builds on `0.6.0` master password encoding and stronger key derivation (tag
+`v0.6.0-password-key-derivation`, see [MASTER_PASSWORD.md](MASTER_PASSWORD.md)), `0.5.1` security
+hardening (tag `v0.5.1-security-hardening`, see
 [SECURITY_REVIEW_0.5.1.md](SECURITY_REVIEW_0.5.1.md)), `0.5.0` vault key rotation (tag
 `v0.5.0-key-rotation`, see [KEY_ROTATION.md](KEY_ROTATION.md)), `0.4.0` encrypted backup/restore
 (tag `v0.4.0-backup-restore`), `0.3.0` master password change (tag `v0.3.0-master-password`),

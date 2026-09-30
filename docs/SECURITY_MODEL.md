@@ -48,20 +48,34 @@ It describes the current **local vault** milestone. No marketing claims are made
   quote the content.
 - **An interrupted write, including power loss.** New content is written to a temporary file,
   flushed to the physical disk, and only then renamed over the vault, so the file is always either
-  the complete previous vault or the complete new one. If a write fails, the outcome is read back
+  the complete previous vault or the complete new one. On Unix the directory is flushed as well,
+  so that the rename itself survives a power loss. If a write fails, the outcome is read back
   from disk rather than assumed.
-- **Clipboard history and cloud clipboard (Windows).** A copied secret is marked so that Windows
-  keeps it out of the clipboard history (Win+V) and does not upload it to the cloud clipboard.
-  It is also cleared when the application closes and when the workstation is locked or the system
-  suspends, not only after the timed delay. On macOS and Linux the corresponding markers are set
-  too, but what those systems do with them is **NOT VERIFIED** (see below).
+- **Clipboard history and clipboard managers that honor the marker.** A copied secret carries the
+  marker of the system it is copied on, which asks the system and clipboard managers not to keep
+  it. On **Windows** this keeps it out of the clipboard history (Win+V) and asks that it not be
+  uploaded to the cloud clipboard; verified against the real clipboard and its history. On
+  **Linux and macOS** the marker is on the real clipboard next to the text, and the clipboard
+  manager of KDE (Klipper) does not record a text that carries it; verified on the machines of a
+  build service. Not every clipboard manager honors it (see below). The secret is also cleared
+  when the application closes and when the workstation is locked or the system suspends, not only
+  after the timed delay.
+- **Other programs reading a password field.** Operating systems let programs read and operate
+  the windows of other programs — for screen readers, and for whatever else uses that interface.
+  A password field tells that interface what it shows on screen: dots, until the user reveals the
+  text. Before 0.7.0 it handed out the text. See
+  [SECURITY_REVIEW_0.7.0.md](SECURITY_REVIEW_0.7.0.md).
+- **A fault nobody foresaw.** If an error reaches the user interface unhandled, the application
+  fails closed: the vault is locked and a copied secret is cleared, instead of the application
+  ending with the secret left on the clipboard. What the fault says is neither shown nor logged.
 - **The same master password typed differently.** The key is derived from a canonical encoding of
   the password, so a vault opens whether an accented letter arrives as one code point or as a
   letter and a combining mark, and whichever kind of space was typed. Vaults from before 0.6.0
   keep opening. See [MASTER_PASSWORD.md](MASTER_PASSWORD.md).
 - **Key-derivation settings that have become too weak.** An existing vault can be moved to
   stronger settings, which makes every guess at the master password more expensive for someone
-  holding a copy of the file made afterwards. Settings can be strengthened, never weakened. See
+  holding a copy of the file made afterwards. Settings can be strengthened, never weakened. Since
+  0.7.0 a new vault is created with four times the memory an older one was (256 MiB). See
   [KEY_DERIVATION.md](KEY_DERIVATION.md).
 - **Accidental plaintext persistence.** The plaintext vault is only ever held in memory while
   unlocked; only encrypted data is written to disk.
@@ -72,6 +86,8 @@ It describes the current **local vault** milestone. No marketing claims are made
   on minimize. This shrinks the window of exposure but does not eliminate it: while unlocked and in
   use, decrypted contents are in memory. See [AUTO_LOCK.md](AUTO_LOCK.md) for the platform support
   and verification status (OS-event detection on Linux/macOS is **NOT VERIFIED / unsupported**).
+- **Deleting an item by mistake.** Deleting cannot be undone, so it is asked for and then
+  confirmed.
 
 ## What BitosX does NOT protect against
 
@@ -92,14 +108,22 @@ It describes the current **local vault** milestone. No marketing claims are made
 - **Copies of the vault made before its protection was improved.** Strengthening the key
   derivation, rotating the vault key and changing the master password all apply to the vault file
   from then on. A backup or any other copy made earlier keeps the protection it was made with.
-- **Anything that copies the clipboard for itself.** The markers BitosX sets are requests: the
-  operating system and well-behaved clipboard managers honor them, but an application that reads
-  the clipboard directly sees the secret while it is there, and BitosX cannot take back a copy
-  that has been made. On **Windows** the markers were verified against the real clipboard and
-  clipboard history. On **macOS and Linux** they follow the published conventions
-  (`org.nspasteboard.ConcealedType`, `x-kde-passwordManagerHint`) but are **NOT VERIFIED**: no
-  such machine was available. If a clipboard there refuses the marker, the value is copied
-  without it rather than not at all. The timed clear never erases content you copied afterwards.
+- **Anything that copies the clipboard for itself.** The markers BitosX sets are requests
+  (`org.nspasteboard.ConcealedType` on macOS, `x-kde-passwordManagerHint` on Linux, four formats
+  on Windows). An application that reads the clipboard directly sees the secret while it is
+  there, and BitosX cannot take back a copy that has been made. **A clipboard manager may ignore
+  the request:** CopyQ 7.1.0, the version in Ubuntu 24.04, recorded a secret that carried the
+  marker. No clipboard manager for macOS or Windows has been asked, nor the clipboard history of
+  macOS, nor the cloud clipboard of Windows; these are **NOT VERIFIED**. If you use a clipboard
+  manager, find out what it does with passwords. If a clipboard on macOS or Linux refuses the
+  marker, the value is copied without it rather than not at all. The timed clear never erases
+  content you copied afterwards.
+- **Software that uses the accessibility interface.** What the window shows, it also tells that
+  interface: the names, user names and addresses of your items, a password you have chosen to
+  reveal, a password the generator shows. Only what is hidden on screen is hidden there. The
+  interface does not report the password fields *as* password fields — the user-interface
+  framework has no way of saying so — which a screen reader may use to decide whether to speak
+  what is typed. Software with that access can also operate the application.
 - **A master password made of ordinary words.** The strength rating discounts repetition, runs,
   keyboard patterns and the most common passwords, but it has no dictionary and no knowledge of
   breached passwords. A good rating means no obvious weakness was found, nothing more.

@@ -19,6 +19,14 @@ with BitosX, the timer still runs — this is deliberate for a password manager.
 (staying unlocked while you actively use other apps) is a possible future enhancement and is **not**
 implemented.
 
+Input is a key pressed, a mouse button pressed, the wheel turned, or the pointer **moved**. A
+pointer that is reported where it already was has not been moved by anyone: operating systems send
+such reports on their own, and they do not count (since 0.7.0).
+
+The Settings page shows the settings that apply, and saving one of them leaves the others as they
+are. Before 0.7.0 the page showed, after the vault had been locked and unlocked, the settings the
+application had started with — and saving one of them put the others back.
+
 ## Platform support (honest — no faked behavior)
 
 | Trigger | Windows | Linux / macOS |
@@ -87,8 +95,15 @@ the application is closed. Supported where the OS signals are: currently Windows
 
 The Windows manual run was performed on 2026-09-13 (.NET 10.0.12); all of A1–A8 passed and the app
 output showed no exceptions across Win+L and suspend/resume. Linux/macOS OS-event detection remains
-**UNSUPPORTED / NOT VERIFIED** by design. Re-run the checklist for future releases and on other
-platforms.
+**UNSUPPORTED / NOT VERIFIED** by design.
+
+**Since 0.7.0 the checklist below is carried out for every change**, by a program instead of a
+person: on the whole application without a display (`ChecklistTests`, on Windows, Linux and
+macOS), and on the real application in a real window (`tools/BitosX.GuiCheck`, on Windows). Two
+things differ from the manual run. The workstation is not locked and the system not put to sleep:
+the application is sent the messages Windows sends for them, so A5 and A6 as a person performs
+them were last verified by hand for 0.2.0. And nobody looks at the window. See
+[VERIFICATION.md](VERIFICATION.md).
 
 ## Manual verification checklist (auto-lock) — COMPLETED 2026-09-13 (A1–A8 PASS, Windows)
 

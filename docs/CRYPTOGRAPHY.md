@@ -46,30 +46,32 @@ encrypted vault contents
 
 ## Default parameters
 
-- Argon2id: **64 MiB** memory, **3** iterations, **parallelism 4**, 32-byte output
-  (aligned with current OWASP guidance for interactive Argon2id; the second recommended option of
-  RFC 9106). A deliberately weak profile is used **only** in automated tests to keep them fast.
-  An existing vault can be moved to **256 MiB** or **1 GiB**; see
-  [KEY_DERIVATION.md](KEY_DERIVATION.md).
+- Argon2id, for a new vault: **256 MiB** memory, **3** iterations, **parallelism 4**, 32-byte
+  output. Until 0.7.0 it was **64 MiB** (the second recommended option of RFC 9106), which is what
+  vaults from before have and what a new vault gets on a device that cannot spare 256 MiB. An
+  existing vault keeps its settings, and can be moved to **256 MiB** or **1 GiB**; see
+  [KEY_DERIVATION.md](KEY_DERIVATION.md). A deliberately weak profile is used **only** in
+  automated tests to keep them fast.
 - Salt: 16 bytes (128-bit), random per vault.
 - Nonces: 12 bytes (96-bit), random per encryption operation.
 - Authentication tag: 16 bytes (128-bit).
 
 ### Measured unlock latency
 
-`tools/BitosX.KdfBenchmark` derives a key with the production profile and reports timing
-statistics without ever printing the password or derived key. Run it with:
+`tools/BitosX.KdfBenchmark` derives a key with one of the profiles and reports timing statistics
+without ever printing the password or derived key. Run it with:
 
 ```
-dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 12
+dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 12            # standard, 64 MiB
 dotnet run -c Release --project tools/BitosX.KdfBenchmark -- 12 strong     # or: maximum
 ```
 
-On one reference machine (16 logical CPUs, .NET 10, Release) the profile derived in ~46 ms
-median (min ~43 ms, max ~130 ms including first-run warm effects). That is comfortably
-interactive, but relatively fast for a memory-hard KDF: a stronger profile could raise
-brute-force cost while remaining interactive. The default is intentionally **not** changed based
-on a single machine — see "Parameter tuning and migration" below.
+On the development machine (16 logical CPUs, .NET 10, Release) 64 MiB derives in ~46 ms median
+(min ~43 ms, max ~130 ms including first-run warm effects): comfortably interactive, but fast for
+a memory-hard KDF. The setting for new vaults was not raised on the strength of that one machine.
+Since 0.7.0 three more are measured for every change, the slowest of them a virtual machine with
+two processors, where 256 MiB takes between half a second and two and a half. The table is in
+[KEY_DERIVATION.md](KEY_DERIVATION.md).
 
 ### KDF parameter bounds (untrusted input)
 
@@ -92,12 +94,12 @@ call, and the cryptor), so no unlock path can bypass it.
 
 ### Parameter tuning and migration
 
-The ceilings sit far above the interactive default to leave headroom for stronger profiles.
+The ceilings sit above the setting for new vaults to leave headroom for stronger profiles.
 Because the parameters are persisted per vault, an existing vault always opens with the profile
-it has; a stronger default would only affect newly created vaults. An existing vault is moved to
-stronger settings explicitly, by its user, with a measurement from the device in front of them
-(see [KEY_DERIVATION.md](KEY_DERIVATION.md)); the default itself has deliberately not been raised
-from measurements on one machine. **Raising a profile above the current ceilings requires
+it has; raising the setting for new vaults, as 0.7.0 did, affects only vaults created afterwards.
+An existing vault is moved to stronger settings explicitly, by its user, with a measurement from
+the device in front of them (see [KEY_DERIVATION.md](KEY_DERIVATION.md)). **Raising a profile
+above the current ceilings requires
 bumping the on-disk format version and widening the bounds together**, so that older builds reject
 files they cannot safely process rather than attempting an unbounded allocation.
 

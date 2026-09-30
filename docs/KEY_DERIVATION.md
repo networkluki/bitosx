@@ -38,25 +38,48 @@ the password.
 
 | Profile | Memory | Passes | Lanes | |
 |---|---|---|---|---|
-| **Standard** | 64 MiB | 3 | 4 | What new vaults are created with. The second recommended option of RFC 9106. |
-| **Strong** | 256 MiB | 3 | 4 | Four times the memory per guess. |
+| **Standard** | 64 MiB | 3 | 4 | What vaults were created with before 0.7.0. The second recommended option of RFC 9106. |
+| **Strong** | 256 MiB | 3 | 4 | Four times the memory per guess. **What new vaults are created with** since 0.7.0. |
 | **Maximum** | 1 GiB | 3 | 4 | The most format v1 allows (see [KDF parameter bounds](CRYPTOGRAPHY.md#kdf-parameter-bounds-untrusted-input)). |
 
 The profiles differ in memory only, because memory is what makes Argon2 expensive to attack on
 any hardware. Only profiles **stronger than the vault's own settings** are offered.
 
-Nothing is chosen automatically. **Measure on this device** runs the real derivation with the
-selected settings and shows how long it took and how much memory it needs; the decision is yours.
-The default for new vaults has deliberately not been raised from measurements on one machine.
+An existing vault is never moved by itself. **Measure on this device** runs the real derivation
+with the selected settings and shows how long it took and how much memory it needs; the decision
+is yours.
 
-Measured on the development machine (16 logical CPUs, 64 GiB, .NET 10, Release, pure-managed
-Argon2) — your device will differ:
+Measured on four kinds of machine (.NET 10, Release, pure-managed Argon2, median of five
+derivations) — your device will differ:
 
-| Profile | Time per unlock |
-|---|---|
-| Standard | about 0.05 s |
-| Strong | about 0.2 s |
-| Maximum | about 0.85 s |
+| Machine | Logical CPUs | Standard | Strong | Maximum |
+|---|---|---|---|---|
+| Development machine, Windows 11 | 16 | about 0.05 s | about 0.2 s | about 0.85 s |
+| Build service, macOS 15 | 5 | 0.14 – 0.18 s | 0.3 – 0.5 s | 1.3 – 1.6 s |
+| Build service, Ubuntu 24.04 | 2 | 0.12 – 0.41 s | 0.5 – 1.6 s | 2.0 – 6.5 s |
+| Build service, Windows Server 2025 | 2 | 0.26 – 0.61 s | 1.0 – 2.5 s | 4.3 – 6.9 s |
+
+The machines of the build service are virtual, shared, and not the same from one run to the next;
+the ranges are what four runs gave (2026-09-29 and 2026-09-30). They are measured again for every
+change: see the step "Key derivation" of `.github/workflows/ci.yml`.
+
+## What a new vault is created with
+
+Until 0.7.0 a new vault was created with *Standard*, and the documentation said that this would
+not be raised from measurements on one machine. It has now been measured on four kinds. On the
+slowest of them, virtual machines with two processors that they share with others, *Strong* costs
+between half a second and two and a half seconds per unlock: noticeable there, a fraction of a
+second on an ordinary desktop, and four times the memory for every guess at the master password.
+256 MiB is memory a desktop system has to spare. Since 0.7.0 a new vault is created with
+**Strong**.
+
+- **Existing vaults are not changed.** A vault created with *Standard* keeps opening as before.
+  Settings says that it uses weaker settings than new vaults get, and offers to strengthen it.
+- **A device that cannot spare 256 MiB** when the vault is created gets a vault with *Standard*
+  instead. A vault is created on the device it will be opened on; settings that device cannot
+  afford would produce a vault it cannot open. Settings then says the same as for an older vault.
+  This is the only place where settings are chosen for the user, and it chooses the weaker of two.
+- A vault created with *Strong* needs 256 MiB on **every** device it is opened on.
 
 ## Guarantees
 
@@ -105,5 +128,7 @@ As a side effect the vault moves to the canonical encoding of the master passwor
 
 Covered at every layer: `KeyDerivationChangeTests` (crypto), `VaultServiceKeyDerivationTests`
 (service), `SettingsPageViewModelKeyDerivationTests` (view model) and `SettingsPageUiTests` (the
-real Settings view, run without a display). What happens on a device without the memory was also
-checked with a real, memory-limited process; see [VERIFICATION.md](VERIFICATION.md).
+real Settings view, run without a display). What a new vault is created with, and what it falls
+back to, is covered by `VaultServiceCreationSettingsTests`. What happens on a device without the
+memory was also checked with the real application, its memory limited; see
+[VERIFICATION.md](VERIFICATION.md).

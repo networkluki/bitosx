@@ -33,27 +33,51 @@ BitosX.ApiClient ──> Core                                     (local-only AP
   no network I/O. Reserved for future, zero-knowledge server features.
 - **BitosX.App** — Avalonia views and view models, the DI composition root
   (`ServiceConfiguration`), the Avalonia-specific `IClipboardAccessor` (which marks copied secrets
-  as sensitive, see `SensitiveClipboardData`), and `ExitClipboardCleaner`.
+  as sensitive, see `SensitiveClipboardData`), `ExitClipboardCleaner`, `UnexpectedErrorGuard`
+  (fails closed when a fault reaches the user interface), and `SecretBox` (the password field).
+
+## How the application is put together
+
+- `AppLocation` says where the vault and the settings are: the per-user location, or the
+  directory named by `--data-directory`. `Program` reads it from the command line before anything
+  else; an option that cannot be used ends the application rather than opening the default vault.
+- `ServiceConfiguration.Build(location)` registers the services.
+- `MainWindowSession.Create(services)` creates the main window and attaches what belongs to it:
+  the view model, automatic locking, clearing the clipboard when the user leaves or the window is
+  closed, and the guard against unexpected errors.
+
+`App` does exactly this, and so do the tests that run the whole application
+(`WholeApplication` in `BitosX.App.Tests`): there is one place where the application is put
+together, and both use it.
 
 ## UI structure (MVVM)
 
 - `MainWindowViewModel` switches the visible screen from the vault lifecycle state:
-  `NoVault → CreateVaultView`, `Locked → UnlockView`, `Unlocked → UnlockedShellView`.
+  `NoVault → CreateVaultView`, `Locked → UnlockView`, `Unlocked → UnlockedShellView`. It also
+  holds the notice shown at the top of the window (`AppNotice`), whatever the screen.
 - `UnlockedShellViewModel` hosts navigation (Vault, Generator, Security Center, Settings) and
-  the lock action.
+  the lock action. Its pages are built anew every time the vault is unlocked, so a page must take
+  what it shows from what applies now, not from what the application started with.
 - Views are thin. All logic lives in view models and services; there are **no cryptographic
   operations in code-behind**. Views resolve to view models via `ViewLocator`.
 - Bindings are compiled (`x:DataType`).
+- Every control has a `Name`, which is also what the accessibility interface of the operating
+  system knows it by; every input has a name a screen reader can say
+  (`AutomationProperties.Name`).
+- A field for a password is a `SecretBox`, never a `TextBox` with a `PasswordChar`: a text box
+  hands its text to the accessibility interface whatever it shows. A test fails if a view has one.
 
 ## Vault lifecycle
 
 1. **Create** — `VaultService.CreateVaultAsync` validates the password, creates an empty vault,
    asks `VaultCryptor` to derive a KEK, generate + wrap a random vault key, and encrypt the
    content, then persists via `ILocalVaultStorage`. The service stays unlocked, holding only the
-   vault key (not the master password).
+   vault key (not the master password). The key is derived with the settings for new vaults
+   (`KeyDerivationProfile.ForNewVaults`) — or, on a device that cannot spare the memory they ask
+   for, with the fallback settings, so that a vault can be opened where it was created.
 2. **Unlock** — reads the encrypted vault, derives the KEK, unwraps the vault key, decrypts the
    content, and deserializes **and validates** it. Wrong password / tampering fail with a single
-   generic error.
+   generic error. An empty password is a wrong password.
 3. **Edit/Save** — a change is applied to a *copy* of the vault, which is validated, re-encrypted
    under the retained vault key (no re-derivation), and written atomically. Only then does the copy
    become the vault the rest of the application sees. There is nothing to roll back if the write
