@@ -40,7 +40,6 @@ public sealed class SettingsPageViewModelRestoreTests : IDisposable
             new FakeClipboardService(),
             new LocalOnlyApiClient(),
             Argon2Parameters.ForTesting,
-            AppSettings.Default,
             new FakeAppSettingsStore(),
             autoLock,
             new NullSystemSessionEvents(),

@@ -52,7 +52,7 @@ public sealed class VaultFlowUiTests : IDisposable
         Assert.False(Shown(view, "StrengthText"));
 
         HeadlessUi.Type(window, HeadlessUi.Find<TextBox>(view, "MasterPasswordBox"), "aaaaaaaaaaaaaaaaaaaa");
-        Assert.Equal("Strength: VeryWeak", Text(view, "StrengthText")); // was "Strong" before 0.5.1
+        Assert.Equal("Strength: Very weak", Text(view, "StrengthText")); // was "Strong" before 0.5.1
 
         HeadlessUi.Find<TextBox>(view, "MasterPasswordBox").Clear();
         HeadlessUi.Type(window, HeadlessUi.Find<TextBox>(view, "MasterPasswordBox"), Decomposed);
@@ -172,8 +172,11 @@ public sealed class VaultFlowUiTests : IDisposable
 
         HeadlessUi.Press(window, HeadlessUi.Find<Button>(view, "AddLoginButton"));
         HeadlessUi.Type(window, HeadlessUi.Find<TextBox>(view, "NameBox"), "GitHub");
+
+        // Taken before the button is pressed: a save that is quick has closed the editor by then.
+        LoginEditorViewModel editor = viewModel.Editor!;
         HeadlessUi.Press(window, HeadlessUi.Find<Button>(view, "SaveButton"));
-        await viewModel.Editor!.SaveCommand.ExecutionTask!;
+        await editor.SaveCommand.ExecutionTask!;
         HeadlessUi.Settle();
 
         Assert.Null(viewModel.Editor);

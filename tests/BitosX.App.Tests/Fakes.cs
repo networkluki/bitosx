@@ -42,8 +42,16 @@ internal sealed class FakeVaultService : IVaultService
 
     public Task<VaultState> RefreshStateAsync(CancellationToken cancellationToken = default) => Task.FromResult(State);
 
+    /// <summary>When set, locking throws this.</summary>
+    public Exception? LockThrows { get; set; }
+
     public void Lock()
     {
+        if (LockThrows is not null)
+        {
+            throw LockThrows;
+        }
+
         LockCount++;
         State = VaultState.Locked;
         StateChanged?.Invoke(this, State);

@@ -53,7 +53,6 @@ public sealed class SettingsPageUiTests : IDisposable
             new FakeClipboardService(),
             new LocalOnlyApiClient(),
             Argon2Parameters.Default,
-            AppSettings.Default,
             settingsStore ?? new FakeAppSettingsStore(),
             new AutoLockService(controller, new NullSystemSessionEvents()),
             new NullSystemSessionEvents(),
@@ -298,7 +297,7 @@ public sealed class SettingsPageUiTests : IDisposable
         HeadlessUi.Type(window, HeadlessUi.Find<TextBox>(view, "NewPasswordBox"), "Password123!");
 
         Assert.True(Shown(view, "NewPasswordStrength"));
-        Assert.Equal("Strength: VeryWeak", Text(view, "NewPasswordStrength"));
+        Assert.Equal("Strength: Very weak", Text(view, "NewPasswordStrength"));
     });
 
     [Fact]

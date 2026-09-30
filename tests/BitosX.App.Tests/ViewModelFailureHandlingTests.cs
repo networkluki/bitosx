@@ -52,7 +52,6 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
             new FakeClipboardService(),
             new LocalOnlyApiClient(),
             Argon2Parameters.Default,
-            AppSettings.Default,
             store,
             autoLock,
             new NullSystemSessionEvents(),
@@ -81,6 +80,7 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
         (VaultPageViewModel vm, FakeVaultService vault, _) = NewVaultPage();
         vault.OperationThrow = failure;
 
+        vm.RequestDeleteCommand.Execute(vm.Items[0]);
         await vm.DeleteLoginCommand.ExecuteAsync(vm.Items[0]);
 
         Assert.False(string.IsNullOrWhiteSpace(vm.StatusMessage));
@@ -107,6 +107,7 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
         (VaultPageViewModel vm, FakeVaultService vault, _) = NewVaultPage();
         vault.OperationThrow = new VaultChangedExternallyException();
 
+        vm.RequestDeleteCommand.Execute(vm.Items[0]);
         await vm.DeleteLoginCommand.ExecuteAsync(vm.Items[0]);
 
         Assert.Contains("changed on disk", vm.StatusMessage!, StringComparison.OrdinalIgnoreCase);
@@ -119,6 +120,7 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
         (VaultPageViewModel vm, FakeVaultService vault, _) = NewVaultPage();
         vault.OperationThrow = new NotSupportedException("internal detail: C:\\secret\\path");
 
+        vm.RequestDeleteCommand.Execute(vm.Items[0]);
         await vm.DeleteLoginCommand.ExecuteAsync(vm.Items[0]);
 
         Assert.DoesNotContain("internal detail", vm.StatusMessage!, StringComparison.Ordinal);
@@ -130,6 +132,7 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
     {
         (VaultPageViewModel vm, _, _) = NewVaultPage();
 
+        vm.RequestDeleteCommand.Execute(vm.Items[0]);
         await vm.DeleteLoginCommand.ExecuteAsync(vm.Items[0]);
 
         Assert.Equal("Item deleted.", vm.StatusMessage);
@@ -265,10 +268,10 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
         Assert.Equal(string.Empty, vm.NewPasswordStrengthText);
 
         vm.NewPassword = "Password123!";
-        Assert.Equal("Strength: VeryWeak", vm.NewPasswordStrengthText);
+        Assert.Equal("Strength: Very weak", vm.NewPasswordStrengthText);
 
         vm.NewPassword = "hV7#mQ2$xL9@cT4&nB6!";
-        Assert.Equal("Strength: VeryStrong", vm.NewPasswordStrengthText);
+        Assert.Equal("Strength: Very strong", vm.NewPasswordStrengthText);
 
         vm.NewPassword = string.Empty;
         Assert.Equal(string.Empty, vm.NewPasswordStrengthText);

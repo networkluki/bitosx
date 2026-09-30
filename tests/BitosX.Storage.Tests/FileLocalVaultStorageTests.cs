@@ -171,26 +171,8 @@ public sealed class FileLocalVaultStorageTests : IDisposable
         await Assert.ThrowsAsync<UnsupportedVaultFormatException>(() => storage.ReadAsync());
     }
 
-    [Fact]
-    public async Task Write_OnUnix_CreatesAFileOnlyTheOwnerCanRead()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            return; // Windows protects the per-user profile directory with its ACL instead.
-        }
-
-        string directory = Path.Combine(_tempDir, "private");
-        var storage = new FileLocalVaultStorage(Path.Combine(directory, "vault.bitosx"));
-        await storage.WriteAsync(MakeVault());
-        await storage.WriteAsync(MakeVault()); // and it stays that way when replaced
-
-        Assert.Equal(
-            UnixFileMode.UserRead | UnixFileMode.UserWrite,
-            File.GetUnixFileMode(storage.VaultFilePath));
-        Assert.Equal(
-            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute,
-            File.GetUnixFileMode(directory));
-    }
+    // Who may read the files on Unix is tested in UnixFilesTests. (Windows protects the per-user
+    // profile directory with its ACL instead.)
 
     /// <summary>Makes replacing the vault file fail until disposed, without touching its content.</summary>
     private IDisposable BlockReplacement()

@@ -42,7 +42,6 @@ public sealed class SettingsPageViewModelKeyDerivationTests : IDisposable
             new FakeClipboardService(),
             new LocalOnlyApiClient(),
             Argon2Parameters.Default,
-            AppSettings.Default,
             new FakeAppSettingsStore(),
             new AutoLockService(controller, new NullSystemSessionEvents()),
             new NullSystemSessionEvents(),

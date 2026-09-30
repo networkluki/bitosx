@@ -165,6 +165,22 @@ public sealed class VaultBackupServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task Restore_EmptyBackupPassword_IsAWrongPassword_AndLeavesVaultUnchanged()
+    {
+        // Before 0.7.0 this was an exception from the key-derivation library, which the user
+        // interface did not expect: "Validate backup" with nothing typed ended the application.
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+        await svc.AddLoginAsync(SampleLogin());
+        await backup.ExportAsync(_backupPath);
+
+        byte[] before = await File.ReadAllBytesAsync(_vaultPath);
+        await Assert.ThrowsAsync<VaultAuthenticationException>(
+            () => backup.PrepareRestoreAsync(_backupPath, string.Empty));
+        Assert.Equal(before, await File.ReadAllBytesAsync(_vaultPath));
+    }
+
+    [Fact]
     public async Task Restore_CorruptedCiphertext_FailsClosed_VaultUnchanged()
     {
         (VaultService svc, VaultBackupService backup) = NewServices();
