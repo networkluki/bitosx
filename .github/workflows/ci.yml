@@ -1,0 +1,168 @@
+# Builds and tests BitosX on Linux, macOS and Windows.
+#
+# The development machine is Windows only, so this is where everything that depends on the
+# operating system is checked on the other two: file permissions, the single-instance guard,
+# Unicode normalization, the views, and what is placed on the clipboard.
+#
+# Actions are pinned to a commit, not to a tag that can be moved.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  test:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Describe the machine
+        shell: bash
+        run: |
+          dotnet --version
+          uname -a || true
+          if [ "$RUNNER_OS" = "Linux" ]; then nproc; free -m; fi
+          if [ "$RUNNER_OS" = "macOS" ]; then sysctl -n hw.ncpu hw.memsize; sw_vers; fi
+          if [ "$RUNNER_OS" = "Windows" ]; then echo "$NUMBER_OF_PROCESSORS processors"; fi
+
+      - name: Build (warnings are errors)
+        run: dotnet build BitosX.slnx -c Release -warnaserror
+
+      # The tests of the views also draw each screen to a PNG file, so that it can be looked at.
+      - name: Test
+        env:
+          BITOSX_VIEW_SNAPSHOTS: ${{ runner.temp }}/views
+        run: dotnet test BitosX.slnx -c Release --no-build
+
+      - name: Keep the drawn screens
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: views-${{ matrix.os }}
+          path: ${{ runner.temp }}/views
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Dependency audit
+        shell: bash
+        run: |
+          dotnet list BitosX.slnx package --vulnerable --include-transitive | tee audit.txt
+          if grep -q "has the following vulnerable packages" audit.txt; then exit 1; fi
+
+      # What a copied secret looks like on the real clipboard of the system, read back with the
+      # tools of the system. (For Windows there is tools/BitosX.ClipboardProbe, which asks the
+      # clipboard history of a desktop and is run on one.)
+      - name: Clipboard (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xclip
+          xvfb-run -a dotnet run -c Release --no-build --project tools/BitosX.ClipboardCheck
+
+      - name: Clipboard (macOS)
+        if: runner.os == 'macOS'
+        run: dotnet run -c Release --no-build --project tools/BitosX.ClipboardCheck
+
+      # What the key derivation costs on this machine: a second, third and fourth machine to
+      # compare the development machine with.
+      - name: Key derivation
+        shell: bash
+        run: |
+          for profile in standard strong maximum; do
+            dotnet run -c Release --no-build --project tools/BitosX.KdfBenchmark -- 5 $profile
+          done
+
+  # Whether clipboard managers honor the marker is a question about each of them. This asks the
+  # ones that can be run here, and reports what it finds. It fails only if one that is known to
+  # honor the marker no longer does.
+  clipboard-managers:
+    name: Clipboard managers (Linux)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install the clipboard managers
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb xclip dbus-x11 libglib2.0-bin copyq
+          sudo apt-get install -y -qq plasma-workspace || echo "Klipper could not be installed"
+
+      - name: Build
+        run: dotnet build tools/BitosX.ClipboardCheck -c Release
+
+      - name: Ask them
+        run: xvfb-run -a dbus-run-session -- bash tools/ci/clipboard-managers.sh
+
+  # The real application, started as a process of its own in a real window, and operated through
+  # the accessibility interface of Windows: the manual checklists of docs/VERIFICATION.md, carried
+  # out by tools/BitosX.GuiCheck. Nobody sits at this machine, so nobody moves its mouse.
+  real-application:
+    name: The real application (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 40
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+
+      # The two tools are for Windows only and therefore not part of the solution.
+      - name: Build
+        run: |
+          dotnet build src/BitosX.App -c Release -warnaserror
+          dotnet build tools/BitosX.GuiCheck -c Release -warnaserror
+          dotnet build tools/BitosX.ClipboardProbe -c Release -warnaserror
+
+      - name: The checklists, on the real application
+        run: dotnet run -c Release --no-build --project tools/BitosX.GuiCheck
+
+      # The clipboard of Windows, read the way another application reads it. Where the clipboard
+      # history is turned off, as it may be here, the two checks of the history are left out and
+      # said to be.
+      - name: The clipboard, on the real clipboard
+        run: dotnet run -c Release --no-build --project tools/BitosX.ClipboardProbe
