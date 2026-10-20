@@ -8,8 +8,10 @@ namespace BitosX.ApiClient;
 /// BitosX is zero-knowledge: nothing here ever carries the master password, the vault key, an
 /// item password, a note, or any other vault content, and no method of this interface may be
 /// given a way to. What crosses the wire is the <b>account</b> email and password — a different
-/// secret from the master password, used only to sign in — and the tokens the server issues for
-/// the session. See docs/SECURITY_MODEL.md and docs/ACCOUNT.md.
+/// secret from the master password, used only to sign in — the tokens the server issues for the
+/// session, and, since 0.9.0, the <b>encrypted vault envelope</b>: the vault file as it is on
+/// disk, ciphertext and public key-derivation parameters, which the server stores as opaque
+/// bytes and cannot read. See docs/SECURITY_MODEL.md, docs/ACCOUNT.md and docs/SYNC.md.
 /// </para>
 /// <para>
 /// Every method throws <see cref="ApiException"/> when the call does not succeed, with a
@@ -49,4 +51,22 @@ public interface IBitosXApiClient
 
     /// <summary>Ends one of the account's sessions. Ending the current one is a logout.</summary>
     Task RevokeSessionAsync(string accessToken, Guid sessionId, CancellationToken cancellationToken = default);
+
+    // ---- encrypted sync (docs/SYNC.md) ----
+
+    /// <summary>What the server holds for the account: revision, fingerprint and size of the stored envelope, or <see langword="null"/> when it holds nothing.</summary>
+    Task<SyncStatus?> GetSyncStatusAsync(string accessToken, CancellationToken cancellationToken = default);
+
+    /// <summary>The stored envelope itself, verified against the fingerprint the server states, or <see langword="null"/> when the server holds nothing.</summary>
+    Task<SyncEnvelope?> DownloadEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stores <paramref name="envelope"/> as the account's vault, if the server still holds revision
+    /// <paramref name="baseRevision"/> (0 for "nothing yet"). Otherwise fails with
+    /// <see cref="ApiFailure.Conflict"/> and the server keeps what it had.
+    /// </summary>
+    Task<SyncStatus> UploadEnvelopeAsync(string accessToken, long baseRevision, ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes the stored envelope. Succeeds when there was none.</summary>
+    Task DeleteEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default);
 }

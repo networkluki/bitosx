@@ -372,6 +372,39 @@ public sealed class AccountSessionTests
             return Task.CompletedTask;
         }
 
+        public SyncStatus? SyncStatusResult { get; set; }
+        public Exception? SyncThrows { get; set; }
+        public (long BaseRevision, byte[] Envelope)? LastUpload { get; private set; }
+
+        public Task<SyncStatus?> GetSyncStatusAsync(string accessToken, CancellationToken cancellationToken = default)
+        {
+            AccessTokensSeen.Add(accessToken);
+            return SyncThrows is not null ? Task.FromException<SyncStatus?>(SyncThrows) : Task.FromResult(SyncStatusResult);
+        }
+
+        public Task<SyncEnvelope?> DownloadEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
+        {
+            AccessTokensSeen.Add(accessToken);
+            return SyncThrows is not null
+                ? Task.FromException<SyncEnvelope?>(SyncThrows)
+                : Task.FromResult(SyncStatusResult is { } s ? new SyncEnvelope(s, new byte[s.SizeBytes]) : null);
+        }
+
+        public Task<SyncStatus> UploadEnvelopeAsync(string accessToken, long baseRevision, ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken = default)
+        {
+            AccessTokensSeen.Add(accessToken);
+            LastUpload = (baseRevision, envelope.ToArray());
+            return SyncThrows is not null
+                ? Task.FromException<SyncStatus>(SyncThrows)
+                : Task.FromResult(new SyncStatus(baseRevision + 1, HttpBitosXApiClient.Fingerprint(envelope.Span), envelope.Length, DateTimeOffset.UtcNow));
+        }
+
+        public Task DeleteEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
+        {
+            AccessTokensSeen.Add(accessToken);
+            return SyncThrows is not null ? Task.FromException(SyncThrows) : Task.CompletedTask;
+        }
+
         public async Task WaitForLogoutsAsync(int count)
         {
             for (int i = 0; i < count; i++)

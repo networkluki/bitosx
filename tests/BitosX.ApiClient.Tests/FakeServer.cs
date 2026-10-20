@@ -44,7 +44,7 @@ internal sealed class FakeServer : HttpMessageHandler
         {
             BaseAddress = Address.BaseAddress,
             Timeout = HttpBitosXApiClient.Timeout,
-            MaxResponseContentBufferSize = HttpBitosXApiClient.MaxResponseBytes,
+            MaxResponseContentBufferSize = HttpBitosXApiClient.MaxEnvelopeResponseBytes,
         };
         HttpBitosXApiClient.ConfigureDefaultHeaders(http, "9.9.9");
         return new HttpBitosXApiClient(http, Address, NullLogger<HttpBitosXApiClient>.Instance);

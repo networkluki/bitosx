@@ -18,6 +18,13 @@ public interface IVaultBackupService
     /// </summary>
     Task<BackupPreview> PrepareRestoreAsync(string backupPath, string backupPassword, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// As <see cref="PrepareRestoreAsync(string, string, CancellationToken)"/>, for an envelope that
+    /// was already parsed — one downloaded from the server. <paramref name="sourceName"/> and
+    /// <paramref name="sizeBytes"/> are for the summary only.
+    /// </summary>
+    Task<BackupPreview> PrepareRestoreAsync(EncryptedVault envelope, string backupPassword, string sourceName, long sizeBytes, CancellationToken cancellationToken = default);
+
     /// <summary>Commits a prepared restore: atomically replaces the live vault (after a recovery copy), then locks.</summary>
     Task CommitRestoreAsync(BackupPreview preview, CancellationToken cancellationToken = default);
 }

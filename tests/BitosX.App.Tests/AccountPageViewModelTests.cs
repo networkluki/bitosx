@@ -23,7 +23,7 @@ public sealed class AccountPageViewModelTests
 
     private static async Task<AccountPageViewModel> SignedInAsync(FakeAccountSession session)
     {
-        var page = new AccountPageViewModel(session)
+        var page = new AccountPageViewModel(session, new FakeVaultSyncService())
         {
             Email = "alice@example.com",
             Password = "correct horse battery",
@@ -35,7 +35,7 @@ public sealed class AccountPageViewModelTests
     [Fact]
     public void ThePage_OpensSignedOut_OnTheServerItIsGiven()
     {
-        using var page = new AccountPageViewModel(NewSession());
+        using var page = new AccountPageViewModel(NewSession(), new FakeVaultSyncService());
 
         Assert.True(page.IsAvailable);
         Assert.Equal("api.example.test", page.ServerName);
@@ -71,7 +71,7 @@ public sealed class AccountPageViewModelTests
     public async Task ObviousMistakes_AreCaughtBeforeAnyRoundTrip(string email, string password, string expectedStatus)
     {
         FakeAccountSession session = NewSession();
-        using var page = new AccountPageViewModel(session) { Email = email, Password = password };
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService()) { Email = email, Password = password };
 
         if (page.SignInCommand.CanExecute(null))
         {
@@ -88,7 +88,7 @@ public sealed class AccountPageViewModelTests
     {
         FakeAccountSession session = NewSession();
         session.SignInThrows = new ApiException(ApiFailure.Unauthenticated, 401);
-        using var page = new AccountPageViewModel(session) { Email = "alice@example.com", Password = "wrong wrong wrong" };
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService()) { Email = "alice@example.com", Password = "wrong wrong wrong" };
 
         await page.SignInCommand.ExecuteAsync(null);
 
@@ -107,7 +107,7 @@ public sealed class AccountPageViewModelTests
     {
         FakeAccountSession session = NewSession();
         session.SignInThrows = new ApiException(failure);
-        using var page = new AccountPageViewModel(session) { Email = "alice@example.com", Password = "correct horse battery" };
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService()) { Email = "alice@example.com", Password = "correct horse battery" };
 
         await page.SignInCommand.ExecuteAsync(null);
 
@@ -120,7 +120,7 @@ public sealed class AccountPageViewModelTests
     {
         FakeAccountSession session = NewSession();
         session.SignInThrows = new ApiException(ApiFailure.RateLimited, 429, TimeSpan.FromSeconds(30));
-        using var page = new AccountPageViewModel(session) { Email = "alice@example.com", Password = "correct horse battery" };
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService()) { Email = "alice@example.com", Password = "correct horse battery" };
 
         await page.SignInCommand.ExecuteAsync(null);
 
@@ -224,7 +224,7 @@ public sealed class AccountPageViewModelTests
     public async Task RefreshAsync_LoadsWhenSignedIn_AndIsQuietWhenNot()
     {
         FakeAccountSession session = NewSession();
-        using var page = new AccountPageViewModel(session);
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService());
 
         await page.RefreshAsync();
         Assert.False(page.IsSignedIn);
@@ -240,7 +240,7 @@ public sealed class AccountPageViewModelTests
     public void WithoutAServer_ThePageSaysSo_AndOffersNothing()
     {
         var session = new FakeAccountSession { IsAvailable = false, ServerName = null };
-        using var page = new AccountPageViewModel(session) { Email = "alice@example.com", Password = "correct horse battery" };
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService()) { Email = "alice@example.com", Password = "correct horse battery" };
 
         Assert.False(page.IsAvailable);
         Assert.Contains("--api-server none", page.UnavailableNote, StringComparison.Ordinal);

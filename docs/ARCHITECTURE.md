@@ -29,12 +29,14 @@ BitosX.ApiClient ──> Core                                     (the BitosX se
   `ClipboardSessionGuard` (clears a copied secret on workstation lock / suspend),
   `SingleInstanceGuard` (one running instance per vault), OS session and power signals
   (`ISystemSessionEvents`), plus an `ISecureStorage` extension point for future OS key protection.
-- **BitosX.ApiClient** — the BitosX server, account endpoints only: `IBitosXApiClient` (login,
-  refresh, logout, profile, sessions), `HttpBitosXApiClient` over HTTPS with a fixed transport
-  policy, `LocalOnlyApiClient` for a run without a server, `ApiServer` (the origin, validated),
-  `ApiException`/`ApiFailure` (every failure as a fixed kind with a fixed message), and
-  `AccountSession` (the tokens in memory, one refresh at a time, signed out when the vault locks).
-  No method can carry vault content; see [ACCOUNT.md](ACCOUNT.md).
+- **BitosX.ApiClient** — the BitosX server: `IBitosXApiClient` (login, refresh, logout, profile,
+  sessions, and the sync status/download/upload/delete of the encrypted envelope),
+  `HttpBitosXApiClient` over HTTPS with a fixed transport policy, `LocalOnlyApiClient` for a run
+  without a server, `ApiServer` (the origin, validated), `ApiException`/`ApiFailure` (every
+  failure as a fixed kind with a fixed message), `AccountSession` (the tokens in memory, one
+  refresh at a time, signed out when the vault locks), and `Sync/VaultSyncService` (the sync
+  decision over the vault file, the sync record and the account; no merge, fail closed). No method
+  can carry decrypted vault content; see [ACCOUNT.md](ACCOUNT.md) and [SYNC.md](SYNC.md).
 - **BitosX.App** — Avalonia views and view models, the DI composition root
   (`ServiceConfiguration`), the Avalonia-specific `IClipboardAccessor` (which marks copied secrets
   as sensitive, see `SensitiveClipboardData`), `ExitClipboardCleaner`, `UnexpectedErrorGuard`
@@ -127,6 +129,6 @@ primitives (`StorageFiles`).
 - The encrypted format is versioned; new versions can be added with an upgrade path while old
   vaults remain readable.
 - `ISecureStorage` is the seam for future OS secret storage (a persisted refresh token);
-  `IBitosXApiClient` is where the sync endpoints of a later milestone will be added. The
+  `ISyncStateStore` is the sync record (`FileSyncStateStore` next to the vault). The
   `StateChanged` event on `IVaultService` is what automatic locking and the account sign-out on
   lock build on.

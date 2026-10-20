@@ -10,7 +10,8 @@ It describes the current **local vault** milestone. No marketing claims are made
 - A stolen vault file must not reveal plaintext passwords without the master password.
 - Zero-knowledge towards the server: the master password, plaintext secrets, the raw vault key,
   and decrypted contents never leave the device. Since 0.8.0 the application talks to the server
-  for the account only; what crosses the wire is listed in [ACCOUNT.md](ACCOUNT.md).
+  for the account ([ACCOUNT.md](ACCOUNT.md)); since 0.9.0 it also stores the vault there, as the
+  encrypted file it is on disk, which the server cannot open ([SYNC.md](SYNC.md)).
 - Fail closed and never fall back to plaintext.
 
 ## What BitosX protects against
@@ -157,14 +158,16 @@ It describes the current **local vault** milestone. No marketing claims are made
 
 ## Data handling summary
 
-- **Persisted:** only the encrypted, versioned vault (ciphertext + public parameters).
+- **Persisted:** only the encrypted, versioned vault (ciphertext + public parameters), and, once
+  synced, the sync record next to it (a revision number and a SHA-256 of the vault file).
 - **In memory while unlocked:** the decrypted vault, the vault key (byte buffer, wiped on lock
   and on shutdown), transiently the master password bytes during create/unlock (wiped after
   use), and, while signed in, the account's access and refresh tokens (dropped on sign-out, on
   lock, on a 401, and on shutdown; never written to disk).
 - **Sent to the server, over TLS:** the account email and account password on sign-in; the tokens
-  afterwards; the product name, version and operating system as `User-Agent`. See
-  [ACCOUNT.md](ACCOUNT.md). Locking takes effect immediately even while an operation is in progress: the operation
+  afterwards; the product name, version and operating system as `User-Agent`; and, on *Sync now*,
+  the encrypted vault file as it is on disk. See [ACCOUNT.md](ACCOUNT.md) and [SYNC.md](SYNC.md).
+  Locking takes effect immediately even while an operation is in progress: the operation
   finishes on a private copy of the key, which is wiped, and never puts key material back into
   the locked service.
 - **Never persisted or logged:** master password, item passwords, secure notes, encryption keys,

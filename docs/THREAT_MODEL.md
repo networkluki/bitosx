@@ -13,7 +13,10 @@ This is a threat-by-threat view of the current local vault milestone. It complem
 
 - **Trusted:** the local OS user account and process while the vault is unlocked; the .NET
   runtime; pinned dependencies.
-- **Untrusted:** the vault file at rest, its backups/copies, and any future network peer.
+- **Untrusted:** the vault file at rest, its backups/copies, the BitosX server and everything it
+  returns (an envelope that comes down is let in exactly as a backup file is: parsed fail-closed,
+  opened with its master password on the device, validated, and only then, after an acknowledgement,
+  written — [SYNC.md](SYNC.md)).
 
 ## Threats
 
@@ -49,8 +52,10 @@ This is a threat-by-threat view of the current local vault milestone. It complem
 
 ## Explicitly out of scope for this milestone
 
-Server authentication, synchronization, subscriptions/payments, browser extension, mobile app,
-Cloudflare, and any production API. See the project brief.
+Subscriptions/payments, browser extension, mobile app, Cloudflare, and the production
+deployment of the API. Account sign-in (0.8.0) and encrypted sync (0.9.0) are in; what they send
+and what the server can do with it is in [ACCOUNT.md](ACCOUNT.md) and [SYNC.md](SYNC.md). Not
+verified against the real server, which is not publicly reachable yet.
 
 ## Planned mitigations (future milestones)
 

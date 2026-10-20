@@ -59,14 +59,31 @@ public sealed class VaultBackupService : IVaultBackupService
         RequireUnlocked();
 
         BackupReadResult read = await _backup.ReadBackupAsync(backupPath, cancellationToken).ConfigureAwait(false);
+        return Prepare(read.Envelope, backupPassword, Path.GetFileName(backupPath), read.FileSizeBytes);
+    }
 
+    public Task<BackupPreview> PrepareRestoreAsync(EncryptedVault envelope, string backupPassword, string sourceName, long sizeBytes, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(envelope);
+        ArgumentNullException.ThrowIfNull(backupPassword);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourceName);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(sizeBytes);
+        RequireUnlocked();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return Task.FromResult(Prepare(envelope, backupPassword, sourceName, sizeBytes));
+    }
+
+    /// <summary>Authenticates and validates an envelope without touching the live vault; see <see cref="PrepareRestoreAsync(string, string, CancellationToken)"/>.</summary>
+    private BackupPreview Prepare(EncryptedVault envelope, string backupPassword, string sourceName, long sizeBytes)
+    {
         // A backup made before 0.6.0 may be keyed with another encoding of the same password.
         PasswordCandidates candidates = MasterPasswordEncoding.EncodeCandidates(backupPassword);
         UnlockResult unlocked;
         try
         {
             // Authenticate; a wrong password fails closed.
-            (unlocked, _) = candidates.FirstAccepted(encoding => _cryptor.Unlock(read.Envelope, encoding));
+            (unlocked, _) = candidates.FirstAccepted(encoding => _cryptor.Unlock(envelope, encoding));
         }
         catch (BitosXCryptographicException)
         {
@@ -101,12 +118,7 @@ public sealed class VaultBackupService : IVaultBackupService
             CryptoBuffers.Wipe(unlocked.Plaintext);
         }
 
-        return new BackupPreview(
-            read.Envelope,
-            read.Envelope.Version,
-            itemCount,
-            Path.GetFileName(backupPath),
-            read.FileSizeBytes);
+        return new BackupPreview(envelope, envelope.Version, itemCount, sourceName, sizeBytes);
     }
 
     /// <summary>

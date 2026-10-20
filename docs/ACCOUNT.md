@@ -12,9 +12,9 @@ be chosen). The Account page of the application signs in with them, shows the ac
 sessions — every device and browser that is signed in — and can end any of them, this one
 included.
 
-That is all it does in 0.8.0. **Nothing syncs.** The server has no vault endpoints and the
-application sends it nothing from the vault. The account is the foundation the encrypted sync of
-a later milestone will stand on; see the roadmap on `bitosx.se`.
+That was all it did in 0.8.0. Since 0.9.0 the account also carries the **encrypted sync**: the
+vault file, as encrypted on the device, goes to the server and comes back as opaque bytes. What
+that means, and what it does not, is in [SYNC.md](SYNC.md).
 
 ## What it is not
 
@@ -40,9 +40,12 @@ in the `Authorization` header of each call, and the refresh token in the body of
 (`BitosX/0.8.0 (Windows)`), which the server records as the session's client description so
 that a session can be told apart in the list.
 
-Never: the master password, the vault key, any item, any note, the vault file, or its name.
-`IBitosXApiClient` has no method that could carry them, and `AccountSession` does not know the
-vault beyond its lock state.
+Since 0.9.0, when you press *Sync now*: the vault file as it is on disk — ciphertext and public
+parameters, Base64 in the body of one request — and the revision it is based on ([SYNC.md](SYNC.md)).
+
+Never: the master password, the vault key, any item, any note. `IBitosXApiClient` has no method
+that could carry them, and `AccountSession` does not know the vault beyond its lock state; the
+sync passes the encrypted envelope through as the bytes it is given.
 
 ## Where the tokens are
 
@@ -71,7 +74,8 @@ short-lived and dropped as early as possible; that is what can be done.
   `--api-server none` makes the run local-only, as every version before 0.8.0 was. A value that
   cannot be used ends the application with a usage error, never a quiet fallback to production.
 - **Transport:** TLS as the operating system validates it, with online revocation checking; no
-  redirects followed; no cookies; a 15-second limit per call; at most 64 KiB read back.
+  redirects followed; no cookies; a 15-second limit per call; at most 64 KiB read back — except an
+  envelope download, which may be the 16 MiB a vault file may be.
 - **Responses are untrusted input:** the status decides the outcome; a body is accepted only when
   it is `application/json` of the expected shape; the server's own text is never shown or logged.
   Every failure is one of a fixed set (`ApiFailure`) with a fixed message.
