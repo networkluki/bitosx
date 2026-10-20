@@ -12,9 +12,10 @@ milestone and how to report issues. Detailed models live in [`docs/`](docs/):
 
 ## Core principles
 
-- **Local only (this milestone).** No network calls; nothing is sent to any server.
-- **Zero-knowledge intent.** As server features are added, the master password, plaintext
-  secrets, the raw vault key, and decrypted vault contents must never be sent to a server.
+- **The vault stays local.** The master password, plaintext secrets, the raw vault key, and
+  decrypted vault contents are never sent to a server. Since 0.8.0 the application talks to the
+  BitosX server for the account only; what is sent is listed in
+  [docs/ACCOUNT.md](docs/ACCOUNT.md). `--api-server none` makes a run local-only.
 - **Fail closed.** Unknown formats, unsupported versions, corrupted data, and authentication
   failures are rejected. There is never a plaintext fallback.
 - **No backdoors.** There is no universal decryption key, no hidden recovery access, and no
@@ -23,7 +24,7 @@ milestone and how to report issues. Detailed models live in [`docs/`](docs/):
 ## What is never logged
 
 The master password, item passwords, secure notes, encryption keys, authentication secrets,
-and decrypted vault contents are never written to logs. Logging is limited to non-sensitive
+the account password, the account tokens, and decrypted vault contents are never written to logs. Logging is limited to non-sensitive
 lifecycle events (see `BitosX.Core.Diagnostics.VaultLog`).
 
 ## Cryptography summary
@@ -66,6 +67,6 @@ security review and what was done about them.
 
 ## Reporting a vulnerability
 
-This is a pre-release, local-only milestone. If you find a security issue, please report it
+This is a pre-release milestone. If you find a security issue, please report it
 privately to the maintainers rather than opening a public issue, and include reproduction steps
 and affected versions. Do not include real secrets in reports.

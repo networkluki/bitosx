@@ -38,7 +38,15 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.7.0`** — verifying what 0.6.0 had left unverified, and fixing what that turned up. The tests
+**`0.8.0`** — the account: the application signs in to the BitosX server (`api.bitosx.se`)
+with the account email and account password, shows the account and its sessions, and can end
+them. Nothing syncs yet, and nothing from the vault is sent: the server has no vault endpoints
+and the client has no method that could carry vault content. Tokens are held in memory only
+and dropped when the vault locks. `--api-server` chooses another server or `none`. See
+[ACCOUNT.md](ACCOUNT.md). The on-disk vault format is unchanged (still v1). **Not verified:**
+against the real server, which is not publicly reachable yet.
+
+Builds on `0.7.0` (tag `v0.7.0-verification`), which was about verifying what 0.6.0 had left unverified, and fixing what that turned up. The tests
 now run on Linux and macOS as well as on Windows, for every change; the manual checklists are
 carried out on the whole application and on the real application in a real window; every screen
 is drawn and checked; and the clipboard markers were verified on the real clipboard of Linux and

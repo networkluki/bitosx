@@ -638,6 +638,23 @@ On these figures new vaults are created with 256 MiB since this release; see
 | The file dialogs of Linux and macOS | The application has not been started there |
 | That Windows keeps a copied secret out of its clipboard history, for this release | `tools/BitosX.ClipboardProbe` ran on Windows Server 2025, where the history is turned off: its 16 other checks passed and the two of the history were left out. They were last made on a desktop with the history turned on for 0.6.0; the code they exercise is unchanged |
 
+## Account sign-in (0.8.0) — automated tested
+
+| Item | Status | Evidence |
+|---|---|---|
+| What each call sends (method, path, JSON body, bearer header, `User-Agent`) | AUTOMATED TESTED | `HttpBitosXApiClientTests` against a scripted server. |
+| Every status mapped to a fixed failure; the server's text never in a message | AUTOMATED TESTED | `HttpBitosXApiClientTests.Status_DecidesTheFailure_AndTheBodyIsNeverQuoted`. |
+| Malformed, oversized, non-JSON answers refused | AUTOMATED TESTED | `HttpBitosXApiClientTests` (`AMalformed…`, `ABodyBeyondTheCap…`, `ANonJsonContentType…`). |
+| Exactly one refresh under concurrent callers | AUTOMATED TESTED | `AccountSessionTests.ManyCallersAtOnce_CauseExactlyOneRefresh`. |
+| A refused refresh or a 401 ends the session | AUTOMATED TESTED | `AccountSessionTests`. |
+| Locking the vault signs the account out, server told best effort | AUTOMATED TESTED | `AccountSessionTests.LockingTheVault_…`. |
+| Sign-out forgets the tokens even when the server cannot be told | AUTOMATED TESTED | `AccountSessionTests.SignOut_ForgetsEvenWhenTheServerCannotBeTold`. |
+| The server origin: https only, plain http only to this machine, no path | AUTOMATED TESTED | `ApiServerTests`, `ApiServerSelectionTests`. |
+| The Account page: validation, the password cleared after every attempt, failure messages, sign-outs | AUTOMATED TESTED | `AccountPageViewModelTests`. |
+| Every input on the Account page has a name; the page is drawn at both sizes, signed out and in | AUTOMATED TESTED | `AccessibilityTests`, `ViewAppearanceTests.Account`. |
+| No method of `IBitosXApiClient` can carry vault content | VERIFIED | The interface takes an email, a password, tokens and a session id; nothing else. |
+| **Against the real server** | **NOT VERIFIED** | `api.bitosx.se` is not publicly reachable yet; see `bitosx-api/docs/DEPLOYMENT.md`. |
+
 ## Version display fix (2026-09-13)
 
 The Settings → About line previously read "BitosX version 0.3.0.0" — the CLR/Windows 4-part

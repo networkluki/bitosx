@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
+using BitosX.ApiClient;
 using BitosX.Platform.Instance;
 
 namespace BitosX.App;
@@ -22,13 +23,21 @@ sealed class Program
     public static int Main(string[] args)
     {
         AppLocation location;
+        ApiServer? server;
         try
         {
             location = AppLocation.FromArguments(args);
+            server = ApiServerSelection.FromArguments(args);
         }
         catch (AppLocationException ex)
         {
             // Never the default vault instead of the one that was asked for.
+            Console.Error.WriteLine(ex.Message);
+            return UsageErrorExitCode;
+        }
+        catch (ApiServerSelectionException ex)
+        {
+            // Never the production server instead of the one that was asked for.
             Console.Error.WriteLine(ex.Message);
             return UsageErrorExitCode;
         }
@@ -46,14 +55,14 @@ sealed class Program
             return AlreadyRunningExitCode;
         }
 
-        return BuildAvaloniaApp(location).StartWithClassicDesktopLifetime(args);
+        return BuildAvaloniaApp(location, server).StartWithClassicDesktopLifetime(args);
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.
-    public static AppBuilder BuildAvaloniaApp() => BuildAvaloniaApp(AppLocation.Default);
+    public static AppBuilder BuildAvaloniaApp() => BuildAvaloniaApp(AppLocation.Default, ApiServer.Production);
 
-    private static AppBuilder BuildAvaloniaApp(AppLocation location)
-        => AppBuilder.Configure(() => new App(location))
+    private static AppBuilder BuildAvaloniaApp(AppLocation location, ApiServer? server)
+        => AppBuilder.Configure(() => new App(location, server))
             .UsePlatformDetect()
 #if DEBUG
             .WithDeveloperTools()

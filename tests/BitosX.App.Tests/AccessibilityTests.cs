@@ -72,6 +72,10 @@ public sealed class AccessibilityTests
         await app.WaitForAsync<SettingsPageView>();
         Assert.Empty(Nameless(app.Window));
 
+        app.Press("AccountNavButton");
+        await app.WaitForAsync<AccountPageView>();
+        Assert.Empty(Nameless(app.Window));
+
         app.Press("LockButton");
         await app.WaitForAsync<UnlockView>();
         Assert.Empty(Nameless(app.Window));

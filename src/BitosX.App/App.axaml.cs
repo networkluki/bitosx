@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using BitosX.ApiClient;
 using BitosX.Core.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -10,18 +11,20 @@ namespace BitosX.App;
 public partial class App : Application
 {
     private readonly AppLocation _location;
+    private readonly ApiServer? _server;
     private ServiceProvider? _services;
 
-    /// <summary>The application at the default per-user location. Also used by the visual designer.</summary>
+    /// <summary>The application at the default per-user location, on the production server. Also used by the visual designer.</summary>
     public App()
-        : this(AppLocation.Default)
+        : this(AppLocation.Default, ApiServer.Production)
     {
     }
 
-    /// <summary>The application with its files at <paramref name="location"/>.</summary>
-    public App(AppLocation location)
+    /// <summary>The application with its files at <paramref name="location"/>, talking to <paramref name="server"/> (or to none).</summary>
+    public App(AppLocation location, ApiServer? server)
     {
         _location = location ?? throw new ArgumentNullException(nameof(location));
+        _server = server;
     }
 
     public override void Initialize()
@@ -33,7 +36,7 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
-            _services = ServiceConfiguration.Build(_location);
+            _services = ServiceConfiguration.Build(_location, _server);
 
             ILogger logger = _services.GetRequiredService<ILoggerFactory>().CreateLogger("BitosX.App");
             VaultLog.ApplicationStarted(logger);

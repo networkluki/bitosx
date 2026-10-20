@@ -8,8 +8,9 @@ It describes the current **local vault** milestone. No marketing claims are made
 
 - Keep vault contents encrypted at rest with a key derived from the user's master password.
 - A stolen vault file must not reveal plaintext passwords without the master password.
-- Move toward a zero-knowledge design: as server features arrive, the master password, plaintext
-  secrets, the raw vault key, and decrypted contents must never leave the device.
+- Zero-knowledge towards the server: the master password, plaintext secrets, the raw vault key,
+  and decrypted contents never leave the device. Since 0.8.0 the application talks to the server
+  for the account only; what crosses the wire is listed in [ACCOUNT.md](ACCOUNT.md).
 - Fail closed and never fall back to plaintext.
 
 ## What BitosX protects against
@@ -127,14 +128,23 @@ It describes the current **local vault** milestone. No marketing claims are made
 - **A master password made of ordinary words.** The strength rating discounts repetition, runs,
   keyboard patterns and the most common passwords, but it has no dictionary and no knowledge of
   breached passwords. A good rating means no obvious weakness was found, nothing more.
-- **Phishing.** BitosX has no server or browser integration in this milestone and does not
-  autofill; it cannot detect or prevent a user entering credentials on a fraudulent site.
+- **Phishing.** BitosX has no browser integration and does not autofill; it cannot detect or
+  prevent a user entering credentials on a fraudulent site. The application itself talks only to
+  the server fixed in the build (or the one named on its command line) over TLS.
+- **The account password, on the server.** Signing in sends it to `api.bitosx.se`, where it is
+  stored as an Argon2id hash. A server compromise could expose what is sent to it at the time:
+  the email, the account password, the session tokens. It cannot expose the vault, whose key the
+  server never has — provided the account password is not the master password. Nothing in the
+  application can check that it is not.
+- **Someone at an unlocked vault with the account signed in** can see and end the account's
+  sessions and sign it out. Locking the vault signs the account out, so the window is the same as
+  for the vault itself.
 - **A malicious or compromised dependency.** BitosX relies on the .NET runtime, Avalonia, and a
   third-party Argon2 library. A supply-chain compromise of these is out of scope for the code
   here (dependencies are pinned to specific verified versions to reduce risk).
-- **A compromised future server.** No server exists yet. The zero-knowledge intent is that a
-  future server compromise must not expose secrets, but that protection depends on the (not yet
-  built) server-side design.
+- **A compromised server, for the vault.** The server never receives the master password, the
+  vault key, or vault content, so compromising it exposes none of them. What it can expose is
+  listed above under the account password.
 - **Corrupted local storage / disk failure.** Atomic, durable writes prevent BitosX from
   destroying an existing vault on a failed write, but they cannot protect against a failing disk.
   Use the encrypted export to keep backups somewhere else; a lost or corrupted file with no backup
@@ -149,12 +159,16 @@ It describes the current **local vault** milestone. No marketing claims are made
 
 - **Persisted:** only the encrypted, versioned vault (ciphertext + public parameters).
 - **In memory while unlocked:** the decrypted vault, the vault key (byte buffer, wiped on lock
-  and on shutdown), and transiently the master password bytes during create/unlock (wiped after
-  use). Locking takes effect immediately even while an operation is in progress: the operation
+  and on shutdown), transiently the master password bytes during create/unlock (wiped after
+  use), and, while signed in, the account's access and refresh tokens (dropped on sign-out, on
+  lock, on a 401, and on shutdown; never written to disk).
+- **Sent to the server, over TLS:** the account email and account password on sign-in; the tokens
+  afterwards; the product name, version and operating system as `User-Agent`. See
+  [ACCOUNT.md](ACCOUNT.md). Locking takes effect immediately even while an operation is in progress: the operation
   finishes on a private copy of the key, which is wiped, and never puts key material back into
   the locked service.
 - **Never persisted or logged:** master password, item passwords, secure notes, encryption keys,
-  decrypted contents.
+  decrypted contents, the account password, the account tokens.
 
 See [THREAT_MODEL.md](THREAT_MODEL.md) for a threat-by-threat breakdown and
 [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md) for algorithm details.

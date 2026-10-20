@@ -131,6 +131,24 @@ public sealed class ViewAppearanceTests
 
     [Theory]
     [MemberData(nameof(Sizes))]
+    public Task Account(string size, double width, double height) => HeadlessUi.RunAsync(async () =>
+    {
+        await using WholeApplication app = await StartedAsync(width, height);
+        await CreateVaultAsync(app);
+        app.Press("AccountNavButton");
+        await app.WaitForAsync<AccountPageView>();
+        AssertLaidOut(app, "14-account-signed-out", size);
+
+        // Signed in, against the scripted server the test application talks to.
+        app.Type("AccountEmailBox", "alice@example.com");
+        app.Type("AccountPasswordBox", "correct horse battery");
+        app.Press("SignInButton");
+        await HeadlessUi.WaitUntilAsync(() => app.Shows("SessionsPanel"), "the account is shown");
+        AssertLaidOut(app, "15-account-signed-in", size);
+    });
+
+    [Theory]
+    [MemberData(nameof(Sizes))]
     public Task TheNotice(string size, double width, double height) => HeadlessUi.RunAsync(async () =>
     {
         await using WholeApplication app = await StartedAsync(width, height);

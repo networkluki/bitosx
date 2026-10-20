@@ -20,13 +20,20 @@ namespace BitosX.App;
 /// <summary>Composition root: wires up services and view models for dependency injection.</summary>
 public static class ServiceConfiguration
 {
-    /// <summary>The services of the application at the default per-user location.</summary>
-    public static ServiceProvider Build() => Build(AppLocation.Default);
+    /// <summary>The services of the application at the default per-user location, on the production server.</summary>
+    public static ServiceProvider Build() => Build(AppLocation.Default, ApiServer.Production);
 
-    /// <summary>The services of the application with its files at <paramref name="location"/>.</summary>
+    /// <summary>The services of the application with its files at <paramref name="location"/>, on the production server.</summary>
     /// <param name="location">Where the vault and the settings are kept.</param>
     /// <param name="configure">Replaces services after the defaults are registered; for tests.</param>
     public static ServiceProvider Build(AppLocation location, Action<IServiceCollection>? configure = null)
+        => Build(location, ApiServer.Production, configure);
+
+    /// <summary>The services of the application with its files at <paramref name="location"/>.</summary>
+    /// <param name="location">Where the vault and the settings are kept.</param>
+    /// <param name="server">The BitosX server to talk to, or <see langword="null"/> for a local-only run.</param>
+    /// <param name="configure">Replaces services after the defaults are registered; for tests.</param>
+    public static ServiceProvider Build(AppLocation location, ApiServer? server, Action<IServiceCollection>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(location);
 
@@ -95,8 +102,15 @@ public static class ServiceConfiguration
         services.AddSingleton<AutoLockController>();
         services.AddSingleton<AutoLockService>();
 
-        // API (local-only abstraction)
-        services.AddSingleton<IBitosXApiClient, LocalOnlyApiClient>();
+        // The BitosX server: account sign-in only. Nothing of the vault ever goes through it.
+        services.AddSingleton<IBitosXApiClient>(sp => server is null
+            ? new LocalOnlyApiClient()
+            : HttpBitosXApiClient.Create(server, AppVersionInfo.Display, sp.GetRequiredService<ILogger<HttpBitosXApiClient>>()));
+        services.AddSingleton<IAccountSession>(sp => new AccountSession(
+            sp.GetRequiredService<IBitosXApiClient>(),
+            sp.GetRequiredService<IVaultService>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<AccountSession>>()));
 
         // View models
         services.AddSingleton<MainWindowViewModel>();

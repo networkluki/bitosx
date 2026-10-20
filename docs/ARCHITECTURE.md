@@ -11,7 +11,7 @@ BitosX.Core ──> Crypto                                        (domain + orch
 BitosX.Crypto                                                 (KDF, AEAD, format, RNG)
 BitosX.Storage ──> Core (+ Crypto)                            (atomic file persistence)
 BitosX.Platform ──> Core                                      (clipboard policy, secure-storage hook)
-BitosX.ApiClient ──> Core                                     (local-only API abstraction)
+BitosX.ApiClient ──> Core                                     (the BitosX server: client + account session)
 ```
 
 - **BitosX.Crypto** — cryptographic primitives and the versioned encrypted vault format:
@@ -29,8 +29,12 @@ BitosX.ApiClient ──> Core                                     (local-only AP
   `ClipboardSessionGuard` (clears a copied secret on workstation lock / suspend),
   `SingleInstanceGuard` (one running instance per vault), OS session and power signals
   (`ISystemSessionEvents`), plus an `ISecureStorage` extension point for future OS key protection.
-- **BitosX.ApiClient** — `IBitosXApiClient` boundary and a `LocalOnlyApiClient` that performs
-  no network I/O. Reserved for future, zero-knowledge server features.
+- **BitosX.ApiClient** — the BitosX server, account endpoints only: `IBitosXApiClient` (login,
+  refresh, logout, profile, sessions), `HttpBitosXApiClient` over HTTPS with a fixed transport
+  policy, `LocalOnlyApiClient` for a run without a server, `ApiServer` (the origin, validated),
+  `ApiException`/`ApiFailure` (every failure as a fixed kind with a fixed message), and
+  `AccountSession` (the tokens in memory, one refresh at a time, signed out when the vault locks).
+  No method can carry vault content; see [ACCOUNT.md](ACCOUNT.md).
 - **BitosX.App** — Avalonia views and view models, the DI composition root
   (`ServiceConfiguration`), the Avalonia-specific `IClipboardAccessor` (which marks copied secrets
   as sensitive, see `SensitiveClipboardData`), `ExitClipboardCleaner`, `UnexpectedErrorGuard`
@@ -39,8 +43,10 @@ BitosX.ApiClient ──> Core                                     (local-only AP
 ## How the application is put together
 
 - `AppLocation` says where the vault and the settings are: the per-user location, or the
-  directory named by `--data-directory`. `Program` reads it from the command line before anything
-  else; an option that cannot be used ends the application rather than opening the default vault.
+  directory named by `--data-directory`. `ApiServerSelection` says which server to talk to: the
+  production server, the one named by `--api-server`, or none. `Program` reads both from the
+  command line before anything else; an option that cannot be used ends the application rather
+  than opening the default vault or talking to the production server.
 - `ServiceConfiguration.Build(location)` registers the services.
 - `MainWindowSession.Create(services)` creates the main window and attaches what belongs to it:
   the view model, automatic locking, clearing the clipboard when the user leaves or the window is
@@ -55,8 +61,8 @@ together, and both use it.
 - `MainWindowViewModel` switches the visible screen from the vault lifecycle state:
   `NoVault → CreateVaultView`, `Locked → UnlockView`, `Unlocked → UnlockedShellView`. It also
   holds the notice shown at the top of the window (`AppNotice`), whatever the screen.
-- `UnlockedShellViewModel` hosts navigation (Vault, Generator, Security Center, Settings) and
-  the lock action. Its pages are built anew every time the vault is unlocked, so a page must take
+- `UnlockedShellViewModel` hosts navigation (Vault, Generator, Security Center, Settings, Account)
+  and the lock action. Its pages are built anew every time the vault is unlocked, so a page must take
   what it shows from what applies now, not from what the application started with.
 - Views are thin. All logic lives in view models and services; there are **no cryptographic
   operations in code-behind**. Views resolve to view models via `ViewLocator`.
@@ -120,5 +126,7 @@ primitives (`StorageFiles`).
 
 - The encrypted format is versioned; new versions can be added with an upgrade path while old
   vaults remain readable.
-- `ISecureStorage` and `IBitosXApiClient` are seams for future OS secret storage and server
-  sync. The `StateChanged` event on `IVaultService` is what automatic locking builds on.
+- `ISecureStorage` is the seam for future OS secret storage (a persisted refresh token);
+  `IBitosXApiClient` is where the sync endpoints of a later milestone will be added. The
+  `StateChanged` event on `IVaultService` is what automatic locking and the account sign-out on
+  lock build on.
