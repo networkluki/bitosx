@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Globalization;
 using BitosX.ApiClient;
+using BitosX.ApiClient.Sync;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -10,7 +11,7 @@ namespace BitosX.App.ViewModels;
 /// The Account page: sign in to the BitosX server with the account email and password, see the
 /// account and its sessions, end sessions, sign out. The account is a different thing from the
 /// vault: nothing on this page reads or sends vault contents, and the account password is not
-/// the master password.
+/// the master password. The encrypted sync lives in <see cref="Sync"/>, shown while signed in.
 /// </summary>
 public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
 {
@@ -22,9 +23,10 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
     private readonly IAccountSession _session;
     private bool _disposed;
 
-    public AccountPageViewModel(IAccountSession session)
+    public AccountPageViewModel(IAccountSession session, IVaultSyncService sync)
     {
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        Sync = new VaultSyncViewModel(sync, session);
         _session.Changed += OnSessionChanged;
         IsAvailable = session.IsAvailable;
         ServerName = session.ServerName ?? string.Empty;
@@ -39,6 +41,9 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
     public string ServerName { get; }
 
     public string UnavailableNote { get; }
+
+    /// <summary>The encrypted sync with the server; see <see cref="VaultSyncViewModel"/>.</summary>
+    public VaultSyncViewModel Sync { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsSignedOut))]
@@ -277,6 +282,7 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
 
         _disposed = true;
         _session.Changed -= OnSessionChanged;
+        Sync.Dispose();
     }
 }
 

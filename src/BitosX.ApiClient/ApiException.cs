@@ -23,6 +23,9 @@ public enum ApiFailure
 
     /// <summary>The server answered in a way this client does not understand: an unexpected status, a body that is not JSON, or JSON of the wrong shape.</summary>
     Unexpected = 6,
+
+    /// <summary>The server holds a newer revision than the one the request was based on (409). Nothing was changed; the client must look again before it decides.</summary>
+    Conflict = 7,
 }
 
 /// <summary>
@@ -73,6 +76,7 @@ public sealed class ApiException : Exception
         ApiFailure.NotFound => "That no longer exists.",
         ApiFailure.RateLimited => "Too many attempts. Try again later.",
         ApiFailure.Unavailable => "The BitosX server is temporarily unavailable. Try again shortly.",
+        ApiFailure.Conflict => "Another device changed the vault on the server first. Nothing was changed.",
         _ => "The BitosX server answered in an unexpected way. Nothing was changed.",
     };
 }

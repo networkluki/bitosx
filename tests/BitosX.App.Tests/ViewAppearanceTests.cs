@@ -1,3 +1,4 @@
+using System.Text;
 using Avalonia.Controls;
 using BitosX.App.Views;
 
@@ -144,7 +145,27 @@ public sealed class ViewAppearanceTests
         app.Type("AccountPasswordBox", "correct horse battery");
         app.Press("SignInButton");
         await HeadlessUi.WaitUntilAsync(() => app.Shows("SessionsPanel"), "the account is shown");
+        Assert.True(app.Shows("SyncPanel"));
         AssertLaidOut(app, "15-account-signed-in", size);
+
+        // Synced once: the server holds nothing, so this device's vault goes up as revision 1.
+        app.Press("SyncNowButton");
+        await app.WaitForTextAsync("SyncStatus", "This device's vault was uploaded.");
+        Assert.Equal(app.VaultFile, app.Server.StoredEnvelope);
+        AssertLaidOut(app, "16-account-synced", size);
+
+        // Another device uploads something else, and this vault is edited here: a conflict, with both ways out shown.
+        app.Server.Store(Encoding.UTF8.GetBytes("{\"version\":1,\"other\":true}"));
+        app.Press("VaultNavButton");
+        await app.WaitForAsync<VaultPageView>();
+        await AddLoginAsync(app, "GitHub", "alice", "correct horse battery", "https://github.com");
+        app.Press("AccountNavButton");
+        await app.WaitForAsync<AccountPageView>();
+        app.Press("SyncNowButton");
+        await HeadlessUi.WaitUntilAsync(() => app.Shows("TakeServerVaultPanel"), "the conflict is shown");
+        Assert.True(app.Shows("OverwriteServerButton"));
+        Assert.Equal(1, app.Server.UploadCount); // nothing was uploaded
+        AssertLaidOut(app, "17-account-sync-conflict", size);
     });
 
     [Theory]

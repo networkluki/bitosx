@@ -19,8 +19,16 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
     /// <summary>How long a call may take in total, connect and read included.</summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
-    /// <summary>The most that is read back from the server for one call. Every real answer is far smaller.</summary>
+    /// <summary>The most that is read back from the server for one call. Every real answer is far smaller — except an envelope download, which has <see cref="MaxEnvelopeResponseBytes"/>.</summary>
     public const int MaxResponseBytes = 64 * 1024;
+
+    /// <summary>The largest encrypted envelope that is sent or accepted: the vault file's own limit (<c>FileLocalVaultStorage.MaxFileSizeBytes</c>), which the server mirrors.</summary>
+    public const int MaxEnvelopeBytes = 16 * 1024 * 1024;
+
+    /// <summary>The most that is read back for an envelope download: the Base64 of the largest envelope plus its metadata.</summary>
+    public const int MaxEnvelopeResponseBytes = (MaxEnvelopeBytes + 2) / 3 * 4 + 4096;
+
+    private const int FingerprintHexLength = 64;
 
     private const int MaxTokenLength = 8 * 1024;
     private const int MaxRefreshTokenLength = 256;
@@ -76,7 +84,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         {
             BaseAddress = server.BaseAddress,
             Timeout = Timeout,
-            MaxResponseContentBufferSize = MaxResponseBytes,
+            MaxResponseContentBufferSize = MaxEnvelopeResponseBytes, // the real cap is per call, in SendAsync
         };
         ConfigureDefaultHeaders(http, productVersion);
         return new HttpBitosXApiClient(http, server, logger);
@@ -210,6 +218,140 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         return SendAsync<NoBody>(HttpMethod.Delete, "v1/account/sessions/" + sessionId.ToString("D"), null, accessToken, cancellationToken);
     }
 
+    // ---- encrypted sync ----
+
+    public async Task<SyncStatus?> GetSyncStatusAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+
+        SyncStatusDto? status;
+        try
+        {
+            status = await SendAsync<SyncStatusDto>(HttpMethod.Get, "v1/sync/status", null, accessToken, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ApiException ex) when (ex.Failure == ApiFailure.NotFound)
+        {
+            return null; // the server holds nothing for this account
+        }
+
+        return ToStatus(status, "v1/sync/status");
+    }
+
+    public async Task<SyncEnvelope?> DownloadEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+
+        SyncEnvelopeDto? dto;
+        try
+        {
+            dto = await SendAsync<SyncEnvelopeDto>(
+                HttpMethod.Get, "v1/sync/envelope", null, accessToken, cancellationToken, MaxEnvelopeResponseBytes).ConfigureAwait(false);
+        }
+        catch (ApiException ex) when (ex.Failure == ApiFailure.NotFound)
+        {
+            return null;
+        }
+
+        const string path = "v1/sync/envelope";
+        SyncStatus status = ToStatus(dto, path);
+        if (dto!.Envelope is null || dto.Envelope.Length > MaxEnvelopeResponseBytes)
+        {
+            throw Unexpected(path);
+        }
+
+        byte[] envelope;
+        try
+        {
+            envelope = Convert.FromBase64String(dto.Envelope);
+        }
+        catch (FormatException ex)
+        {
+            throw Fail(path, ApiFailure.Unexpected, 200, null, ex);
+        }
+
+        // The server's own statements about the bytes must hold for the bytes it sent. A mismatch is
+        // a server (or path) that cannot be trusted, not something to repair here.
+        if (envelope.Length == 0
+            || envelope.Length > MaxEnvelopeBytes
+            || envelope.Length != status.SizeBytes
+            || !string.Equals(Fingerprint(envelope), status.Fingerprint, StringComparison.Ordinal))
+        {
+            throw Unexpected(path);
+        }
+
+        return new SyncEnvelope(status, envelope);
+    }
+
+    public async Task<SyncStatus> UploadEnvelopeAsync(string accessToken, long baseRevision, ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+        ArgumentOutOfRangeException.ThrowIfNegative(baseRevision);
+        if (envelope.Length == 0 || envelope.Length > MaxEnvelopeBytes)
+        {
+            throw new ArgumentOutOfRangeException(nameof(envelope), "The envelope must be between 1 byte and 16 MiB.");
+        }
+
+        const string path = "v1/sync/envelope";
+        SyncStatusDto? stored = await SendAsync<SyncStatusDto>(
+            HttpMethod.Put, path, new { baseRevision, envelope = Convert.ToBase64String(envelope.Span) }, accessToken, cancellationToken).ConfigureAwait(false);
+        SyncStatus status = ToStatus(stored, path);
+
+        // What the server says it stored must be what was sent.
+        if (status.SizeBytes != envelope.Length
+            || status.Revision <= baseRevision
+            || !string.Equals(Fingerprint(envelope.Span), status.Fingerprint, StringComparison.Ordinal))
+        {
+            throw Unexpected(path);
+        }
+
+        return status;
+    }
+
+    public Task DeleteEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+        return SendAsync<NoBody>(HttpMethod.Delete, "v1/sync/envelope", null, accessToken, cancellationToken);
+    }
+
+    /// <summary>The SHA-256 of an envelope as the server states it: lowercase hex of the exact bytes.</summary>
+    public static string Fingerprint(ReadOnlySpan<byte> envelope)
+        => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(envelope));
+
+    private SyncStatus ToStatus(SyncStatusDto? dto, string path)
+    {
+        if (dto is null
+            || dto.Revision is not { } revision
+            || revision < 1
+            || dto.SizeBytes is not { } size
+            || size < 1
+            || size > MaxEnvelopeBytes
+            || dto.UpdatedAt is not { } updated
+            || !IsLowerHex(dto.Fingerprint, FingerprintHexLength))
+        {
+            throw Unexpected(path);
+        }
+
+        return new SyncStatus(revision, dto.Fingerprint, size, updated);
+    }
+
+    private static bool IsLowerHex([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? value, int length)
+    {
+        if (value is null || value.Length != length)
+        {
+            return false;
+        }
+
+        foreach (char c in value)
+        {
+            if (c is not ((>= '0' and <= '9') or (>= 'a' and <= 'f')))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     // ---- transport ----
 
     /// <summary>
@@ -218,7 +360,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
     /// an error response is never read into anything.
     /// </summary>
     private async Task<TResponse?> SendAsync<TResponse>(
-        HttpMethod method, string path, object? body, string? accessToken, CancellationToken cancellationToken)
+        HttpMethod method, string path, object? body, string? accessToken, CancellationToken cancellationToken, int maxResponseBytes = MaxResponseBytes)
         where TResponse : class
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -270,7 +412,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
                 throw Fail(path, ApiFailure.Unexpected, status, null, null);
             }
 
-            if (response.Content.Headers.ContentLength is > MaxResponseBytes)
+            if (response.Content.Headers.ContentLength is { } length && length > maxResponseBytes)
             {
                 throw Fail(path, ApiFailure.Unexpected, status, null, null);
             }
@@ -278,7 +420,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
             string text;
             try
             {
-                text = await ReadCappedAsync(response.Content, cancellationToken).ConfigureAwait(false)
+                text = await ReadCappedAsync(response.Content, maxResponseBytes, cancellationToken).ConfigureAwait(false)
                     ?? throw Fail(path, ApiFailure.Unexpected, status, null, null);
             }
             catch (HttpRequestException ex)
@@ -305,27 +447,31 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         }
     }
 
-    /// <summary>The body as UTF-8 text, or <see langword="null"/> when it is longer than <see cref="MaxResponseBytes"/>.</summary>
-    private static async Task<string?> ReadCappedAsync(HttpContent content, CancellationToken cancellationToken)
+    /// <summary>The body as UTF-8 text, or <see langword="null"/> when it is longer than <paramref name="maxBytes"/>.</summary>
+    private static async Task<string?> ReadCappedAsync(HttpContent content, int maxBytes, CancellationToken cancellationToken)
     {
         await using Stream stream = await content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        byte[] buffer = new byte[MaxResponseBytes + 1];
+        using var collected = new MemoryStream();
+        byte[] chunk = new byte[81920];
         int total = 0;
-        while (total < buffer.Length)
+        while (true)
         {
-            int read = await stream.ReadAsync(buffer.AsMemory(total), cancellationToken).ConfigureAwait(false);
+            int read = await stream.ReadAsync(chunk, cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
                 break;
             }
 
             total += read;
+            if (total > maxBytes)
+            {
+                return null;
+            }
+
+            collected.Write(chunk, 0, read);
         }
 
-        if (total > MaxResponseBytes)
-        {
-            return null;
-        }
+        byte[] buffer = collected.GetBuffer();
 
         try
         {
@@ -342,6 +488,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         400 or 413 or 415 or 422 => ApiFailure.InvalidRequest,
         401 => ApiFailure.Unauthenticated,
         404 => ApiFailure.NotFound,
+        409 => ApiFailure.Conflict,
         429 => ApiFailure.RateLimited,
         502 or 503 or 504 => ApiFailure.Unavailable,
         _ => ApiFailure.Unexpected,
@@ -430,6 +577,22 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         public bool? EmailVerified { get; init; }
 
         public DateTimeOffset? CreatedAt { get; init; }
+    }
+
+    private class SyncStatusDto
+    {
+        public long? Revision { get; init; }
+
+        public string? Fingerprint { get; init; }
+
+        public int? SizeBytes { get; init; }
+
+        public DateTimeOffset? UpdatedAt { get; init; }
+    }
+
+    private sealed class SyncEnvelopeDto : SyncStatusDto
+    {
+        public string? Envelope { get; init; }
     }
 
     private sealed class SessionDto

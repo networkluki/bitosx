@@ -22,12 +22,14 @@ public sealed class AppLocation
 
     private const string VaultFileName = "vault.bitosx";
     private const string SettingsFileName = "settings.json";
+    private const string SyncStateFileName = "sync-state.json";
 
     private AppLocation(string? dataDirectory, string vaultFilePath, string settingsFilePath)
     {
         DataDirectory = dataDirectory;
         VaultFilePath = vaultFilePath;
         SettingsFilePath = settingsFilePath;
+        SyncStateFilePath = Path.Combine(Path.GetDirectoryName(vaultFilePath) ?? string.Empty, SyncStateFileName);
     }
 
     /// <summary>The per-user location (for example <c>%APPDATA%\BitosX</c> on Windows).</summary>
@@ -47,6 +49,9 @@ public sealed class AppLocation
 
     /// <summary>The settings file.</summary>
     public string SettingsFilePath { get; }
+
+    /// <summary>The sync record: which server revision this device last agreed with (docs/SYNC.md). Next to the vault.</summary>
+    public string SyncStateFilePath { get; }
 
     /// <summary>
     /// The title of the main window. Anywhere but the default location it names the directory, so

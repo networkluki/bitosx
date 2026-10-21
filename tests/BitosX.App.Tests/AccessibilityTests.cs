@@ -76,6 +76,16 @@ public sealed class AccessibilityTests
         await app.WaitForAsync<AccountPageView>();
         Assert.Empty(Nameless(app.Window));
 
+        // Signed in, with the sync card in its fullest state: a conflict, the download pending.
+        app.Type("AccountEmailBox", ScriptedServer.Email);
+        app.Type("AccountPasswordBox", ScriptedServer.Password);
+        app.Press("SignInButton");
+        await HeadlessUi.WaitUntilAsync(() => app.Shows("SyncPanel"), "the account is shown");
+        app.Server.Store(System.Text.Encoding.UTF8.GetBytes("{\"version\":1,\"other\":true}"));
+        app.Press("SyncNowButton");
+        await HeadlessUi.WaitUntilAsync(() => app.Shows("TakeServerVaultPanel"), "the conflict is shown");
+        Assert.Empty(Nameless(app.Window));
+
         app.Press("LockButton");
         await app.WaitForAsync<UnlockView>();
         Assert.Empty(Nameless(app.Window));
