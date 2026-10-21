@@ -202,7 +202,7 @@
                     <TextBlock Text="About" Classes="h2" />
                     <TextBlock Name="AppVersion" Text="{Binding AppVersion, StringFormat='BitosX version {0}'}" />
                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                               Text="This is the local-vault milestone. No data leaves your device." />
+                               Text="Your vault is encrypted on this device and never leaves it. The optional account (see the Account page) only signs you in to the BitosX server; it carries nothing from the vault." />
                 </StackPanel>
             </Border>
         </StackPanel>

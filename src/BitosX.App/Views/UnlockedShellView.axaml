@@ -36,6 +36,8 @@
                             Command="{Binding ShowSecurityCommand}" />
                     <Button Name="SettingsNavButton" Content="Settings" Classes="nav" Classes.selected="{Binding IsSettingsSelected}"
                             Command="{Binding ShowSettingsCommand}" />
+                    <Button Name="AccountNavButton" Content="Account" Classes="nav" Classes.selected="{Binding IsAccountSelected}"
+                            Command="{Binding ShowAccountCommand}" />
                 </StackPanel>
             </DockPanel>
         </Border>

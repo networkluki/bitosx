@@ -1,10 +1,10 @@
 # BitosX
 
-BitosX is a security-focused password manager. This repository currently contains the
-**local encrypted vault foundation** — a cross-platform Avalonia desktop application that
-creates and manages an encrypted local vault. There is intentionally **no server, sync,
-account, subscription, browser extension, or mobile app** in this milestone; everything runs
-and stays on the local device.
+BitosX is a security-focused password manager. This repository contains the cross-platform
+Avalonia desktop application: an **encrypted local vault**, and since 0.8.0 the **account
+sign-in** to the BitosX server. The vault stays on the device: there is intentionally **no sync,
+subscription, browser extension, or mobile app** yet, and nothing from the vault is ever sent to
+the server. See [docs/ACCOUNT.md](docs/ACCOUNT.md) for what the account is and is not.
 
 ## What works in this milestone
 
@@ -42,6 +42,11 @@ and stays on the local device.
 - Fails closed on an unexpected error: the vault is locked and a copied secret is cleared.
 - Can be run on a data directory of its own (`--data-directory`), next to the vault at the default
   location. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+- Sign in to a BitosX account (created at `vault.bitosx.se`) with the account email and account
+  password — a different secret from the master password — and see and end the account's sessions.
+  Tokens are held in memory only and dropped when the vault locks. `--api-server none` makes a run
+  local-only; `--api-server https://host` points it at a server of your own. See
+  [docs/ACCOUNT.md](docs/ACCOUNT.md).
 
 ## Requirements
 
@@ -67,8 +72,9 @@ src/
   BitosX.Crypto     KDF (Argon2id), AEAD (AES-256-GCM), versioned encrypted format, RNG
   BitosX.Storage    Atomic encrypted local file persistence
   BitosX.Platform   Platform policy (clipboard, single instance, OS session signals), secure-storage hook
-  BitosX.ApiClient  Local-only API abstraction (no production server in this milestone)
+  BitosX.ApiClient  The BitosX server: HTTPS client, failure model, in-memory account session
 tests/
+  BitosX.ApiClient.Tests  The HTTPS client against a scripted server; the account session
   BitosX.App.Tests        View models; the real views and the whole application, run without a display
   BitosX.Core.Tests
   BitosX.Crypto.Tests
@@ -82,7 +88,7 @@ tools/
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
   VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md  KEY_ROTATION.md
-  KEY_DERIVATION.md  MASTER_PASSWORD.md  SECURITY_REVIEW_0.5.1.md  SECURITY_REVIEW_0.7.0.md
+  KEY_DERIVATION.md  MASTER_PASSWORD.md  ACCOUNT.md  SECURITY_REVIEW_0.5.1.md  SECURITY_REVIEW_0.7.0.md
 .github/workflows/ci.yml  Builds and tests on Linux, macOS and Windows for every change
 ```
 

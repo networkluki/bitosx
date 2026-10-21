@@ -1,5 +1,6 @@
 using Avalonia.Controls;
 using BitosX.App.Services;
+using BitosX.ApiClient;
 using BitosX.App.ViewModels;
 using BitosX.App.Views;
 using BitosX.Platform.Clipboard;
@@ -26,6 +27,7 @@ public sealed class MainWindowSession : IDisposable
     private readonly AutoLockService _autoLock;
     private readonly ClipboardSessionGuard _clipboardGuard;
     private readonly UnexpectedErrorGuard _errorGuard;
+    private readonly IAccountSession _account;
     private bool _disposed;
 
     private MainWindowSession(
@@ -33,13 +35,15 @@ public sealed class MainWindowSession : IDisposable
         MainWindowViewModel viewModel,
         AutoLockService autoLock,
         ClipboardSessionGuard clipboardGuard,
-        UnexpectedErrorGuard errorGuard)
+        UnexpectedErrorGuard errorGuard,
+        IAccountSession account)
     {
         Window = window;
         _viewModel = viewModel;
         _autoLock = autoLock;
         _clipboardGuard = clipboardGuard;
         _errorGuard = errorGuard;
+        _account = account;
     }
 
     /// <summary>The main window. Showing it decides the first screen from what is in storage.</summary>
@@ -69,8 +73,12 @@ public sealed class MainWindowSession : IDisposable
         UnexpectedErrorGuard errorGuard = services.GetRequiredService<UnexpectedErrorGuard>();
         errorGuard.Attach();
 
+        // The account session follows the vault: it is created here so that it is listening when
+        // the vault locks, and it is forgotten when the window closes.
+        IAccountSession account = services.GetRequiredService<IAccountSession>();
+
         window.Opened += async (_, _) => await viewModel.InitializeAsync().ConfigureAwait(true);
-        return new MainWindowSession(window, viewModel, autoLock, clipboardGuard, errorGuard);
+        return new MainWindowSession(window, viewModel, autoLock, clipboardGuard, errorGuard, account);
     }
 
     public void Dispose()
@@ -81,6 +89,7 @@ public sealed class MainWindowSession : IDisposable
         }
 
         _disposed = true;
+        (_account as IDisposable)?.Dispose();
         _errorGuard.Dispose();
         _clipboardGuard.Dispose();
         _autoLock.Dispose();

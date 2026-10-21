@@ -1,0 +1,97 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:controls="using:BitosX.App.Controls"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="780" d:DesignHeight="680"
+             x:Class="BitosX.App.Views.AccountPageView"
+             x:DataType="vm:AccountPageViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="24" Spacing="16" MaxWidth="640" HorizontalAlignment="Left">
+            <TextBlock Text="Account" Classes="h1" />
+            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                       Text="Your BitosX account signs you in to the BitosX server. It is separate from your vault: the account password is not the master password, and nothing from the vault is sent. Nothing syncs yet; this is the account only." />
+
+            <!-- No server for this run -->
+            <Border Classes="card" IsVisible="{Binding !IsAvailable}">
+                <TextBlock Name="AccountUnavailableNote" Text="{Binding UnavailableNote}" TextWrapping="Wrap" />
+            </Border>
+
+            <!-- Sign in -->
+            <Border Name="SignInPanel" Classes="card" IsVisible="{Binding IsSignedOut}">
+                <StackPanel Spacing="10" IsEnabled="{Binding IsAvailable}">
+                    <TextBlock Text="Sign in" Classes="h2" />
+                    <TextBlock Name="ServerName" Text="{Binding ServerName, StringFormat='Server: {0}'}" Classes="muted" FontSize="12"
+                               IsVisible="{Binding IsAvailable}" />
+                    <TextBox Name="AccountEmailBox" AutomationProperties.Name="Account email" PlaceholderText="Email" Text="{Binding Email}" />
+                    <controls:SecretBox Name="AccountPasswordBox" AutomationProperties.Name="Account password" PlaceholderText="Account password" Text="{Binding Password}" />
+                    <Button Name="SignInButton" Content="Sign in" Classes="accent" Command="{Binding SignInCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="No account yet? Create one at vault.bitosx.se: you confirm your email there and choose the account password. Signing in keeps you signed in until you sign out, lock the vault, or close BitosX." />
+                </StackPanel>
+            </Border>
+
+            <!-- Signed in -->
+            <Border Name="AccountPanel" Classes="card" IsVisible="{Binding IsSignedIn}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Signed in" Classes="h2" />
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Email" Classes="muted" FontSize="12" />
+                        <SelectableTextBlock Name="ProfileEmail" Text="{Binding ProfileEmail}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Email confirmed" Classes="muted" FontSize="12" />
+                        <TextBlock Name="ProfileVerified" Text="{Binding ProfileVerified}" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <TextBlock Text="Account created" Classes="muted" FontSize="12" />
+                        <TextBlock Name="ProfileCreated" Text="{Binding ProfileCreated}" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button Name="SignOutButton" Content="Sign out" Command="{Binding SignOutCommand}" />
+                        <Button Name="SignOutEverywhereButton" Content="Sign out everywhere" Command="{Binding SignOutEverywhereCommand}"
+                                Foreground="{StaticResource BitosXDangerBrush}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Name="SessionsPanel" Classes="card" IsVisible="{Binding IsSignedIn}">
+                <StackPanel Spacing="10">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="Sessions" Classes="h2" VerticalAlignment="Center" />
+                        <Button Name="RefreshSessionsButton" Grid.Column="1" Content="Refresh" Command="{Binding RefreshSessionsCommand}" />
+                    </Grid>
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="Every device and browser that is signed in to your account. Ending a session signs that device out at once." />
+                    <ItemsControl Name="SessionsList" ItemsSource="{Binding Sessions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AccountSessionItemViewModel">
+                                <Border BorderBrush="{StaticResource BitosXBorderBrush}" BorderThickness="0,0,0,1" Padding="0,8">
+                                    <Grid ColumnDefinitions="*,Auto">
+                                        <StackPanel Grid.Column="0" Spacing="2">
+                                            <TextBlock Name="SessionTitle" Text="{Binding Title}" FontWeight="SemiBold" />
+                                            <TextBlock Name="SessionStarted" Text="{Binding Started}" Classes="muted" FontSize="12" />
+                                            <TextBlock Name="SessionLastSeen" Text="{Binding LastSeen}" Classes="muted" FontSize="12" />
+                                            <TextBlock Name="SessionExpires" Text="{Binding Expires}" Classes="muted" FontSize="12" />
+                                        </StackPanel>
+                                        <Button Name="RevokeSessionButton" Grid.Column="1" Content="{Binding ActionLabel}"
+                                                AutomationProperties.Name="{Binding ActionDescription}" VerticalAlignment="Top" Margin="8,0,0,0"
+                                                Command="{Binding $parent[ItemsControl].((vm:AccountPageViewModel)DataContext).RevokeSessionCommand}"
+                                                CommandParameter="{Binding}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="No sessions listed." Classes="muted" IsVisible="{Binding !Sessions.Count}" />
+                </StackPanel>
+            </Border>
+
+            <TextBlock Name="AccountStatus" Text="{Binding Status}" TextWrapping="Wrap" Classes="muted"
+                       IsVisible="{Binding Status, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

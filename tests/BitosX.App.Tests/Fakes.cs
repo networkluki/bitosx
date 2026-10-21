@@ -217,3 +217,187 @@ internal sealed class FakeKeyDerivationBenchmark : IKeyDerivationBenchmark
         return MeasureThrow is not null ? Task.FromException<TimeSpan>(MeasureThrow) : Task.FromResult(Elapsed);
     }
 }
+
+/// <summary>
+/// The BitosX server as the test application sees it: one account, signed in with a known
+/// password, with two sessions. Records what it is asked; never touches the network.
+/// </summary>
+internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
+{
+    public const string Email = "alice@example.com";
+    public const string Password = "correct horse battery";
+
+    private static readonly DateTimeOffset Created = new(2026, 9, 1, 10, 0, 0, TimeSpan.Zero);
+
+    public BitosX.ApiClient.ApiServer? Server { get; } = BitosX.ApiClient.ApiServer.Parse("https://api.example.test");
+
+    public bool IsServerIntegrationEnabled => true;
+
+    public int LoginCount { get; private set; }
+    public int RefreshCount { get; private set; }
+    public int LogoutCount { get; private set; }
+    public int LogoutAllCount { get; private set; }
+    public List<Guid> Revoked { get; } = [];
+
+    /// <summary>When set, every call fails with this.</summary>
+    public BitosX.ApiClient.ApiException? Throws { get; set; }
+
+    public Guid CurrentSessionId { get; } = Guid.NewGuid();
+    public Guid OtherSessionId { get; } = Guid.NewGuid();
+
+    private void MaybeThrow()
+    {
+        if (Throws is not null)
+        {
+            throw Throws;
+        }
+    }
+
+    public Task<bool> PingAsync(CancellationToken cancellationToken = default) => Task.FromResult(Throws is null);
+
+    public Task<BitosX.ApiClient.AccountTokens> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        LoginCount++;
+        if (!string.Equals(email, Email, StringComparison.OrdinalIgnoreCase) || !string.Equals(password, Password, StringComparison.Ordinal))
+        {
+            throw new BitosX.ApiClient.ApiException(BitosX.ApiClient.ApiFailure.Unauthenticated, 401);
+        }
+
+        return Task.FromResult(Tokens());
+    }
+
+    public Task<BitosX.ApiClient.AccountTokens> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        RefreshCount++;
+        return Task.FromResult(Tokens());
+    }
+
+    public Task LogoutAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        LogoutCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task LogoutAllAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        LogoutAllCount++;
+        return Task.CompletedTask;
+    }
+
+    public Task<BitosX.ApiClient.AccountProfile> GetProfileAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        return Task.FromResult(new BitosX.ApiClient.AccountProfile(Guid.Parse("11111111-2222-4333-8444-555555555555"), Email, true, Created));
+    }
+
+    public Task<IReadOnlyList<BitosX.ApiClient.AccountSessionInfo>> GetSessionsAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        var sessions = new List<BitosX.ApiClient.AccountSessionInfo>();
+        if (!Revoked.Contains(CurrentSessionId))
+        {
+            sessions.Add(new(CurrentSessionId, now.AddMinutes(-5), now, now.AddDays(30), Current: true));
+        }
+
+        if (!Revoked.Contains(OtherSessionId))
+        {
+            sessions.Add(new(OtherSessionId, now.AddDays(-3), now.AddHours(-2), now.AddDays(27), Current: false));
+        }
+
+        return Task.FromResult<IReadOnlyList<BitosX.ApiClient.AccountSessionInfo>>(sessions);
+    }
+
+    public Task RevokeSessionAsync(string accessToken, Guid sessionId, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        Revoked.Add(sessionId);
+        return Task.CompletedTask;
+    }
+
+    private static BitosX.ApiClient.AccountTokens Tokens()
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        return new("jwt.test", now.AddMinutes(15), "refresh.test", now.AddDays(30));
+    }
+}
+
+/// <summary>An account session the page tests script directly, without a server or tokens.</summary>
+internal sealed class FakeAccountSession : BitosX.ApiClient.IAccountSession
+{
+    public bool IsAvailable { get; set; } = true;
+
+    public string? ServerName { get; set; } = "api.example.test";
+
+    public bool IsSignedIn { get; private set; }
+
+    public event EventHandler? Changed;
+
+    public (string Email, string Password)? LastSignIn { get; private set; }
+
+    public BitosX.ApiClient.ApiException? SignInThrows { get; set; }
+    public BitosX.ApiClient.ApiException? ProfileThrows { get; set; }
+    public BitosX.ApiClient.ApiException? SignOutThrows { get; set; }
+
+    public int SignOutCount { get; private set; }
+    public int SignOutEverywhereCount { get; private set; }
+    public List<Guid> Revoked { get; } = [];
+
+    public List<BitosX.ApiClient.AccountSessionInfo> Sessions { get; } = [];
+
+    /// <summary>Signs in or out from outside the page, as the vault locking would.</summary>
+    public void Set(bool signedIn)
+    {
+        IsSignedIn = signedIn;
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public Task SignInAsync(string email, string password, CancellationToken cancellationToken = default)
+    {
+        LastSignIn = (email, password);
+        if (SignInThrows is not null)
+        {
+            return Task.FromException(SignInThrows);
+        }
+
+        Set(true);
+        return Task.CompletedTask;
+    }
+
+    public Task<BitosX.ApiClient.AccountProfile> GetProfileAsync(CancellationToken cancellationToken = default)
+        => ProfileThrows is not null
+            ? Task.FromException<BitosX.ApiClient.AccountProfile>(ProfileThrows)
+            : Task.FromResult(new BitosX.ApiClient.AccountProfile(Guid.NewGuid(), "alice@example.com", true, new DateTimeOffset(2026, 9, 1, 10, 0, 0, TimeSpan.Zero)));
+
+    public Task<IReadOnlyList<BitosX.ApiClient.AccountSessionInfo>> GetSessionsAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<BitosX.ApiClient.AccountSessionInfo>>([.. Sessions.Where(s => !Revoked.Contains(s.Id))]);
+
+    public Task RevokeSessionAsync(Guid sessionId, CancellationToken cancellationToken = default)
+    {
+        Revoked.Add(sessionId);
+        if (Sessions.Any(s => s.Id == sessionId && s.Current))
+        {
+            Set(false);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task SignOutAsync(CancellationToken cancellationToken = default)
+    {
+        SignOutCount++;
+        Set(false);
+        return SignOutThrows is not null ? Task.FromException(SignOutThrows) : Task.CompletedTask;
+    }
+
+    public Task SignOutEverywhereAsync(CancellationToken cancellationToken = default)
+    {
+        SignOutEverywhereCount++;
+        Set(false);
+        return Task.CompletedTask;
+    }
+}

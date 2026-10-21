@@ -15,18 +15,21 @@ public sealed partial class UnlockedShellViewModel : ViewModelBase
     private GeneratorPageViewModel? _generatorPage;
     private SecurityPageViewModel? _securityPage;
     private SettingsPageViewModel? _settingsPage;
+    private AccountPageViewModel? _accountPage;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsVaultSelected))]
     [NotifyPropertyChangedFor(nameof(IsGeneratorSelected))]
     [NotifyPropertyChangedFor(nameof(IsSecuritySelected))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSelected))]
+    [NotifyPropertyChangedFor(nameof(IsAccountSelected))]
     public partial ViewModelBase? CurrentPage { get; set; }
 
     public bool IsVaultSelected => CurrentPage is VaultPageViewModel;
     public bool IsGeneratorSelected => CurrentPage is GeneratorPageViewModel;
     public bool IsSecuritySelected => CurrentPage is SecurityPageViewModel;
     public bool IsSettingsSelected => CurrentPage is SettingsPageViewModel;
+    public bool IsAccountSelected => CurrentPage is AccountPageViewModel;
 
     public UnlockedShellViewModel(IServiceProvider services, IVaultService vaultService)
     {
@@ -63,6 +66,14 @@ public sealed partial class UnlockedShellViewModel : ViewModelBase
     {
         _settingsPage ??= ActivatorUtilities.CreateInstance<SettingsPageViewModel>(_services);
         CurrentPage = _settingsPage;
+    }
+
+    [RelayCommand]
+    private void ShowAccount()
+    {
+        _accountPage ??= ActivatorUtilities.CreateInstance<AccountPageViewModel>(_services);
+        _ = _accountPage.RefreshAsync();
+        CurrentPage = _accountPage;
     }
 
     [RelayCommand]

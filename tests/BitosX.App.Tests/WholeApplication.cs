@@ -45,6 +45,9 @@ internal sealed class WholeApplication : IAsyncDisposable
 
     public ScriptedFilePicker Files { get; } = new();
 
+    /// <summary>The BitosX server, scripted: one account, two sessions, no network.</summary>
+    public ScriptedServer Server { get; } = new();
+
     /// <summary>How long a copied value stays on the clipboard; 30 seconds in the application.</summary>
     public TimeSpan ClipboardDelay { get; set; } = TimeSpan.FromSeconds(30);
 
@@ -62,7 +65,7 @@ internal sealed class WholeApplication : IAsyncDisposable
     /// <summary>The page shown in the main screen.</summary>
     public Control? Page => Window.GetVisualDescendants()
         .OfType<UserControl>()
-        .FirstOrDefault(c => c is VaultPageView or GeneratorPageView or SecurityPageView or SettingsPageView);
+        .FirstOrDefault(c => c is VaultPageView or GeneratorPageView or SecurityPageView or SettingsPageView or AccountPageView);
 
     /// <summary>The vault file as it is on disk.</summary>
     public byte[] VaultFile => File.ReadAllBytes(Location.VaultFilePath);
@@ -80,6 +83,7 @@ internal sealed class WholeApplication : IAsyncDisposable
             services.AddSingleton<ISystemSessionEvents>(Signals);
             services.AddSingleton<TimeProvider>(Clock);
             services.AddSingleton<IFilePicker>(Files);
+            services.AddSingleton<BitosX.ApiClient.IBitosXApiClient>(Server);
             services.AddSingleton(sp => new AutoLockService(
                 sp.GetRequiredService<AutoLockController>(),
                 sp.GetRequiredService<ISystemSessionEvents>(),

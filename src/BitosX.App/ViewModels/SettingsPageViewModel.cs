@@ -201,9 +201,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         DescribeVaultProtection();
         AlgorithmDescription = "AES-256-GCM (authenticated encryption)";
         ClipboardClearDescription = $"Copied secrets are cleared after {clipboard.ClearDelay.TotalSeconds:0} seconds.";
-        ServerIntegrationDescription = apiClient.IsServerIntegrationEnabled
-            ? "Enabled"
-            : "Disabled — this build is local-only. Nothing is sent to any server.";
+        ServerIntegrationDescription = apiClient.Server is { } server
+            ? $"Account sign-in via {server.DisplayName}. Only your account email and account password are sent, to sign in; "
+              + "your master password and your vault never leave this device."
+            : "Disabled for this run (--api-server none). Nothing is sent to any server.";
         AppVersion = AppVersionInfo.Display;
 
         SessionLockSupport = sessionEvents.IsSessionLockSupported
