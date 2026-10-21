@@ -35,4 +35,18 @@ public interface IAccountSession
 
     /// <summary>Ends every session of the account on the server and forgets the tokens. The tokens are forgotten even if the server cannot be told.</summary>
     Task SignOutEverywhereAsync(CancellationToken cancellationToken = default);
+
+    // ---- encrypted sync, with this session's token (docs/SYNC.md) ----
+
+    /// <summary>What the server holds for the account, or <see langword="null"/> when nothing.</summary>
+    Task<SyncStatus?> GetSyncStatusAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>The stored envelope, verified against the server's own statements about it, or <see langword="null"/> when nothing is stored.</summary>
+    Task<SyncEnvelope?> DownloadEnvelopeAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Stores the envelope if the server still holds <paramref name="baseRevision"/>; <see cref="ApiFailure.Conflict"/> otherwise.</summary>
+    Task<SyncStatus> UploadEnvelopeAsync(long baseRevision, ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken = default);
+
+    /// <summary>Removes the stored envelope from the server.</summary>
+    Task DeleteEnvelopeAsync(CancellationToken cancellationToken = default);
 }

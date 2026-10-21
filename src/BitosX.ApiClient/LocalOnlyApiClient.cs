@@ -38,4 +38,16 @@ public sealed class LocalOnlyApiClient : IBitosXApiClient
 
     public Task RevokeSessionAsync(string accessToken, Guid sessionId, CancellationToken cancellationToken = default)
         => throw new InvalidOperationException(Disabled);
+
+    public Task<SyncStatus?> GetSyncStatusAsync(string accessToken, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException(Disabled);
+
+    public Task<SyncEnvelope?> DownloadEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException(Disabled);
+
+    public Task<SyncStatus> UploadEnvelopeAsync(string accessToken, long baseRevision, ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException(Disabled);
+
+    public Task DeleteEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException(Disabled);
 }

@@ -1,10 +1,11 @@
 # BitosX
 
 BitosX is a security-focused password manager. This repository contains the cross-platform
-Avalonia desktop application: an **encrypted local vault**, and since 0.8.0 the **account
-sign-in** to the BitosX server. The vault stays on the device: there is intentionally **no sync,
-subscription, browser extension, or mobile app** yet, and nothing from the vault is ever sent to
-the server. See [docs/ACCOUNT.md](docs/ACCOUNT.md) for what the account is and is not.
+Avalonia desktop application: an **encrypted local vault**, the **account sign-in** to the BitosX
+server (0.8.0), and the **encrypted sync** of the vault through that server (0.9.0). The server
+stores the vault only as the encrypted file it is on disk and cannot open it; nothing decrypted is
+ever sent. There is intentionally **no subscription, browser extension, or mobile app** yet. See
+[docs/ACCOUNT.md](docs/ACCOUNT.md) and [docs/SYNC.md](docs/SYNC.md).
 
 ## What works in this milestone
 
@@ -24,6 +25,10 @@ the server. See [docs/ACCOUNT.md](docs/ACCOUNT.md) for what the account is and i
   password and on-disk format are unchanged). See [docs/KEY_ROTATION.md](docs/KEY_ROTATION.md).
 - Encrypted backup / export and restore (the encrypted envelope copied byte-for-byte; restore is
   authenticated and validated before it replaces the vault). See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
+- Encrypted sync through the BitosX account: the encrypted vault file goes up and comes down as
+  opaque bytes, revisions are compare-and-set, nothing is merged, and a conflict is shown with both
+  ways out rather than resolved. A downloaded vault is opened with its master password and validated
+  on the device before it replaces the local vault. See [docs/SYNC.md](docs/SYNC.md).
 - Add, edit, delete, favorite, and search login items; deleting is asked for and then confirmed.
 - Copy username / password to the clipboard with an automatic timed clear.
 - Show/hide passwords (hidden by default).

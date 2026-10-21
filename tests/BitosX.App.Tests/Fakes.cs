@@ -128,6 +128,17 @@ internal sealed class FakeVaultBackupService : IVaultBackupService
         return Task.FromResult(SamplePreview());
     }
 
+    public Task<BackupPreview> PrepareRestoreAsync(EncryptedVault envelope, string backupPassword, string sourceName, long sizeBytes, CancellationToken cancellationToken = default)
+    {
+        PrepareCount++;
+        if (PrepareThrow is not null)
+        {
+            throw PrepareThrow;
+        }
+
+        return Task.FromResult(new BackupPreview(envelope, envelope.Version, 3, sourceName, sizeBytes));
+    }
+
     public Task CommitRestoreAsync(BackupPreview preview, CancellationToken cancellationToken = default)
     {
         CommitCount++;
@@ -319,10 +330,132 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
         return Task.CompletedTask;
     }
 
+    // ---- sync: one stored envelope, compare-and-set on its revision, as the real server does ----
+
+    public byte[]? StoredEnvelope { get; private set; }
+    public long StoredRevision { get; private set; }
+    public int UploadCount { get; private set; }
+    public int DownloadCount { get; private set; }
+    public int DeleteCount { get; private set; }
+
+    /// <summary>Puts an envelope on the server from outside, as another device would.</summary>
+    public void Store(byte[] envelope)
+    {
+        StoredEnvelope = envelope;
+        StoredRevision++;
+    }
+
+    private BitosX.ApiClient.SyncStatus? Status()
+        => StoredEnvelope is null
+            ? null
+            : new(StoredRevision, BitosX.ApiClient.HttpBitosXApiClient.Fingerprint(StoredEnvelope), StoredEnvelope.Length, DateTimeOffset.UtcNow);
+
+    public Task<BitosX.ApiClient.SyncStatus?> GetSyncStatusAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        return Task.FromResult(Status());
+    }
+
+    public Task<BitosX.ApiClient.SyncEnvelope?> DownloadEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        DownloadCount++;
+        return Task.FromResult(Status() is { } status ? new BitosX.ApiClient.SyncEnvelope(status, StoredEnvelope!) : null);
+    }
+
+    public Task<BitosX.ApiClient.SyncStatus> UploadEnvelopeAsync(string accessToken, long baseRevision, ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        UploadCount++;
+        if (baseRevision != StoredRevision)
+        {
+            throw new BitosX.ApiClient.ApiException(BitosX.ApiClient.ApiFailure.Conflict, 409);
+        }
+
+        Store(envelope.ToArray());
+        return Task.FromResult(Status()!);
+    }
+
+    public Task DeleteEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        DeleteCount++;
+        StoredEnvelope = null;
+        return Task.CompletedTask;
+    }
+
     private static BitosX.ApiClient.AccountTokens Tokens()
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
         return new("jwt.test", now.AddMinutes(15), "refresh.test", now.AddDays(30));
+    }
+}
+
+/// <summary>A sync service the page tests script directly: what it answers, what it throws, what it was asked.</summary>
+internal sealed class FakeVaultSyncService : BitosX.ApiClient.Sync.IVaultSyncService
+{
+    private static readonly BitosX.ApiClient.SyncStatus SampleStatus = new(3, new string('a', 64), 2048, new DateTimeOffset(2026, 10, 20, 12, 0, 0, TimeSpan.Zero));
+
+    public BitosX.ApiClient.Sync.SyncResult NextResult { get; set; } = new(BitosX.ApiClient.Sync.SyncOutcome.UpToDate, SampleStatus, DateTimeOffset.UtcNow);
+    public Exception? Throws { get; set; }
+    public Exception? CommitThrows { get; set; }
+
+    public int SyncCount { get; private set; }
+    public int OverwriteCount { get; private set; }
+    public int DeleteCount { get; private set; }
+    public int CommitCount { get; private set; }
+    public List<string> PasswordsTried { get; } = [];
+    public BitosX.ApiClient.Sync.SyncDownload? Committed { get; private set; }
+
+    private void MaybeThrow()
+    {
+        if (Throws is not null)
+        {
+            throw Throws;
+        }
+    }
+
+    public Task<BitosX.ApiClient.Sync.SyncResult> SyncAsync(CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        SyncCount++;
+        return Task.FromResult(NextResult);
+    }
+
+    public Task<BitosX.ApiClient.Sync.SyncDownload> PrepareDownloadAsync(string masterPassword, CancellationToken cancellationToken = default)
+    {
+        PasswordsTried.Add(masterPassword);
+        MaybeThrow();
+        var envelope = new EncryptedVault(
+            1, "argon2id", Argon2Parameters.ForTesting,
+            new byte[16], "AES-256-GCM", new byte[12], new byte[48], new byte[12], new byte[62]);
+        return Task.FromResult(new BitosX.ApiClient.Sync.SyncDownload(new BackupPreview(envelope, 1, 7, "server revision 3", 2048), SampleStatus));
+    }
+
+    public Task CommitDownloadAsync(BitosX.ApiClient.Sync.SyncDownload download, CancellationToken cancellationToken = default)
+    {
+        if (CommitThrows is not null)
+        {
+            throw CommitThrows;
+        }
+
+        CommitCount++;
+        Committed = download;
+        return Task.CompletedTask;
+    }
+
+    public Task<BitosX.ApiClient.Sync.SyncResult> OverwriteServerAsync(CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        OverwriteCount++;
+        return Task.FromResult(new BitosX.ApiClient.Sync.SyncResult(BitosX.ApiClient.Sync.SyncOutcome.Uploaded, SampleStatus with { Revision = 4 }, DateTimeOffset.UtcNow));
+    }
+
+    public Task DeleteFromServerAsync(CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        DeleteCount++;
+        return Task.CompletedTask;
     }
 }
 
@@ -393,6 +526,11 @@ internal sealed class FakeAccountSession : BitosX.ApiClient.IAccountSession
         Set(false);
         return SignOutThrows is not null ? Task.FromException(SignOutThrows) : Task.CompletedTask;
     }
+
+    public Task<BitosX.ApiClient.SyncStatus?> GetSyncStatusAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<BitosX.ApiClient.SyncEnvelope?> DownloadEnvelopeAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<BitosX.ApiClient.SyncStatus> UploadEnvelopeAsync(long baseRevision, ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task DeleteEnvelopeAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
     public Task SignOutEverywhereAsync(CancellationToken cancellationToken = default)
     {

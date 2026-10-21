@@ -14,8 +14,10 @@ milestone and how to report issues. Detailed models live in [`docs/`](docs/):
 
 - **The vault stays local.** The master password, plaintext secrets, the raw vault key, and
   decrypted vault contents are never sent to a server. Since 0.8.0 the application talks to the
-  BitosX server for the account only; what is sent is listed in
-  [docs/ACCOUNT.md](docs/ACCOUNT.md). `--api-server none` makes a run local-only.
+  BitosX server for the account, and since 0.9.0 it can store the vault there as the encrypted file
+  it is on disk, which the server cannot open; what is sent is listed in
+  [docs/ACCOUNT.md](docs/ACCOUNT.md) and [docs/SYNC.md](docs/SYNC.md). `--api-server none` makes a
+  run local-only.
 - **Fail closed.** Unknown formats, unsupported versions, corrupted data, and authentication
   failures are rejected. There is never a plaintext fallback.
 - **No backdoors.** There is no universal decryption key, no hidden recovery access, and no

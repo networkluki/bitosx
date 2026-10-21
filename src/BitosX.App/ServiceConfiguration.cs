@@ -1,4 +1,5 @@
 using BitosX.ApiClient;
+using BitosX.ApiClient.Sync;
 using BitosX.App.Services;
 using BitosX.App.ViewModels;
 using BitosX.Core.Generation;
@@ -102,7 +103,8 @@ public static class ServiceConfiguration
         services.AddSingleton<AutoLockController>();
         services.AddSingleton<AutoLockService>();
 
-        // The BitosX server: account sign-in only. Nothing of the vault ever goes through it.
+        // The BitosX server: account sign-in, and the encrypted envelope up and down (docs/SYNC.md).
+        // Nothing decrypted ever goes through it.
         services.AddSingleton<IBitosXApiClient>(sp => server is null
             ? new LocalOnlyApiClient()
             : HttpBitosXApiClient.Create(server, AppVersionInfo.Display, sp.GetRequiredService<ILogger<HttpBitosXApiClient>>()));
@@ -111,6 +113,15 @@ public static class ServiceConfiguration
             sp.GetRequiredService<IVaultService>(),
             sp.GetRequiredService<TimeProvider>(),
             sp.GetRequiredService<ILogger<AccountSession>>()));
+        services.AddSingleton<ISyncStateStore>(_ => new FileSyncStateStore(location.SyncStateFilePath));
+        services.AddSingleton<IVaultSyncService>(sp => new VaultSyncService(
+            sp.GetRequiredService<IAccountSession>(),
+            sp.GetRequiredService<IVaultService>(),
+            sp.GetRequiredService<ILocalVaultStorage>(),
+            sp.GetRequiredService<IVaultBackupService>(),
+            sp.GetRequiredService<ISyncStateStore>(),
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<VaultSyncService>>()));
 
         // View models
         services.AddSingleton<MainWindowViewModel>();

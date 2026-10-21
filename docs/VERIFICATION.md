@@ -638,6 +638,20 @@ On these figures new vaults are created with 256 MiB since this release; see
 | The file dialogs of Linux and macOS | The application has not been started there |
 | That Windows keeps a copied secret out of its clipboard history, for this release | `tools/BitosX.ClipboardProbe` ran on Windows Server 2025, where the history is turned off: its 16 other checks passed and the two of the history were left out. They were last made on a desktop with the history turned on for 0.6.0; the code they exercise is unchanged |
 
+## Encrypted sync (0.9.0) — automated tested
+
+| Item | Status | Evidence |
+|---|---|---|
+| What each sync call sends; a fingerprint, size or revision the server states that does not match the bytes is refused; 409 is a conflict with none of the server's text | AUTOMATED TESTED | `HttpBitosXApiClientSyncTests`. |
+| Every row of the decision table in SYNC.md, with the record and the vault proven unchanged where nothing may change; a raced upload is a conflict that records nothing | AUTOMATED TESTED | `VaultSyncServiceTests`. |
+| A download replaces the vault before the record is updated; a failed write records nothing; bytes that are not a vault are refused before the password is used | AUTOMATED TESTED | `VaultSyncServiceTests` (`CommitDownload_…`, `PrepareDownload_…`). |
+| The sync record: round trip, atomic write, every malformed or implausible file reads as never synced | AUTOMATED TESTED | `FileSyncStateStoreTests`. |
+| The Sync card: no replacement without the acknowledgement; the acknowledgement impossible before a validated download; the master password cleared after every attempt; each failure's sentence | AUTOMATED TESTED | `VaultSyncViewModelTests`. |
+| The whole application: the first sync uploads the vault file byte for byte; a conflict shows both ways out and uploads nothing | AUTOMATED TESTED | `ViewAppearanceTests.Account`. |
+| Every control of the card has a name; the card is drawn at both sizes, synced and in conflict | AUTOMATED TESTED | `AccessibilityTests`, `ViewAppearanceTests.Account`. |
+| No method of `IBitosXApiClient` can carry decrypted vault content | VERIFIED | The sync methods take and return the encrypted envelope as bytes; nothing else of the vault. |
+| **Against the real server; between two real devices** | **NOT VERIFIED** | `api.bitosx.se` is not publicly reachable yet; see `bitosx-api/docs/DEPLOYMENT.md`. |
+
 ## Account sign-in (0.8.0) — automated tested
 
 | Item | Status | Evidence |

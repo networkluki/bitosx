@@ -38,7 +38,16 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.8.0`** — the account: the application signs in to the BitosX server (`api.bitosx.se`)
+**`0.9.0`** — encrypted sync: the vault file, as encrypted on the device, is stored on the BitosX
+server through the account and brought to another device. The server holds opaque bytes and a
+fingerprint, never a key; revisions are compare-and-set; nothing is merged, and when both a device
+and the server have changed the user is shown both ways out and nothing happens until they choose.
+A downloaded vault is opened with its master password and validated on the device, behind an
+acknowledgement, before it replaces the local vault, with a recovery copy kept. A small sync record
+(`sync-state.json`) lives next to the vault. See [SYNC.md](SYNC.md). The on-disk vault format is
+unchanged (still v1). **Not verified:** against the real server, or between two real devices.
+
+Builds on `0.8.0` — the account: the application signs in to the BitosX server (`api.bitosx.se`)
 with the account email and account password, shows the account and its sessions, and can end
 them. Nothing syncs yet, and nothing from the vault is sent: the server has no vault endpoints
 and the client has no method that could carry vault content. Tokens are held in memory only

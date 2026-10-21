@@ -21,7 +21,8 @@ namespace BitosX.ApiClient;
 /// token about to expire wait for the one refresh in flight.</item>
 /// <item><b>A 401 ends the session.</b> The server never says why; the tokens are dropped and the
 /// user signs in again.</item>
-/// <item><b>Zero-knowledge.</b> Nothing here touches the vault service beyond its lock state.</item>
+/// <item><b>Zero-knowledge.</b> Nothing here touches the vault service beyond its lock state. The
+/// sync calls pass the encrypted envelope through as the bytes they are given.</item>
 /// </list>
 /// Managed strings cannot be wiped reliably (see docs/SECURITY_MODEL.md); the tokens are
 /// short-lived and dropped as early as possible, which is what can be done.
@@ -93,6 +94,22 @@ public sealed class AccountSession : IAccountSession, IDisposable
         => AuthenticatedAsync(async (token, ct) =>
         {
             await _api.RevokeSessionAsync(token, sessionId, ct).ConfigureAwait(false);
+            return true;
+        }, cancellationToken);
+
+    public Task<SyncStatus?> GetSyncStatusAsync(CancellationToken cancellationToken = default)
+        => AuthenticatedAsync((token, ct) => _api.GetSyncStatusAsync(token, ct), cancellationToken);
+
+    public Task<SyncEnvelope?> DownloadEnvelopeAsync(CancellationToken cancellationToken = default)
+        => AuthenticatedAsync((token, ct) => _api.DownloadEnvelopeAsync(token, ct), cancellationToken);
+
+    public Task<SyncStatus> UploadEnvelopeAsync(long baseRevision, ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken = default)
+        => AuthenticatedAsync((token, ct) => _api.UploadEnvelopeAsync(token, baseRevision, envelope, ct), cancellationToken);
+
+    public Task DeleteEnvelopeAsync(CancellationToken cancellationToken = default)
+        => AuthenticatedAsync(async (token, ct) =>
+        {
+            await _api.DeleteEnvelopeAsync(token, ct).ConfigureAwait(false);
             return true;
         }, cancellationToken);
 

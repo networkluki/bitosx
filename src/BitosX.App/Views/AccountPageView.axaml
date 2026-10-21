@@ -13,7 +13,7 @@
         <StackPanel Margin="24" Spacing="16" MaxWidth="640" HorizontalAlignment="Left">
             <TextBlock Text="Account" Classes="h1" />
             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                       Text="Your BitosX account signs you in to the BitosX server. It is separate from your vault: the account password is not the master password, and nothing from the vault is sent. Nothing syncs yet; this is the account only." />
+                       Text="Your BitosX account signs you in to the BitosX server. It is separate from your vault: the account password is not the master password. Sync sends the vault only as the encrypted file it is on disk; the server cannot open it." />
 
             <!-- No server for this run -->
             <Border Classes="card" IsVisible="{Binding !IsAvailable}">
@@ -92,6 +92,56 @@
 
             <TextBlock Name="AccountStatus" Text="{Binding Status}" TextWrapping="Wrap" Classes="muted"
                        IsVisible="{Binding Status, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+            <!-- Encrypted sync: the vault file goes up and comes down as it is; see docs/SYNC.md -->
+            <Border Name="SyncPanel" Classes="card" IsVisible="{Binding IsSignedIn}">
+                <StackPanel Spacing="10" DataContext="{Binding Sync}" x:DataType="vm:VaultSyncViewModel">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Grid.Column="0" Text="Sync" Classes="h2" VerticalAlignment="Center" />
+                        <Button Name="SyncNowButton" Grid.Column="1" Content="Sync now" Classes="accent" Command="{Binding SyncNowCommand}" />
+                    </Grid>
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="Sync uploads this device's encrypted vault when only this device has changed, and tells you when the server has a newer vault. Nothing is merged and nothing is replaced without your confirmation. The server stores the vault exactly as encrypted here and never holds a key." />
+                    <TextBlock Name="SyncSummary" Text="{Binding Summary}" TextWrapping="Wrap" FontSize="12"
+                               IsVisible="{Binding Summary, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                    <TextBlock Name="SyncStatus" Text="{Binding Status}" TextWrapping="Wrap" Classes="muted"
+                               IsVisible="{Binding Status, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+                    <!-- Take the server's vault: its master password first, then an explicit confirmation -->
+                    <StackPanel Name="TakeServerVaultPanel" Spacing="8" IsVisible="{Binding CanTakeServerVault}">
+                        <TextBlock Text="Take the server's vault" FontWeight="SemiBold" />
+                        <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                   Text="Enter the master password of the vault on the server. It is checked on this device only; the server never sees it. The vault on this device is replaced only after you confirm, and a recovery copy of it is kept." />
+                        <controls:SecretBox Name="ServerVaultPasswordBox" AutomationProperties.Name="Master password of the server's vault"
+                                            PlaceholderText="Master password of the server's vault" Text="{Binding DownloadMasterPassword}" />
+                        <Button Name="OpenServerVaultButton" Content="Check with that master password" Command="{Binding PrepareDownloadCommand}" HorizontalAlignment="Left" />
+                        <Border Name="DownloadConfirmPanel" IsVisible="{Binding IsDownloadPending}" Padding="12" CornerRadius="6" Background="#22CC3333">
+                            <StackPanel Spacing="8">
+                                <TextBlock Name="DownloadSummary" Text="{Binding DownloadSummary}" TextWrapping="Wrap" Classes="muted" />
+                                <CheckBox Name="DownloadAcknowledgeCheckBox" IsChecked="{Binding DownloadAcknowledged}"
+                                          Content="I understand that the vault on this device is replaced with the server's and locked" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Name="ReplaceLocalVaultButton" Content="Replace the vault on this device" Command="{Binding ConfirmDownloadCommand}"
+                                            Foreground="{StaticResource BitosXDangerBrush}" />
+                                    <Button Name="CancelDownloadButton" Content="Cancel" Command="{Binding CancelDownloadCommand}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Changes to what every device sees: behind one acknowledgement -->
+                    <StackPanel Name="ServerChangePanel" Spacing="8">
+                        <CheckBox Name="ServerChangeAcknowledgeCheckBox" IsChecked="{Binding ServerChangeAcknowledged}"
+                                  Content="I understand that this changes the vault on the server for every device" />
+                        <StackPanel Spacing="8">
+                            <Button Name="OverwriteServerButton" Content="Replace the server's vault with this device's" Command="{Binding OverwriteServerCommand}"
+                                    IsVisible="{Binding IsConflict}" Foreground="{StaticResource BitosXDangerBrush}" HorizontalAlignment="Left" />
+                            <Button Name="RemoveFromServerButton" Content="Remove the vault from the server" Command="{Binding RemoveFromServerCommand}"
+                                    Foreground="{StaticResource BitosXDangerBrush}" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>
