@@ -18,7 +18,10 @@ public sealed class LocalOnlyApiClient : IBitosXApiClient
         return Task.FromResult(false);
     }
 
-    public Task<AccountTokens> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
+    public Task<SignInResult> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException(Disabled);
+
+    public Task<AccountTokens> CompleteSecondFactorAsync(string mfaToken, string code, CancellationToken cancellationToken = default)
         => throw new InvalidOperationException(Disabled);
 
     public Task<AccountTokens> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)

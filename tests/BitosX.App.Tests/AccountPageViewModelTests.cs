@@ -115,6 +115,100 @@ public sealed class AccountPageViewModelTests
         Assert.False(page.IsSignedIn);
     }
 
+    // ---- second factor ----
+
+    [Fact]
+    public async Task ASecondFactor_SwitchesToTheCodeStep_AndTheCodeSignsIn()
+    {
+        FakeAccountSession session = NewSession();
+        session.RequiresSecondFactor = true;
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService()) { Email = "alice@example.com", Password = "correct horse battery" };
+
+        await page.SignInCommand.ExecuteAsync(null);
+
+        Assert.False(page.IsSignedIn);
+        Assert.True(page.IsAwaitingCode);
+        Assert.False(page.IsEnteringCredentials);
+        Assert.Equal(string.Empty, page.Password); // the password never waits on the page
+        Assert.Contains("authenticator app", page.Status, StringComparison.Ordinal);
+        Assert.False(page.SignInCommand.CanExecute(null));
+        Assert.False(page.SubmitCodeCommand.CanExecute(null)); // nothing typed yet
+
+        page.Code = " 123456 ";
+        Assert.True(page.SubmitCodeCommand.CanExecute(null));
+        await page.SubmitCodeCommand.ExecuteAsync(null);
+
+        Assert.Equal("123456", session.LastCode);
+        Assert.True(page.IsSignedIn);
+        Assert.False(page.IsAwaitingCode);
+        Assert.Equal(string.Empty, page.Code);
+        Assert.Equal("Signed in.", page.Status);
+        Assert.Equal("alice@example.com", page.ProfileEmail);
+    }
+
+    [Fact]
+    public async Task AWrongCode_SaysSo_StaysOnTheCodeStep_AndClearsTheCode()
+    {
+        FakeAccountSession session = NewSession();
+        session.RequiresSecondFactor = true;
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService()) { Email = "alice@example.com", Password = "correct horse battery" };
+        await page.SignInCommand.ExecuteAsync(null);
+
+        page.Code = "000000";
+        await page.SubmitCodeCommand.ExecuteAsync(null);
+
+        Assert.Contains("not accepted", page.Status, StringComparison.Ordinal);
+        Assert.True(page.IsAwaitingCode);
+        Assert.False(page.IsSignedIn);
+        Assert.Equal(string.Empty, page.Code);
+
+        // A recovery code is accepted in its written form.
+        session.AcceptedCode = "abcde-fghjk";
+        page.Code = "abcde-fghjk";
+        await page.SubmitCodeCommand.ExecuteAsync(null);
+        Assert.True(page.IsSignedIn);
+    }
+
+    [Theory]
+    [InlineData("12345")]
+    [InlineData("12345a")]
+    [InlineData("abcde-fghj")]
+    [InlineData("abcde_fghjk")]
+    public async Task ACodeThatCannotBeRight_IsCaughtBeforeAnyRoundTrip(string code)
+    {
+        FakeAccountSession session = NewSession();
+        session.RequiresSecondFactor = true;
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService()) { Email = "alice@example.com", Password = "correct horse battery" };
+        await page.SignInCommand.ExecuteAsync(null);
+
+        page.Code = code;
+        await page.SubmitCodeCommand.ExecuteAsync(null);
+
+        Assert.Null(session.LastCode);
+        Assert.Contains("6-digit code", page.Status, StringComparison.Ordinal);
+        Assert.True(page.IsAwaitingCode);
+    }
+
+    [Fact]
+    public async Task StartOver_DropsTheChallenge_AndReturnsToThePassword()
+    {
+        FakeAccountSession session = NewSession();
+        session.RequiresSecondFactor = true;
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService()) { Email = "alice@example.com", Password = "correct horse battery" };
+        await page.SignInCommand.ExecuteAsync(null);
+        page.Code = "123";
+
+        Assert.True(page.CancelCodeCommand.CanExecute(null));
+        page.CancelCodeCommand.Execute(null);
+
+        Assert.False(page.IsAwaitingCode);
+        Assert.True(page.IsEnteringCredentials);
+        Assert.False(session.IsAwaitingSecondFactor);
+        Assert.Equal(string.Empty, page.Code);
+        Assert.Equal("alice@example.com", page.Email);
+        Assert.Null(page.Status);
+    }
+
     [Fact]
     public async Task ARateLimit_SaysHowLongToWait()
     {

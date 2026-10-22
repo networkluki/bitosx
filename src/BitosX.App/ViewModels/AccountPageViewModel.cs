@@ -8,8 +8,8 @@ using CommunityToolkit.Mvvm.Input;
 namespace BitosX.App.ViewModels;
 
 /// <summary>
-/// The Account page: sign in to the BitosX server with the account email and password, see the
-/// account and its sessions, end sessions, sign out. The account is a different thing from the
+/// The Account page: sign in to the BitosX server with the account email and password (and, when the
+/// account has one, a second-factor code), see the account and its sessions, end sessions, sign out. The account is a different thing from the
 /// vault: nothing on this page reads or sends vault contents, and the account password is not
 /// the master password. The encrypted sync lives in <see cref="Sync"/>, shown while signed in.
 /// </summary>
@@ -59,6 +59,22 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
     [NotifyCanExecuteChangedFor(nameof(SignInCommand))]
     public partial string Password { get; set; } = string.Empty;
 
+    /// <summary>The password was accepted and the server waits for a code from the authenticator app (or a recovery code).</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEnteringCredentials))]
+    [NotifyCanExecuteChangedFor(nameof(SignInCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SubmitCodeCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelCodeCommand))]
+    public partial bool IsAwaitingCode { get; private set; }
+
+    /// <summary>The email and password boxes: shown while signed out and not waiting for a code.</summary>
+    public bool IsEnteringCredentials => !IsAwaitingCode;
+
+    /// <summary>The second-factor code as typed: 6 digits from the app, or a recovery code.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SubmitCodeCommand))]
+    public partial string Code { get; set; } = string.Empty;
+
     /// <summary>What the page has to say about the last thing that happened; nothing when all is well.</summary>
     [ObservableProperty]
     public partial string? Status { get; set; }
@@ -66,6 +82,8 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
     /// <summary>A call to the server is in flight. Buttons wait for it.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SignInCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SubmitCodeCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelCodeCommand))]
     [NotifyCanExecuteChangedFor(nameof(RefreshSessionsCommand))]
     [NotifyCanExecuteChangedFor(nameof(SignOutCommand))]
     [NotifyCanExecuteChangedFor(nameof(SignOutEverywhereCommand))]
@@ -83,7 +101,11 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
 
     public ObservableCollection<AccountSessionItemViewModel> Sessions { get; } = [];
 
-    private bool CanSignIn() => !IsBusy && IsAvailable && !IsSignedIn && Email.Length > 0 && Password.Length > 0;
+    private bool CanSignIn() => !IsBusy && IsAvailable && !IsSignedIn && !IsAwaitingCode && Email.Length > 0 && Password.Length > 0;
+
+    private bool CanSubmitCode() => !IsBusy && IsAvailable && !IsSignedIn && IsAwaitingCode && Code.Trim().Length > 0;
+
+    private bool CanCancelCode() => !IsBusy && IsAwaitingCode;
 
     private bool CanAct() => !IsBusy && IsAvailable && IsSignedIn;
 
@@ -122,13 +144,79 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
 
         await RunAsync(async ct =>
         {
-            await _session.SignInAsync(email, password, ct).ConfigureAwait(true);
+            SignInOutcome outcome = await _session.SignInAsync(email, password, ct).ConfigureAwait(true);
+            if (outcome == SignInOutcome.SecondFactorRequired)
+            {
+                IsAwaitingCode = true;
+                Code = string.Empty;
+                return "Enter the 6-digit code from your authenticator app, or one of your recovery codes.";
+            }
+
             await LoadAsync(ct).ConfigureAwait(true);
             return "Signed in.";
         }, context: "sign in").ConfigureAwait(true);
 
         // The password has done its job; it is not kept on the page whatever the outcome.
         Password = string.Empty;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSubmitCode))]
+    private async Task SubmitCodeAsync()
+    {
+        string code = Code.Trim();
+        if (!LooksLikeACode(code))
+        {
+            Status = "Enter the 6-digit code from your authenticator app, or a recovery code (xxxxx-xxxxx).";
+            return;
+        }
+
+        await RunAsync(async ct =>
+        {
+            await _session.CompleteSignInAsync(code, ct).ConfigureAwait(true);
+            IsAwaitingCode = false;
+            await LoadAsync(ct).ConfigureAwait(true);
+            return "Signed in.";
+        }, context: "code").ConfigureAwait(true);
+
+        // A code is single use either way; it never stays on the page.
+        Code = string.Empty;
+        if (!_session.IsAwaitingSecondFactor && !IsSignedIn)
+        {
+            IsAwaitingCode = false; // the challenge is gone (expired or spent): back to the password
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCancelCode))]
+    private void CancelCode()
+    {
+        _session.CancelSignIn();
+        Code = string.Empty;
+        IsAwaitingCode = false;
+        Status = null;
+    }
+
+    /// <summary>6 digits, or 10 letters/digits with an optional hyphen or space in the middle. The server decides; this only saves a round trip.</summary>
+    internal static bool LooksLikeACode(string code)
+    {
+        if (code.Length == 6 && code.All(char.IsAsciiDigit))
+        {
+            return true;
+        }
+
+        int letters = 0;
+        foreach (char c in code)
+        {
+            if (char.IsAsciiLetterOrDigit(c))
+            {
+                letters++;
+            }
+            else if (c is not ('-' or ' '))
+            {
+                return false;
+            }
+        }
+
+        return letters == 10 && code.Length <= 12;
     }
 
     [RelayCommand(CanExecute = nameof(CanAct))]
@@ -238,6 +326,8 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
     internal static string Describe(ApiException ex, string? context) => ex.Failure switch
     {
         ApiFailure.Unauthenticated when context == "sign in" => "Invalid email or password.",
+        ApiFailure.Unauthenticated when context == "code" => "The code was not accepted. Try the next code from your app, or start over with your password.",
+        ApiFailure.Unavailable when context is "sign in" or "code" => "Two-factor sign-in is temporarily unavailable on the server. Try again shortly.",
         ApiFailure.Unauthenticated => "The session has ended. Sign in again.",
         ApiFailure.RateLimited when ex.RetryAfter is { } wait =>
             string.Create(CultureInfo.CurrentCulture, $"Too many attempts. Try again in about {Math.Max(1, Math.Ceiling(wait.TotalSeconds))} seconds."),
@@ -270,6 +360,12 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
         {
             ClearAccount();
             Status ??= "Signed out.";
+        }
+
+        if (signedIn)
+        {
+            IsAwaitingCode = false;
+            Code = string.Empty;
         }
     }
 

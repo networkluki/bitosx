@@ -2,7 +2,8 @@
 
 BitosX is a security-focused password manager. This repository contains the cross-platform
 Avalonia desktop application: an **encrypted local vault**, the **account sign-in** to the BitosX
-server (0.8.0), and the **encrypted sync** of the vault through that server (0.9.0). The server
+server (0.8.0, with a second-factor step since 0.10.0), and the **encrypted sync** of the vault
+through that server (0.9.0). The server
 stores the vault only as the encrypted file it is on disk and cannot open it; nothing decrypted is
 ever sent. There is intentionally **no subscription, browser extension, or mobile app** yet. See
 [docs/ACCOUNT.md](docs/ACCOUNT.md) and [docs/SYNC.md](docs/SYNC.md).

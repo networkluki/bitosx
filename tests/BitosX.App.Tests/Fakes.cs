@@ -266,11 +266,32 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
 
     public Task<bool> PingAsync(CancellationToken cancellationToken = default) => Task.FromResult(Throws is null);
 
-    public Task<BitosX.ApiClient.AccountTokens> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
+    /// <summary>When set, the password step answers with a challenge and this code completes it.</summary>
+    public string? SecondFactorCode { get; set; }
+    public int SecondFactorCount { get; private set; }
+
+    public Task<BitosX.ApiClient.SignInResult> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         MaybeThrow();
         LoginCount++;
         if (!string.Equals(email, Email, StringComparison.OrdinalIgnoreCase) || !string.Equals(password, Password, StringComparison.Ordinal))
+        {
+            throw new BitosX.ApiClient.ApiException(BitosX.ApiClient.ApiFailure.Unauthenticated, 401);
+        }
+
+        if (SecondFactorCode is not null)
+        {
+            return Task.FromResult(BitosX.ApiClient.SignInResult.SecondFactor(new BitosX.ApiClient.SecondFactorChallenge(new string('M', 43), DateTimeOffset.UtcNow.AddMinutes(5))));
+        }
+
+        return Task.FromResult(BitosX.ApiClient.SignInResult.SignedIn(Tokens()));
+    }
+
+    public Task<BitosX.ApiClient.AccountTokens> CompleteSecondFactorAsync(string mfaToken, string code, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        SecondFactorCount++;
+        if (mfaToken != new string('M', 43) || SecondFactorCode is null || !string.Equals(code, SecondFactorCode, StringComparison.Ordinal))
         {
             throw new BitosX.ApiClient.ApiException(BitosX.ApiClient.ApiFailure.Unauthenticated, 401);
         }
@@ -471,6 +492,12 @@ internal sealed class FakeAccountSession : BitosX.ApiClient.IAccountSession
     public event EventHandler? Changed;
 
     public (string Email, string Password)? LastSignIn { get; private set; }
+    public string? LastCode { get; private set; }
+
+    /// <summary>When true the password step asks for a code; <see cref="AcceptedCode"/> completes it.</summary>
+    public bool RequiresSecondFactor { get; set; }
+    public string AcceptedCode { get; set; } = "123456";
+    public bool IsAwaitingSecondFactor { get; private set; }
 
     public BitosX.ApiClient.ApiException? SignInThrows { get; set; }
     public BitosX.ApiClient.ApiException? ProfileThrows { get; set; }
@@ -489,17 +516,39 @@ internal sealed class FakeAccountSession : BitosX.ApiClient.IAccountSession
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
-    public Task SignInAsync(string email, string password, CancellationToken cancellationToken = default)
+    public Task<BitosX.ApiClient.SignInOutcome> SignInAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         LastSignIn = (email, password);
+        IsAwaitingSecondFactor = false;
         if (SignInThrows is not null)
         {
-            return Task.FromException(SignInThrows);
+            return Task.FromException<BitosX.ApiClient.SignInOutcome>(SignInThrows);
+        }
+
+        if (RequiresSecondFactor)
+        {
+            IsAwaitingSecondFactor = true;
+            return Task.FromResult(BitosX.ApiClient.SignInOutcome.SecondFactorRequired);
         }
 
         Set(true);
+        return Task.FromResult(BitosX.ApiClient.SignInOutcome.SignedIn);
+    }
+
+    public Task CompleteSignInAsync(string code, CancellationToken cancellationToken = default)
+    {
+        LastCode = code;
+        if (!IsAwaitingSecondFactor || !string.Equals(code, AcceptedCode, StringComparison.Ordinal))
+        {
+            return Task.FromException(new BitosX.ApiClient.ApiException(BitosX.ApiClient.ApiFailure.Unauthenticated, 401));
+        }
+
+        IsAwaitingSecondFactor = false;
+        Set(true);
         return Task.CompletedTask;
     }
+
+    public void CancelSignIn() => IsAwaitingSecondFactor = false;
 
     public Task<BitosX.ApiClient.AccountProfile> GetProfileAsync(CancellationToken cancellationToken = default)
         => ProfileThrows is not null

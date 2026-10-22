@@ -12,6 +12,9 @@ namespace BitosX.ApiClient;
 /// <item><b>Memory only.</b> Nothing is written to disk. Closing BitosX, locking the vault, or
 /// signing out forgets the tokens; the next run signs in again. OS-protected storage for the
 /// refresh token is a later milestone (<c>ISecureStorage</c>).</item>
+/// <item><b>Second factor.</b> When the server answers the password with a challenge, only that
+/// one-step token is held (memory, 5 minutes) until a code from the authenticator app completes
+/// the sign-in; there is no session, and nothing authenticated can be called, in between.</item>
 /// <item><b>Tied to the vault.</b> When the vault locks — by hand, by inactivity, by the
 /// workstation locking, or because a fault locked it — the account is signed out as well: the
 /// server is told, best effort, and the tokens are dropped either way. An unattended machine
@@ -39,6 +42,7 @@ public sealed class AccountSession : IAccountSession, IDisposable
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private readonly object _stateLock = new();
     private AccountTokens? _tokens;
+    private SecondFactorChallenge? _challenge;
     private bool _disposed;
 
     public AccountSession(IBitosXApiClient api, IVaultService vault, TimeProvider clock, ILogger<AccountSession> logger)
@@ -67,14 +71,80 @@ public sealed class AccountSession : IAccountSession, IDisposable
 
     public event EventHandler? Changed;
 
-    public async Task SignInAsync(string email, string password, CancellationToken cancellationToken = default)
+    public bool IsAwaitingSecondFactor
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return _challenge is not null && _challenge.ExpiresAt > _clock.GetUtcNow();
+            }
+        }
+    }
+
+    public async Task<SignInOutcome> SignInAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(email);
         ArgumentNullException.ThrowIfNull(password);
         EnsureAvailable();
 
         Forget("signing in again");
-        AccountTokens tokens = await _api.LoginAsync(email, password, cancellationToken).ConfigureAwait(false);
+        CancelSignIn();
+        SignInResult result = await _api.LoginAsync(email, password, cancellationToken).ConfigureAwait(false);
+        if (result.Challenge is { } challenge)
+        {
+            // No session yet: only the one-step challenge token is kept, until a code completes it.
+            lock (_stateLock)
+            {
+                _challenge = challenge;
+            }
+
+            ApiLog.SecondFactorRequired(_logger);
+            return SignInOutcome.SecondFactorRequired;
+        }
+
+        Adopt(result.Tokens ?? throw new ApiException(ApiFailure.Unexpected, 200));
+        return SignInOutcome.SignedIn;
+    }
+
+    public async Task CompleteSignInAsync(string code, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(code);
+        EnsureAvailable();
+
+        SecondFactorChallenge? challenge;
+        lock (_stateLock)
+        {
+            challenge = _challenge is not null && _challenge.ExpiresAt > _clock.GetUtcNow() ? _challenge : null;
+        }
+
+        if (challenge is null)
+        {
+            CancelSignIn();
+            throw new ApiException(ApiFailure.Unauthenticated, 401); // nothing to complete: start over with the password
+        }
+
+        // A refused code (401) leaves the challenge in place: the server allows a few tries before it dies,
+        // and the user can always start over. Any other failure also keeps it; nothing is half-adopted.
+        AccountTokens tokens = await _api.CompleteSecondFactorAsync(challenge.MfaToken, code, cancellationToken).ConfigureAwait(false);
+        lock (_stateLock)
+        {
+            _challenge = null;
+        }
+
+        Adopt(tokens);
+    }
+
+    public void CancelSignIn()
+    {
+        lock (_stateLock)
+        {
+            _challenge = null;
+        }
+    }
+
+    private void Adopt(AccountTokens tokens)
+    {
         lock (_stateLock)
         {
             _tokens = tokens;
@@ -253,12 +323,13 @@ public sealed class AccountSession : IAccountSession, IDisposable
         }
     }
 
-    /// <summary>Drops the tokens. Raises <see cref="Changed"/> only if there were any.</summary>
+    /// <summary>Drops the tokens (and any half-done sign-in). Raises <see cref="Changed"/> only if there were tokens.</summary>
     private void Forget(string reason)
     {
         bool had;
         lock (_stateLock)
         {
+            _challenge = null;
             had = _tokens is not null;
             _tokens = null;
         }
@@ -274,7 +345,14 @@ public sealed class AccountSession : IAccountSession, IDisposable
     // tokens are already gone locally — so a server that cannot be reached cannot keep them alive.
     private void OnVaultStateChanged(object? sender, VaultState state)
     {
-        if (state == VaultState.Unlocked || !IsSignedIn)
+        if (state == VaultState.Unlocked)
+        {
+            return;
+        }
+
+        // A half-done sign-in dies with the lock too: an unattended machine holds no challenge token either.
+        CancelSignIn();
+        if (!IsSignedIn)
         {
             return;
         }

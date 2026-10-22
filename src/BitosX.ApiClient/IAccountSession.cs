@@ -18,8 +18,24 @@ public interface IAccountSession
     /// <summary>Raised after <see cref="IsSignedIn"/> changes — on signing in, and on every way of signing out.</summary>
     event EventHandler? Changed;
 
-    /// <summary>Signs in. On success the tokens are held until sign-out, lock, or exit.</summary>
-    Task SignInAsync(string email, string password, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Whether a sign-in is half done: the password was accepted and the server waits for a second-factor
+    /// code. The challenge is held in memory until <see cref="CompleteSignInAsync"/> succeeds,
+    /// <see cref="CancelSignIn"/>, a new <see cref="SignInAsync"/>, or any sign-out.
+    /// </summary>
+    bool IsAwaitingSecondFactor { get; }
+
+    /// <summary>
+    /// Signs in. <see cref="SignInOutcome.SignedIn"/>: the tokens are held until sign-out, lock, or exit.
+    /// <see cref="SignInOutcome.SecondFactorRequired"/>: no session yet; call <see cref="CompleteSignInAsync"/> with a code.
+    /// </summary>
+    Task<SignInOutcome> SignInAsync(string email, string password, CancellationToken cancellationToken = default);
+
+    /// <summary>Completes a sign-in that is awaiting a second factor with a TOTP or recovery code. A refused code keeps the challenge; the user may try again or start over.</summary>
+    Task CompleteSignInAsync(string code, CancellationToken cancellationToken = default);
+
+    /// <summary>Drops a pending second-factor challenge, so the next sign-in starts with the password.</summary>
+    void CancelSignIn();
 
     /// <summary>The signed-in account's own profile.</summary>
     Task<AccountProfile> GetProfileAsync(CancellationToken cancellationToken = default);
@@ -49,4 +65,11 @@ public interface IAccountSession
 
     /// <summary>Removes the stored envelope from the server.</summary>
     Task DeleteEnvelopeAsync(CancellationToken cancellationToken = default);
+}
+
+/// <summary>What a sign-in attempt that did not fail led to.</summary>
+public enum SignInOutcome
+{
+    SignedIn,
+    SecondFactorRequired,
 }
