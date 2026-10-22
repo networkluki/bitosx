@@ -24,7 +24,8 @@ public sealed class HttpBitosXApiClientTests
         server.Reply(HttpStatusCode.OK, FakeServer.Tokens());
         using HttpBitosXApiClient client = server.NewClient();
 
-        AccountTokens tokens = await client.LoginAsync("alice@example.com", "correct horse battery", default);
+        SignInResult result = await client.LoginAsync("alice@example.com", "correct horse battery", default);
+        AccountTokens tokens = result.Tokens!;
 
         RecordedRequest request = Assert.Single(server.Requests);
         Assert.Equal(HttpMethod.Post, request.Method);
@@ -250,6 +251,82 @@ public sealed class HttpBitosXApiClientTests
         Assert.Equal(ApiFailure.Unexpected, (await FailsAsync(() => client.GetSessionsAsync(Access, default))).Failure);
     }
 
+    // ---- second factor ----
+
+    private static string Challenge(string token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", string method = "totp")
+        => "{\"mfaToken\":\"" + token + "\",\"mfaTokenExpiresAt\":\"" + DateTimeOffset.UtcNow.AddMinutes(5).ToString("o") + "\",\"method\":\"" + method + "\"}";
+
+    [Fact]
+    public async Task A202_IsASecondFactorChallenge_NotASession()
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.Accepted, Challenge());
+        using HttpBitosXApiClient client = server.NewClient();
+
+        SignInResult result = await client.LoginAsync("alice@example.com", "correct horse battery", default);
+
+        Assert.True(result.RequiresSecondFactor);
+        Assert.Null(result.Tokens);
+        Assert.Equal(new string('A', 43), result.Challenge!.MfaToken);
+        Assert.True(result.Challenge.ExpiresAt > DateTimeOffset.UtcNow);
+        Assert.DoesNotContain("AAAA", result.Challenge.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CompleteSecondFactor_PostsTokenAndCode_WithNoAuthorization_AndAdoptsTokens()
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.OK, FakeServer.Tokens());
+        using HttpBitosXApiClient client = server.NewClient();
+
+        AccountTokens tokens = await client.CompleteSecondFactorAsync(new string('A', 43), "123456", default);
+
+        RecordedRequest request = Assert.Single(server.Requests);
+        Assert.Equal(new Uri("https://api.example.test/v1/auth/login/totp"), request.Uri);
+        Assert.Equal("{\"mfaToken\":\"" + new string('A', 43) + "\",\"code\":\"123456\"}", request.Body);
+        Assert.Null(request.Authorization);
+        Assert.Equal("jwt.access", tokens.AccessToken);
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Accepted, "{\"mfaToken\":\"short\",\"mfaTokenExpiresAt\":\"2030-01-01T00:00:00Z\"}")]       // malformed token
+    [InlineData(HttpStatusCode.Accepted, "{\"mfaTokenExpiresAt\":\"2030-01-01T00:00:00Z\"}")]                               // no token
+    [InlineData(HttpStatusCode.Accepted, "{\"mfaToken\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"}")]                   // no expiry
+    [InlineData(HttpStatusCode.Accepted, "{\"mfaToken\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"mfaTokenExpiresAt\":\"2030-01-01T00:00:00Z\",\"method\":\"sms\"}")] // unknown method
+    public async Task AMalformed202_IsUnexpected(HttpStatusCode status, string json)
+    {
+        using var server = new FakeServer();
+        server.Reply(status, json);
+        using HttpBitosXApiClient client = server.NewClient();
+
+        Assert.Equal(ApiFailure.Unexpected, (await FailsAsync(() => client.LoginAsync("a@b.c", "x", default))).Failure);
+    }
+
+    [Fact]
+    public async Task A202ThatAlsoCarriesTokens_OrA200ThatCarriesAChallenge_IsRefused()
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.Accepted, FakeServer.Tokens().Replace("}", ",\"mfaToken\":\"" + new string('A', 43) + "\",\"mfaTokenExpiresAt\":\"2030-01-01T00:00:00Z\"}", StringComparison.Ordinal));
+        server.Reply(HttpStatusCode.OK, Challenge());
+        using HttpBitosXApiClient client = server.NewClient();
+
+        Assert.Equal(ApiFailure.Unexpected, (await FailsAsync(() => client.LoginAsync("a@b.c", "x", default))).Failure);
+        Assert.Equal(ApiFailure.Unexpected, (await FailsAsync(() => client.LoginAsync("a@b.c", "x", default))).Failure);
+    }
+
+    [Fact]
+    public async Task AWrongCode_IsUnauthenticated_WithNothingOfTheServersText()
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.Unauthorized, "{\"detail\":\"Invalid or expired sign-in code. SECRET-SERVER-TEXT\"}");
+        using HttpBitosXApiClient client = server.NewClient();
+
+        ApiException ex = await FailsAsync(() => client.CompleteSecondFactorAsync(new string('A', 43), "000000", default));
+
+        Assert.Equal(ApiFailure.Unauthenticated, ex.Failure);
+        Assert.DoesNotContain("SECRET", ex.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task UnknownFields_AreIgnored_SoANewerServerStillWorks()
     {
@@ -257,9 +334,10 @@ public sealed class HttpBitosXApiClientTests
         server.Reply(HttpStatusCode.OK, FakeServer.Tokens().Replace("}", ",\"somethingNew\":123}", StringComparison.Ordinal));
         using HttpBitosXApiClient client = server.NewClient();
 
-        AccountTokens tokens = await client.LoginAsync("a@b.c", "x", default);
+        SignInResult result = await client.LoginAsync("a@b.c", "x", default);
 
-        Assert.Equal("jwt.access", tokens.AccessToken);
+        Assert.False(result.RequiresSecondFactor);
+        Assert.Equal("jwt.access", result.Tokens!.AccessToken);
     }
 
     [Fact]

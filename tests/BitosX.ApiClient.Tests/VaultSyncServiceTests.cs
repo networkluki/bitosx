@@ -391,7 +391,10 @@ public sealed class VaultSyncServiceTests : IDisposable
             return Task.CompletedTask;
         }
 
-        public Task SignInAsync(string email, string password, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public bool IsAwaitingSecondFactor => false;
+        public Task<SignInOutcome> SignInAsync(string email, string password, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task CompleteSignInAsync(string code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public void CancelSignIn() => throw new NotSupportedException();
         public Task<AccountProfile> GetProfileAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<AccountSessionInfo>> GetSessionsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task RevokeSessionAsync(Guid sessionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

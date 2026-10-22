@@ -31,8 +31,14 @@ public interface IBitosXApiClient
     /// <summary>Whether the server answers its liveness check. <see langword="false"/> in local-only mode or when it cannot be reached.</summary>
     Task<bool> PingAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Signs in with the account email and password and returns the session's tokens.</summary>
-    Task<AccountTokens> LoginAsync(string email, string password, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Signs in with the account email and password. Returns the session's tokens, or — when the account has
+    /// a second factor — a challenge to complete with <see cref="CompleteSecondFactorAsync"/>.
+    /// </summary>
+    Task<SignInResult> LoginAsync(string email, string password, CancellationToken cancellationToken = default);
+
+    /// <summary>Completes a sign-in that needs a second factor: the challenge token and a TOTP or recovery code.</summary>
+    Task<AccountTokens> CompleteSecondFactorAsync(string mfaToken, string code, CancellationToken cancellationToken = default);
 
     /// <summary>Exchanges a refresh token for a new token pair. The token given is spent whether or not this succeeds.</summary>
     Task<AccountTokens> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default);

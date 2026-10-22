@@ -20,6 +20,9 @@ public static partial class ApiLog
     [LoggerMessage(EventId = 2003, EventName = "account_tokens_refreshed", Level = LogLevel.Debug, Message = "Account tokens refreshed.")]
     public static partial void TokensRefreshed(ILogger logger);
 
+    [LoggerMessage(EventId = 2004, EventName = "account_second_factor_required", Level = LogLevel.Information, Message = "Password accepted; the account requires a second factor.")]
+    public static partial void SecondFactorRequired(ILogger logger);
+
     [LoggerMessage(EventId = 2010, EventName = "sync_checked", Level = LogLevel.Information, Message = "Sync checked: {Outcome} (server revision {ServerRevision}).")]
     public static partial void SyncChecked(ILogger logger, string outcome, long serverRevision);
 

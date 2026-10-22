@@ -135,14 +135,67 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         }
     }
 
-    public async Task<AccountTokens> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
+    public async Task<SignInResult> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(email);
         ArgumentNullException.ThrowIfNull(password);
 
+        const string path = "v1/auth/login";
+        (int status, LoginDto? dto) = await SendCoreAsync<LoginDto>(
+            HttpMethod.Post, path, new { email, password }, null, cancellationToken, MaxResponseBytes).ConfigureAwait(false);
+
+        // 202: the password was accepted and a second factor is required. The status decides; a 202 that
+        // carries session tokens, or a 200 that carries a challenge, is a server this client does not trust.
+        if (status == 202)
+        {
+            if (dto is null
+                || dto.AccessToken is not null
+                || dto.RefreshToken is not null
+                || !IsMfaToken(dto.MfaToken)
+                || dto.MfaTokenExpiresAt is not { } expires
+                || (dto.Method is not null && !string.Equals(dto.Method, "totp", StringComparison.Ordinal)))
+            {
+                throw Unexpected(path);
+            }
+
+            return SignInResult.SecondFactor(new SecondFactorChallenge(dto.MfaToken, expires));
+        }
+
+        if (dto?.MfaToken is not null)
+        {
+            throw Unexpected(path);
+        }
+
+        return SignInResult.SignedIn(ToTokens(dto));
+    }
+
+    public async Task<AccountTokens> CompleteSecondFactorAsync(string mfaToken, string code, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(mfaToken);
+        ArgumentException.ThrowIfNullOrEmpty(code);
+
         TokenDto? tokens = await SendAsync<TokenDto>(
-            HttpMethod.Post, "v1/auth/login", new { email, password }, null, cancellationToken).ConfigureAwait(false);
+            HttpMethod.Post, "v1/auth/login/totp", new { mfaToken, code }, null, cancellationToken).ConfigureAwait(false);
         return ToTokens(tokens);
+    }
+
+    /// <summary>The second-step token is 43 unpadded Base64URL characters (256 bits), as the refresh token is.</summary>
+    private static bool IsMfaToken([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? value)
+    {
+        if (value is null || value.Length != 43)
+        {
+            return false;
+        }
+
+        foreach (char c in value)
+        {
+            if (!(char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public async Task<AccountTokens> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
@@ -363,6 +416,15 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         HttpMethod method, string path, object? body, string? accessToken, CancellationToken cancellationToken, int maxResponseBytes = MaxResponseBytes)
         where TResponse : class
     {
+        (_, TResponse? parsed) = await SendCoreAsync<TResponse>(method, path, body, accessToken, cancellationToken, maxResponseBytes).ConfigureAwait(false);
+        return parsed;
+    }
+
+    /// <summary>As <see cref="SendAsync{TResponse}"/>, also returning the 2xx status for the one call whose status carries meaning (login: 200 vs 202).</summary>
+    private async Task<(int Status, TResponse? Body)> SendCoreAsync<TResponse>(
+        HttpMethod method, string path, object? body, string? accessToken, CancellationToken cancellationToken, int maxResponseBytes)
+        where TResponse : class
+    {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         using var request = new HttpRequestMessage(method, new Uri(path, UriKind.Relative));
@@ -398,7 +460,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
             int status = (int)response.StatusCode;
             if (status == 204)
             {
-                return null;
+                return (status, null);
             }
 
             if (status is < 200 or > 299)
@@ -438,7 +500,8 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
 
             try
             {
-                return JsonSerializer.Deserialize<TResponse>(text, Json) ?? throw Fail(path, ApiFailure.Unexpected, status, null, null);
+                TResponse parsed = JsonSerializer.Deserialize<TResponse>(text, Json) ?? throw Fail(path, ApiFailure.Unexpected, status, null, null);
+                return (status, parsed);
             }
             catch (JsonException ex)
             {
@@ -555,7 +618,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         public string? Status { get; init; }
     }
 
-    private sealed class TokenDto
+    private class TokenDto
     {
         public string? AccessToken { get; init; }
 
@@ -566,6 +629,16 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         public DateTimeOffset? RefreshTokenExpiresAt { get; init; }
 
         public string? TokenType { get; init; }
+    }
+
+    /// <summary>The login answer: either the token fields (200) or the second-factor fields (202).</summary>
+    private sealed class LoginDto : TokenDto
+    {
+        public string? MfaToken { get; init; }
+
+        public DateTimeOffset? MfaTokenExpiresAt { get; init; }
+
+        public string? Method { get; init; }
     }
 
     private sealed class ProfileDto

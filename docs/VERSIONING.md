@@ -38,7 +38,15 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.9.0`** — encrypted sync: the vault file, as encrypted on the device, is stored on the BitosX
+**`0.10.0`** — second factor at sign-in: when the account has two-factor authentication (set up on
+vault.bitosx.se), the server answers the password with a one-step challenge instead of a session,
+and the Account page asks for the 6-digit code from the authenticator app or a recovery code. The
+challenge token lives in memory for at most five minutes, nothing authenticated can be called before
+the code is accepted, and a refused code can be retried or the sign-in started over. The vault, its
+master password and the on-disk format (still v1) are untouched. See [ACCOUNT.md](ACCOUNT.md).
+**Not verified:** against the real server.
+
+Builds on `0.9.0` — encrypted sync: the vault file, as encrypted on the device, is stored on the BitosX
 server through the account and brought to another device. The server holds opaque bytes and a
 fingerprint, never a key; revisions are compare-and-set; nothing is merged, and when both a device
 and the server have changed the user is shown both ways out and nothing happens until they choose.

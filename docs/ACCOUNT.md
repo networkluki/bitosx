@@ -47,6 +47,20 @@ Never: the master password, the vault key, any item, any note. `IBitosXApiClient
 that could carry them, and `AccountSession` does not know the vault beyond its lock state; the
 sync passes the encrypted envelope through as the bytes it is given.
 
+## Second factor (0.10.0)
+
+An account can have two-factor authentication (TOTP, set up and managed on vault.bitosx.se). The
+application then signs in in two steps: `POST /v1/auth/login` with email and password answers
+**202** with a short-lived challenge token instead of a session, the page asks for the 6-digit
+code from the authenticator app (or one of the recovery codes), and `POST /v1/auth/login/totp`
+with that token and the code returns the session's tokens. Between the two steps there is no
+session: nothing authenticated can be called, only the challenge token is held (memory, at most
+five minutes), and locking the vault, cancelling, or signing in again drops it. A refused code
+can be retried (the server allows a few attempts, then the password must be entered again); the
+page never says why a code was refused beyond "not accepted". What leaves the device in step two
+is the challenge token and the code, nothing else. The second factor protects the account sign-in
+only; it has nothing to do with the vault master password.
+
 ## Where the tokens are
 
 In memory, in `AccountSession`, and nowhere else. They are dropped:

@@ -285,6 +285,87 @@ public sealed class AccountSessionTests
 
     // ---- fakes ----
 
+    // ---- second factor ----
+
+    [Fact]
+    public async Task ASecondFactorChallenge_HoldsNoSession_UntilTheCodeCompletesIt()
+    {
+        using var s = new Setup();
+        s.Api.LoginChallenge = new SecondFactorChallenge(new string('A', 43), s.Clock.Now.AddMinutes(5));
+        s.Api.SecondFactorResult = s.Tokens();
+
+        SignInOutcome outcome = await s.Session.SignInAsync("alice@example.com", "correct horse battery");
+
+        Assert.Equal(SignInOutcome.SecondFactorRequired, outcome);
+        Assert.False(s.Session.IsSignedIn);
+        Assert.True(s.Session.IsAwaitingSecondFactor);
+        Assert.Equal(0, s.Changes);
+        await Assert.ThrowsAsync<ApiException>(() => s.Session.GetProfileAsync()); // nothing authenticated works yet
+
+        await s.Session.CompleteSignInAsync("123456");
+
+        Assert.Equal((new string('A', 43), "123456"), s.Api.LastSecondFactor);
+        Assert.True(s.Session.IsSignedIn);
+        Assert.False(s.Session.IsAwaitingSecondFactor);
+        Assert.Equal(1, s.Changes);
+        await s.Session.GetProfileAsync();
+        Assert.Equal(["jwt.1"], s.Api.AccessTokensSeen);
+    }
+
+    [Fact]
+    public async Task ARefusedCode_KeepsTheChallenge_ForAnotherTry()
+    {
+        using var s = new Setup();
+        s.Api.LoginChallenge = new SecondFactorChallenge(new string('A', 43), s.Clock.Now.AddMinutes(5));
+        s.Api.SecondFactorThrows = new ApiException(ApiFailure.Unauthenticated, 401);
+        await s.Session.SignInAsync("alice@example.com", "correct horse battery");
+
+        await Assert.ThrowsAsync<ApiException>(() => s.Session.CompleteSignInAsync("000000"));
+
+        Assert.True(s.Session.IsAwaitingSecondFactor);
+        Assert.False(s.Session.IsSignedIn);
+        s.Api.SecondFactorThrows = null;
+        s.Api.SecondFactorResult = s.Tokens();
+        await s.Session.CompleteSignInAsync("654321");
+        Assert.True(s.Session.IsSignedIn);
+        Assert.Equal(2, s.Api.SecondFactorCount);
+    }
+
+    [Fact]
+    public async Task AnExpiredOrCancelledChallenge_MeansStartingOver()
+    {
+        using var s = new Setup();
+        s.Api.LoginChallenge = new SecondFactorChallenge(new string('A', 43), s.Clock.Now.AddMinutes(5));
+        await s.Session.SignInAsync("alice@example.com", "correct horse battery");
+
+        s.Clock.Now = s.Clock.Now.AddMinutes(6);
+        Assert.False(s.Session.IsAwaitingSecondFactor);
+        ApiException expired = await Assert.ThrowsAsync<ApiException>(() => s.Session.CompleteSignInAsync("123456"));
+        Assert.Equal(ApiFailure.Unauthenticated, expired.Failure);
+        Assert.Equal(0, s.Api.SecondFactorCount); // nothing was sent for a dead challenge
+
+        s.Clock.Now = Start;
+        await s.Session.SignInAsync("alice@example.com", "correct horse battery");
+        Assert.True(s.Session.IsAwaitingSecondFactor);
+        s.Session.CancelSignIn();
+        Assert.False(s.Session.IsAwaitingSecondFactor);
+        await Assert.ThrowsAsync<ApiException>(() => s.Session.CompleteSignInAsync("123456"));
+    }
+
+    [Fact]
+    public async Task LockingTheVault_DropsAPendingChallengeToo()
+    {
+        using var s = new Setup();
+        s.Api.LoginChallenge = new SecondFactorChallenge(new string('A', 43), s.Clock.Now.AddMinutes(5));
+        await s.Session.SignInAsync("alice@example.com", "correct horse battery");
+        Assert.True(s.Session.IsAwaitingSecondFactor);
+
+        s.Vault.Lock();
+
+        Assert.False(s.Session.IsAwaitingSecondFactor);
+        Assert.Equal(0, s.Changes); // there was no session to lose
+    }
+
     private sealed class ScriptedApi : IBitosXApiClient, IDisposable
     {
         private readonly SemaphoreSlim _logouts = new(0);
@@ -296,8 +377,14 @@ public sealed class AccountSessionTests
         public ApiServer? Server => FakeServer.Address;
 
         public AccountTokens? LoginResult { get; set; }
+        public SecondFactorChallenge? LoginChallenge { get; set; }
         public Exception? LoginThrows { get; set; }
         public (string Email, string Password)? LastLogin { get; private set; }
+
+        public AccountTokens? SecondFactorResult { get; set; }
+        public Exception? SecondFactorThrows { get; set; }
+        public (string MfaToken, string Code)? LastSecondFactor { get; private set; }
+        public int SecondFactorCount { get; private set; }
 
         public AccountTokens? RefreshResult { get; set; }
         public Exception? RefreshThrows { get; set; }
@@ -314,10 +401,22 @@ public sealed class AccountSessionTests
 
         public Task<bool> PingAsync(CancellationToken cancellationToken = default) => Task.FromResult(true);
 
-        public Task<AccountTokens> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
+        public Task<SignInResult> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
         {
             LastLogin = (email, password);
-            return LoginThrows is not null ? Task.FromException<AccountTokens>(LoginThrows) : Task.FromResult(LoginResult!);
+            if (LoginThrows is not null)
+            {
+                return Task.FromException<SignInResult>(LoginThrows);
+            }
+
+            return Task.FromResult(LoginChallenge is { } c ? SignInResult.SecondFactor(c) : SignInResult.SignedIn(LoginResult!));
+        }
+
+        public Task<AccountTokens> CompleteSecondFactorAsync(string mfaToken, string code, CancellationToken cancellationToken = default)
+        {
+            SecondFactorCount++;
+            LastSecondFactor = (mfaToken, code);
+            return SecondFactorThrows is not null ? Task.FromException<AccountTokens>(SecondFactorThrows) : Task.FromResult(SecondFactorResult!);
         }
 
         public async Task<AccountTokens> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
