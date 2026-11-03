@@ -52,7 +52,10 @@ sealed class Program
             {
                 const string AlreadyRunning = "BitosX is already running on this vault. Switch to its window: it may be minimized or on another workspace.";
                 Console.Error.WriteLine(AlreadyRunning);
-                StartupNotice.Show(location.WindowTitle, AlreadyRunning, args);
+                if (!IsErrorStreamCaptured())
+                {
+                    StartupNotice.Show(location.WindowTitle, AlreadyRunning, args);
+                }
             }
 
             return AlreadyRunningExitCode;
@@ -65,8 +68,44 @@ sealed class Program
     private static int UsageError(string message, string[] args)
     {
         Console.Error.WriteLine(message);
-        StartupNotice.Show("BitosX did not start", message + Environment.NewLine + Environment.NewLine + "Nothing was opened or changed.", args);
+        if (!IsErrorStreamCaptured())
+        {
+            StartupNotice.Show("BitosX did not start", message + Environment.NewLine + Environment.NewLine + "Nothing was opened or changed.", args);
+        }
+
         return UsageErrorExitCode;
+    }
+
+    /// <summary>
+    /// Whether someone reads the standard error stream: a script or a test that captured it, or a
+    /// terminal. Then the message is already where it is read, and a window would only keep the
+    /// process from ending. On Windows a GUI application started from a shortcut has no error
+    /// handle at all, which <see cref="Console.IsErrorRedirected"/> also reports as "redirected", so
+    /// the handle's own type decides there: a pipe, a file or a console means read. Elsewhere a terminal
+    /// shows the message; a desktop launcher does not, so the window is shown when stderr is not one.
+    /// </summary>
+    private static bool IsErrorStreamCaptured()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                nint handle = NativeMethods.GetStdHandle(NativeMethods.StdErrorHandle);
+                if (handle == 0 || handle == -1)
+                {
+                    return false;
+                }
+
+                uint type = NativeMethods.GetFileType(handle) & ~NativeMethods.FileTypeRemote;
+                return type is NativeMethods.FileTypeDisk or NativeMethods.FileTypePipe or NativeMethods.FileTypeChar;
+            }
+            catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+            {
+                return false;
+            }
+        }
+
+        return !Console.IsErrorRedirected;
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.
@@ -143,5 +182,19 @@ sealed class Program
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool IsIconic(nint window);
+
+        public const int StdErrorHandle = -12; // STD_ERROR_HANDLE
+        public const uint FileTypeDisk = 0x0001; // FILE_TYPE_DISK
+        public const uint FileTypeChar = 0x0002; // FILE_TYPE_CHAR (a console)
+        public const uint FileTypePipe = 0x0003; // FILE_TYPE_PIPE
+        public const uint FileTypeRemote = 0x8000; // FILE_TYPE_REMOTE (flag)
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        public static extern nint GetStdHandle(int standardHandle);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        public static extern uint GetFileType(nint file);
     }
 }

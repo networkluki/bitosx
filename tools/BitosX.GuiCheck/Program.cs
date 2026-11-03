@@ -294,8 +294,8 @@ internal static class Program
             app.WaitUntil(() => ItemNames(app) is [Name, ..], "the favourite is first");
             Report.Check(
                 "12. Favourite: marked, and sorted to the top",
-                app.Find("FavoriteButton", 0).Current.Name == "Remove from favorites"
-                && app.Find("FavoriteButton", 1).Current.Name == "Add to favorites");
+                app.Find("FavoriteButton", 0).Current.Name == $"Remove {Name} from favorites"
+                && app.Find("FavoriteButton", 1).Current.Name == $"Add {Other} to favorites");
 
             // 13. Lock, and 14. the secrets are gone.
             app.Press("LockButton");
@@ -312,7 +312,7 @@ internal static class Program
             Unlock(app, MasterPassword);
             Report.Check(
                 "15. Unlock again: everything is back, the favourite still first",
-                ItemNames(app).SequenceEqual([Name, Other]) && app.Find("FavoriteButton", 0).Current.Name == "Remove from favorites",
+                ItemNames(app).SequenceEqual([Name, Other]) && app.Find("FavoriteButton", 0).Current.Name == $"Remove {Name} from favorites",
                 string.Join(", ", ItemNames(app)));
 
             // 16. Delete.
@@ -609,7 +609,7 @@ internal static class Program
             EncryptedVault old = Envelope();
 
             app.Press("ChangePasswordButton");
-            app.WaitForText("ChangePasswordStatus", "The master password must be at least");
+            app.WaitForText("ChangePasswordStatus", "Enter your current master password.");
             Report.Check("An empty form is refused in words, and the application goes on", Fingerprint(VaultPath) == before, app.Text("ChangePasswordStatus"));
 
             app.Type("CurrentPasswordBox", Prefix + "not the master password");
@@ -685,7 +685,7 @@ internal static class Program
             EncryptedVault old = Envelope();
 
             app.Press("RotateVaultKeyButton");
-            app.WaitForText("RotateStatus", "The current password is incorrect. The vault key was not rotated.");
+            app.WaitForText("RotateStatus", "Enter your current master password to rotate the vault key.");
             Report.Check("With nothing typed: refused in words, the application goes on, the file untouched", Fingerprint(VaultPath) == before && app.Screen() == "main");
 
             app.Type("RotatePasswordBox", Prefix + "not the master password");
@@ -854,7 +854,7 @@ internal static class Program
             // A wrong password, and none.
             Choose(app, backup);
             app.Press("ValidateBackupButton");
-            app.WaitForText("RestoreStatus", "The backup password is incorrect, or the backup is corrupted.");
+            app.WaitForText("RestoreStatus", "Enter the master password of the backup.");
             Report.Check("With no password typed: refused in words, the application goes on", app.Screen() == "main" && !app.Shows("ReplaceVaultButton"));
             app.Type("RestorePasswordBox", Prefix + "not the master password");
             app.Press("ValidateBackupButton");
