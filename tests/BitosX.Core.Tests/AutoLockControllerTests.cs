@@ -34,6 +34,53 @@ public sealed class AutoLockControllerTests
     private static AutoLockController NewController(VaultService vault, TestTimeProvider time, AppSettings settings)
         => new(vault, settings, time, NullLogger<AutoLockController>.Instance);
 
+    /// <summary>A wall clock and a monotonic clock that move separately, as they do when someone sets the time.</summary>
+    private sealed class TwoClocks : TimeProvider
+    {
+        public DateTimeOffset Utc { get; set; } = DateTimeOffset.UnixEpoch.AddYears(56);
+        public TimeSpan Elapsed { get; set; }
+
+        public override DateTimeOffset GetUtcNow() => Utc;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => Elapsed.Ticks;
+    }
+
+    [Fact]
+    public async Task Inactivity_StillLocksOnTime_WhenTheWallClockIsSetBack()
+    {
+        var time = new TwoClocks();
+        VaultService vault = NewVault();
+        using AutoLockController controller = new(vault, Settings(minutes: 15), time, NullLogger<AutoLockController>.Instance);
+        await vault.CreateVaultAsync(Password);
+
+        time.Elapsed += TimeSpan.FromMinutes(5);
+        time.Utc += TimeSpan.FromMinutes(5) - TimeSpan.FromHours(1); // an NTP correction, or a hand, moves it back an hour
+        controller.CheckInactivity();
+        Assert.Equal(VaultState.Unlocked, vault.State);
+
+        time.Elapsed += TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(1);
+        time.Utc += TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(1);
+        controller.CheckInactivity();
+
+        Assert.Equal(VaultState.Locked, vault.State);
+    }
+
+    [Fact]
+    public async Task Inactivity_LocksAfterASleepTheMonotonicClockDidNotSee()
+    {
+        var time = new TwoClocks();
+        VaultService vault = NewVault();
+        using AutoLockController controller = new(vault, Settings(minutes: 15), time, NullLogger<AutoLockController>.Instance);
+        await vault.CreateVaultAsync(Password);
+
+        time.Utc += TimeSpan.FromHours(8); // the lid was closed overnight; the monotonic clock stood still
+        controller.CheckInactivity();
+
+        Assert.Equal(VaultState.Locked, vault.State);
+    }
+
     [Fact]
     public async Task Inactivity_LocksAfterTimeout()
     {

@@ -147,6 +147,47 @@ public sealed class VaultBackupServiceTests : IDisposable
         Assert.Equal(2, recoverySvc.Items.Count);
     }
 
+    [Fact]
+    public async Task ASecondRestore_KeepsTheVaultFromBeforeTheFirst()
+    {
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+        await svc.AddLoginAsync(SampleLogin());
+        await backup.ExportAsync(_backupPath); // one item
+        await svc.AddLoginAsync(new LoginItem { Name = "Second", Username = "u2", Password = "p2xxxxxx" });
+        byte[] original = await File.ReadAllBytesAsync(_vaultPath); // two items: what a wrong restore must not lose
+
+        BackupPreview first = await backup.PrepareRestoreAsync(_backupPath, MasterPassword);
+        await backup.CommitRestoreAsync(first);
+        await svc.UnlockAsync(MasterPassword);
+        BackupPreview second = await backup.PrepareRestoreAsync(_backupPath, MasterPassword);
+        await backup.CommitRestoreAsync(second);
+
+        Assert.Equal(original, await File.ReadAllBytesAsync(_vaultPath + FileVaultBackup.RecoverySuffix + ".1"));
+        Assert.True(File.Exists(_vaultPath + FileVaultBackup.RecoverySuffix));
+    }
+
+    [Fact]
+    public async Task RecoveryCopies_AreKeptUpToTheLimit_TheOldestGoing()
+    {
+        (VaultService svc, VaultBackupService backup) = NewServices();
+        await svc.CreateVaultAsync(MasterPassword);
+        await backup.ExportAsync(_backupPath);
+
+        for (int i = 0; i < FileVaultBackup.EarlierRecoveryCopies + 3; i++)
+        {
+            if (svc.State != VaultState.Unlocked)
+            {
+                await svc.UnlockAsync(MasterPassword);
+            }
+
+            await backup.CommitRestoreAsync(await backup.PrepareRestoreAsync(_backupPath, MasterPassword));
+        }
+
+        string[] copies = [.. Directory.GetFiles(_tempDir).Select(Path.GetFileName).Where(n => n!.Contains(".pre-restore", StringComparison.Ordinal)).Order(StringComparer.Ordinal)!];
+        Assert.Equal(["vault.bitosx.pre-restore", "vault.bitosx.pre-restore.1", "vault.bitosx.pre-restore.2", "vault.bitosx.pre-restore.3"], copies);
+    }
+
     // ---- Restore (attacker-controlled input; live vault must survive) ----
 
     [Fact]

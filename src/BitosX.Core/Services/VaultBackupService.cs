@@ -59,7 +59,9 @@ public sealed class VaultBackupService : IVaultBackupService
         RequireUnlocked();
 
         BackupReadResult read = await _backup.ReadBackupAsync(backupPath, cancellationToken).ConfigureAwait(false);
-        return Prepare(read.Envelope, backupPassword, Path.GetFileName(backupPath), read.FileSizeBytes);
+
+        // Up to four Argon2id derivations for a backup made before 0.6.0: never on the caller's (UI) thread.
+        return await Task.Run(() => Prepare(read.Envelope, backupPassword, Path.GetFileName(backupPath), read.FileSizeBytes)).ConfigureAwait(false);
     }
 
     public Task<BackupPreview> PrepareRestoreAsync(EncryptedVault envelope, string backupPassword, string sourceName, long sizeBytes, CancellationToken cancellationToken = default)
@@ -71,7 +73,7 @@ public sealed class VaultBackupService : IVaultBackupService
         RequireUnlocked();
         cancellationToken.ThrowIfCancellationRequested();
 
-        return Task.FromResult(Prepare(envelope, backupPassword, sourceName, sizeBytes));
+        return Task.Run(() => Prepare(envelope, backupPassword, sourceName, sizeBytes));
     }
 
     /// <summary>Authenticates and validates an envelope without touching the live vault; see <see cref="PrepareRestoreAsync(string, string, CancellationToken)"/>.</summary>
@@ -131,7 +133,9 @@ public sealed class VaultBackupService : IVaultBackupService
         ArgumentNullException.ThrowIfNull(preview);
         RequireUnlocked();
 
-        await _backup.RestoreAsync(preview.Envelope, cancellationToken).ConfigureAwait(false);
+        // Back on the caller's thread (the UI thread, when there is one) before locking: whoever listens
+        // to the vault locking expects to hear it there.
+        await _backup.RestoreAsync(preview.Envelope, cancellationToken).ConfigureAwait(true);
         _vaultService.Lock();
         await _vaultService.RefreshStateAsync(cancellationToken).ConfigureAwait(false);
         VaultLog.BackupRestored(_logger);

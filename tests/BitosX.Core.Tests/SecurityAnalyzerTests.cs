@@ -51,6 +51,42 @@ public sealed class SecurityAnalyzerTests
     }
 
     [Fact]
+    public void Analyze_FindsEveryDuplicateItsComparisonCallsEqual_WhateverTheLetters()
+    {
+        // Names that compare equal ignoring case must be found together, also for letters whose
+        // lower-case forms differ although their ordinal case-insensitive comparison says equal.
+        var pairs = new List<(string, string)>();
+        for (int i = 0; i <= char.MaxValue; i++)
+        {
+            char c = (char)i;
+            if (char.IsSurrogate(c))
+            {
+                continue;
+            }
+
+            foreach (char other in new[] { char.ToUpperInvariant(c), char.ToLowerInvariant(c) })
+            {
+                string a = "n" + c, b = "n" + other;
+                if (other != c
+                    && string.Equals(a, b, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(a.ToLowerInvariant(), b.ToLowerInvariant(), StringComparison.Ordinal))
+                {
+                    pairs.Add((a, b));
+                }
+            }
+        }
+
+        foreach ((string a, string b) in pairs.Append(("GitHub", "gITHUB")))
+        {
+            var vault = new Vault();
+            vault.Add(Login(a, "user", "P@ss-one-Strong-11"));
+            vault.Add(Login(b, "USER", "P@ss-two-Strong-22"));
+
+            Assert.Single(_analyzer.Analyze(vault).DuplicateEntries);
+        }
+    }
+
+    [Fact]
     public void Analyze_DetectsInsecureHttpUrls()
     {
         var vault = new Vault();

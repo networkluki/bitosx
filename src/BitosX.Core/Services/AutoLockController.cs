@@ -40,6 +40,7 @@ public sealed class AutoLockController : IDisposable
     private AppSettings _settings;
     private bool _armed;
     private DateTimeOffset _lastActivityUtc;
+    private long _lastActivityTimestamp;
     private bool _disposed;
 
     public AutoLockController(
@@ -54,7 +55,7 @@ public sealed class AutoLockController : IDisposable
         _settings = (settings ?? AppSettings.Default).Normalized();
 
         _armed = _vault.State == VaultState.Unlocked;
-        _lastActivityUtc = _time.GetUtcNow();
+        MarkActivity();
         _vault.StateChanged += OnVaultStateChanged;
     }
 
@@ -75,7 +76,7 @@ public sealed class AutoLockController : IDisposable
     {
         if (_armed)
         {
-            _lastActivityUtc = _time.GetUtcNow();
+            MarkActivity();
         }
     }
 
@@ -90,7 +91,12 @@ public sealed class AutoLockController : IDisposable
             return;
         }
 
-        if (_time.GetUtcNow() - _lastActivityUtc >= _settings.InactivityTimeout)
+        // Two clocks, either of which ends it. The monotonic one cannot be moved back (a clock set
+        // back an hour must not delay the lock by an hour); the wall clock moves on across a sleep
+        // on platforms that do not report one, where the monotonic clock may stand still.
+        TimeSpan monotonic = _time.GetElapsedTime(_lastActivityTimestamp);
+        TimeSpan wall = _time.GetUtcNow() - _lastActivityUtc;
+        if (monotonic >= _settings.InactivityTimeout || wall >= _settings.InactivityTimeout)
         {
             LockNow(AutoLockReason.Inactivity);
         }
@@ -128,8 +134,14 @@ public sealed class AutoLockController : IDisposable
         _armed = state == VaultState.Unlocked;
         if (_armed)
         {
-            _lastActivityUtc = _time.GetUtcNow();
+            MarkActivity();
         }
+    }
+
+    private void MarkActivity()
+    {
+        _lastActivityUtc = _time.GetUtcNow();
+        _lastActivityTimestamp = _time.GetTimestamp();
     }
 
     private void LockNow(AutoLockReason reason)
