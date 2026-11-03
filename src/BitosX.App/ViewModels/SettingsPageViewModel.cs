@@ -309,6 +309,7 @@ public sealed partial class SettingsPageViewModel : ViewModelBase, IDisposable
 
     private AppSettings? _settingsToSave;
     private Task _saving = Task.CompletedTask;
+    private Task _lastWrite = Task.CompletedTask;
 
     /// <summary>Completes when every change made so far has been written (or has failed to be). For closing, and for tests.</summary>
     public Task PendingSave => _saving;
@@ -320,7 +321,9 @@ public sealed partial class SettingsPageViewModel : ViewModelBase, IDisposable
             _settingsToSave = null;
             try
             {
-                await Task.Run(() => _settingsStore.Save(next)).ConfigureAwait(true);
+                Task write = Task.Run(() => _settingsStore.Save(next));
+                _lastWrite = write;
+                await write.ConfigureAwait(true);
                 AutoLockStatus = null;
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
@@ -330,16 +333,33 @@ public sealed partial class SettingsPageViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>Waits briefly for a save still in flight, so that closing the page or BitosX does not lose the last change.</summary>
+    /// <summary>
+    /// Waits briefly for a write still in flight, and writes a change still queued behind it, so that
+    /// locking or closing right after a change does not lose it. Only the write itself is waited for,
+    /// never the UI-thread part of the save loop (which runs on the thread that is waiting here).
+    /// </summary>
     public void Dispose()
     {
         try
         {
-            _saving.Wait(TimeSpan.FromSeconds(2));
+            _lastWrite.Wait(TimeSpan.FromSeconds(2));
         }
         catch (AggregateException)
         {
             // SaveQueuedSettingsAsync reports its own failures; nothing more to do here.
+        }
+
+        if (_settingsToSave is { } pending)
+        {
+            _settingsToSave = null;
+            try
+            {
+                _settingsStore.Save(pending);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // The page is going away; the setting applied for this run, as the page said it would.
+            }
         }
     }
 

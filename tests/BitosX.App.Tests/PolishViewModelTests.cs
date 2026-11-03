@@ -244,6 +244,55 @@ public sealed class PolishViewModelTests : IDisposable
     }
 
     [Fact]
+    public async Task AutoLockSettings_AreWrittenOffTheCallersThread_AndClosingKeepsTheLastChange()
+    {
+        var vault = new FakeVaultService { KdfParameters = Argon2Parameters.Default };
+        var controller = new AutoLockController(vault, AppSettings.Default, TimeProvider.System, NullLogger<AutoLockController>.Instance);
+        var store = new ThreadRecordingSettingsStore();
+        var vm = new SettingsPageViewModel(
+            vault, new FileLocalVaultStorage(Path.Combine(_tempDir, "vault.bitosx")), new FakeClipboardService(), new LocalOnlyApiClient(),
+            Argon2Parameters.Default, store, new AutoLockService(controller, new NullSystemSessionEvents()),
+            new NullSystemSessionEvents(), new FakeVaultBackupService(), new FakeFilePicker(), new FakeKeyDerivationBenchmark());
+
+        // A thread of its own stands in for the UI thread: it is not a pool thread, so a write on it shows.
+        var ui = new Thread(() =>
+        {
+            vm.InactivityMinutes = 3;
+            vm.InactivityMinutes = 4;
+            vm.InactivityMinutes = 5;
+        });
+        ui.Start();
+        ui.Join();
+        Assert.Equal(TimeSpan.FromMinutes(5), controller.Settings.InactivityTimeout); // applied at once
+        await vm.PendingSave;
+
+        Assert.All(store.OnThreadPool, Assert.True);
+        Assert.InRange(store.OnThreadPool.Count, 1, 3); // a burst is written as few times as it can be
+        Assert.Equal(TimeSpan.FromMinutes(5), store.Saved!.InactivityTimeout);
+
+        vm.LockOnMinimize = true;
+        vm.Dispose();
+        Assert.True(store.Saved!.LockOnMinimize);
+    }
+
+    private sealed class ThreadRecordingSettingsStore : IAppSettingsStore
+    {
+        public List<bool> OnThreadPool { get; } = [];
+        public AppSettings? Saved { get; private set; }
+
+        public AppSettings Load() => AppSettings.Default;
+
+        public void Save(AppSettings settings)
+        {
+            lock (OnThreadPool)
+            {
+                OnThreadPool.Add(Thread.CurrentThread.IsThreadPoolThread);
+                Saved = settings;
+            }
+        }
+    }
+
+    [Fact]
     public void TheAboutText_SaysWhatSyncSends()
     {
         var vault = new FakeVaultService { KdfParameters = Argon2Parameters.Default };
