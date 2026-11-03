@@ -10,18 +10,21 @@
 
     <ScrollViewer>
         <StackPanel Margin="24" Spacing="16" MaxWidth="620" HorizontalAlignment="Left">
-            <TextBlock Text="Password Generator" Classes="h1" />
+            <TextBlock Text="Password generator" Classes="h1" />
 
             <Border Classes="card">
                 <StackPanel Spacing="10">
-                    <SelectableTextBlock Name="GeneratedPassword" Text="{Binding GeneratedPassword}" FontFamily="Cascadia Code,Consolas,monospace"
-                                         FontSize="18" TextWrapping="Wrap" />
+                    <!-- Not selectable: the password leaves only through Copy, which marks it as sensitive
+                         and clears it again (docs/SECURITY_MODEL.md). -->
+                    <TextBlock Name="GeneratedPassword" Text="{Binding GeneratedPassword}" FontFamily="Cascadia Code,Consolas,monospace"
+                               FontSize="18" TextWrapping="Wrap" AutomationProperties.Name="Generated password" />
                     <TextBlock Name="StrengthText" Text="{Binding StrengthText}" Classes="muted" />
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <Button Name="RegenerateButton" Content="Regenerate" Classes="accent" Command="{Binding GenerateCommand}" />
                         <Button Name="CopyButton" Content="Copy" Command="{Binding CopyCommand}" />
                     </StackPanel>
                     <TextBlock Name="StatusMessage" Text="{Binding StatusMessage}" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
                                IsVisible="{Binding StatusMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
                     <TextBlock Name="ErrorMessage" Text="{Binding ErrorMessage}" Classes="error"
                                IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
@@ -35,7 +38,7 @@
                             <TextBlock Text="Length" VerticalAlignment="Center" />
                             <TextBlock Name="LengthText" Text="{Binding Length}" FontWeight="SemiBold" VerticalAlignment="Center" />
                         </StackPanel>
-                        <Slider Name="LengthSlider" AutomationProperties.Name="Length of the password" Minimum="4" Maximum="128"
+                        <Slider Name="LengthSlider" AutomationProperties.Name="Length of the password" Minimum="4" Maximum="256"
                                 Value="{Binding Length}" TickFrequency="1" IsSnapToTickEnabled="True" />
                     </StackPanel>
 
@@ -44,6 +47,8 @@
                     <CheckBox Name="DigitsCheckBox" Content="Digits (0–9)" IsChecked="{Binding IncludeDigits}" />
                     <CheckBox Name="SymbolsCheckBox" Content="Symbols (!@#…)" IsChecked="{Binding IncludeSymbols}" />
                     <CheckBox Name="ExcludeAmbiguousCheckBox" Content="Exclude ambiguous characters (I l 1 O 0 o)" IsChecked="{Binding ExcludeAmbiguous}" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="The Generate button of the login editor uses these settings too." />
                 </StackPanel>
             </Border>
         </StackPanel>

@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
+using BitosX.App.Services;
 using BitosX.Core.Domain;
 using BitosX.Core.Generation;
 using BitosX.Core.Services;
@@ -14,13 +16,17 @@ public sealed partial class VaultPageViewModel : ViewModelBase
     private readonly IVaultService _vaultService;
     private readonly IClipboardService _clipboard;
     private readonly IPasswordGenerator _generator;
+    private readonly GeneratorSettings _generatorSettings;
     private readonly List<LoginItemViewModel> _all = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmpty))]
+    [NotifyPropertyChangedFor(nameof(IsVaultEmpty))]
+    [NotifyPropertyChangedFor(nameof(HasNoMatches))]
     public partial ObservableCollection<LoginItemViewModel> Items { get; set; } = [];
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(NoMatchesText))]
     public partial string SearchText { get; set; } = string.Empty;
 
     [ObservableProperty]
@@ -33,19 +39,31 @@ public sealed partial class VaultPageViewModel : ViewModelBase
     public bool IsEditorOpen => Editor is not null;
     public bool IsEmpty => Items.Count == 0;
 
-    public VaultPageViewModel(IVaultService vaultService, IClipboardService clipboard, IPasswordGenerator generator)
+    /// <summary>The vault holds no logins at all.</summary>
+    public bool IsVaultEmpty => _all.Count == 0;
+
+    /// <summary>The vault has logins, and the search matches none of them.</summary>
+    public bool HasNoMatches => _all.Count > 0 && Items.Count == 0;
+
+    public string NoMatchesText => $"No logins match “{SearchText.Trim()}”.";
+
+    public VaultPageViewModel(IVaultService vaultService, IClipboardService clipboard, IPasswordGenerator generator, GeneratorSettings? generatorSettings = null)
     {
         _vaultService = vaultService;
         _clipboard = clipboard;
         _generator = generator;
+        _generatorSettings = generatorSettings ?? new GeneratorSettings();
     }
+
+    /// <summary>Names in the order of the user's language (Å, Ä, Ö after Z in Swedish; É with E), ignoring case, as the web vault sorts.</summary>
+    private static StringComparer NameOrder => StringComparer.Create(CultureInfo.CurrentCulture, CompareOptions.IgnoreCase);
 
     public Task RefreshAsync()
     {
         _all.Clear();
         foreach (LoginItem login in _vaultService.Items.OfType<LoginItem>()
                      .OrderByDescending(i => i.Favorite)
-                     .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase))
+                     .ThenBy(i => i.Name, NameOrder))
         {
             _all.Add(new LoginItemViewModel(login));
         }
@@ -65,11 +83,13 @@ public sealed partial class VaultPageViewModel : ViewModelBase
             filtered = _all.Where(i =>
                 i.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
                 || (i.Username?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
-                || (i.PrimaryUrl?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
+                || i.Model.Urls.Any(u => u.Contains(term, StringComparison.OrdinalIgnoreCase)));
         }
 
         Items = [.. filtered];
         OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(IsVaultEmpty));
+        OnPropertyChanged(nameof(HasNoMatches));
     }
 
     [RelayCommand]
@@ -79,7 +99,8 @@ public sealed partial class VaultPageViewModel : ViewModelBase
             existing: null,
             _generator,
             onSave: SaveEditorAsync,
-            onCancel: CloseEditor);
+            onCancel: CloseEditor,
+            _generatorSettings);
     }
 
     [RelayCommand]
@@ -89,7 +110,8 @@ public sealed partial class VaultPageViewModel : ViewModelBase
             item.Model,
             _generator,
             onSave: SaveEditorAsync,
-            onCancel: CloseEditor);
+            onCancel: CloseEditor,
+            _generatorSettings);
     }
 
     private async Task SaveEditorAsync(LoginItem item)

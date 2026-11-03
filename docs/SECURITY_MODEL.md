@@ -159,13 +159,16 @@ It describes the current **local vault** milestone. No marketing claims are made
 ## Data handling summary
 
 - **Persisted:** only the encrypted, versioned vault (ciphertext + public parameters), and, once
-  synced, the sync record next to it (a revision number and a SHA-256 of the vault file).
+  synced, the sync record next to it (the server's address, the account id, a revision number and
+  the SHA-256 of the server's and of the local vault file).
 - **In memory while unlocked:** the decrypted vault, the vault key (byte buffer, wiped on lock
   and on shutdown), transiently the master password bytes during create/unlock (wiped after
   use), and, while signed in, the account's access and refresh tokens (dropped on sign-out, on
-  lock, on a 401, and on shutdown; never written to disk).
-- **Sent to the server, over TLS:** the account email and account password on sign-in; the tokens
-  afterwards; the product name, version and operating system as `User-Agent`; and, on *Sync now*,
+  lock, on a 401 that a refresh does not cure, and on shutdown; never written to disk; on lock and
+  shutdown the server is told as well).
+- **Sent to the server, over TLS:** the account email and account password on sign-in (and a
+  two-factor code); the current and new account password when it is changed, and the account
+  password when the account is deleted; the tokens afterwards; the product name, version and operating system as `User-Agent`; and, on *Sync now*,
   the encrypted vault file as it is on disk. See [ACCOUNT.md](ACCOUNT.md) and [SYNC.md](SYNC.md).
   Locking takes effect immediately even while an operation is in progress: the operation
   finishes on a private copy of the key, which is wiped, and never puts key material back into

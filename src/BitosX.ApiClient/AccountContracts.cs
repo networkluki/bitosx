@@ -10,7 +10,12 @@ public sealed record AccountTokens(
     string AccessToken,
     DateTimeOffset AccessTokenExpiresAt,
     string RefreshToken,
-    DateTimeOffset RefreshTokenExpiresAt);
+    DateTimeOffset RefreshTokenExpiresAt)
+{
+    // The compiler-generated ToString would print both secrets; this one never does.
+    public override string ToString()
+        => $"AccountTokens {{ AccessToken = <redacted>, AccessTokenExpiresAt = {AccessTokenExpiresAt:O}, RefreshToken = <redacted>, RefreshTokenExpiresAt = {RefreshTokenExpiresAt:O} }}";
+}
 
 /// <summary>The signed-in account's own profile, as <c>GET /v1/account/me</c> reports it.</summary>
 public sealed record AccountProfile(Guid AccountId, string Email, bool EmailVerified, DateTimeOffset CreatedAt);
@@ -36,4 +41,17 @@ public sealed record SignInResult(AccountTokens? Tokens, SecondFactorChallenge? 
     public static SignInResult SignedIn(AccountTokens tokens) => new(tokens, null);
 
     public static SignInResult SecondFactor(SecondFactorChallenge challenge) => new(null, challenge);
+
+    // Spelled out so that nothing nested can ever print a secret, whatever the records above do.
+    public override string ToString()
+        => Tokens is not null
+            ? "SignInResult { Tokens = <redacted> }"
+            : $"SignInResult {{ Challenge = {Challenge} }}";
 }
+
+/// <summary>
+/// The account's second-factor state, as <c>GET /v1/account/totp</c> reports it. Carries no secret:
+/// whether TOTP is on, since when, and how many recovery codes are left. Read-only on the desktop;
+/// setting it up and turning it off is done on vault.bitosx.se.
+/// </summary>
+public sealed record TwoFactorStatus(bool Enabled, DateTimeOffset? ConfirmedAt, int RecoveryCodesRemaining, bool PendingEnrollment);

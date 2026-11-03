@@ -38,7 +38,23 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.10.0`** — second factor at sign-in: when the account has two-factor authentication (set up on
+**`0.11.0`** — fine-tuning and the account itself. New on the Account page: change the account
+password (every other device is signed out, this one stays; the master password is untouched),
+delete the account (the vault file on the device is untouched), the two-factor state (read-only),
+and "Forgot your password?" for the production server. Fixed: the account session ends on the
+server when the vault locks by inactivity and when BitosX closes, not only on a manual lock; a
+sign-in or refresh that completes after the lock no longer brings the session back; "Sign out
+everywhere" no longer claims success when the server was not told; every call has a deadline that
+covers the body (120 s for envelopes); a 403 is its own failure; the sync record is bound to the
+server, the account, and the revision's fingerprint, so a removed and re-uploaded vault is never
+taken for "up to date" (`sync-state.json` version 2); URLs are split on line breaks only; revealed
+and generated passwords can no longer be selected past the clipboard protections; creating a vault
+no longer freezes the window; and a list of smaller fixes in search, order, focus, screen-reader
+names, Settings and recovery copies. The on-disk vault format is unchanged (still v1).
+**Not verified:** against the real server; the password change, the code in account deletion and
+revisions that never restart need the phase 8 server deployed.
+
+Builds on `0.10.0` — second factor at sign-in: when the account has two-factor authentication (set up on
 vault.bitosx.se), the server answers the password with a one-step challenge instead of a session,
 and the Account page asks for the 6-digit code from the authenticator app or a recovery code. The
 challenge token lives in memory for at most five minutes, nothing authenticated can be called before

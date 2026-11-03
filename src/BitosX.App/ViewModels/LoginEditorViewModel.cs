@@ -1,3 +1,4 @@
+using BitosX.App.Services;
 using BitosX.Core.Domain;
 using BitosX.Core.Generation;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -8,10 +9,13 @@ namespace BitosX.App.ViewModels;
 /// <summary>Editor for adding or editing a login item. Save/cancel are delegated to the host page.</summary>
 public sealed partial class LoginEditorViewModel : ViewModelBase
 {
-    private static readonly char[] UrlSeparators = ['\n', '\r', ',', ';', ' ', '\t'];
+    // One URL per line, as the field says and as the web vault reads it. A URL may contain a comma,
+    // a semicolon or even a space; splitting on those would break it, or silently turn it into two.
+    private static readonly string[] UrlSeparators = ["\r\n", "\n", "\r"];
 
     private readonly LoginItem? _existing;
     private readonly IPasswordGenerator _generator;
+    private readonly GeneratorSettings _generatorSettings;
     private readonly Func<LoginItem, Task> _onSave;
     private readonly Action _onCancel;
 
@@ -53,10 +57,12 @@ public sealed partial class LoginEditorViewModel : ViewModelBase
         LoginItem? existing,
         IPasswordGenerator generator,
         Func<LoginItem, Task> onSave,
-        Action onCancel)
+        Action onCancel,
+        GeneratorSettings? generatorSettings = null)
     {
         _existing = existing;
         _generator = generator;
+        _generatorSettings = generatorSettings ?? new GeneratorSettings();
         _onSave = onSave;
         _onCancel = onCancel;
 
@@ -74,7 +80,8 @@ public sealed partial class LoginEditorViewModel : ViewModelBase
     [RelayCommand]
     private void GeneratePassword()
     {
-        Password = _generator.Generate(new PasswordGenerationOptions { Length = 20 });
+        // With the Generator page's settings, so a site's rules are set up once.
+        Password = _generator.Generate(_generatorSettings.Current);
         IsPasswordVisible = true;
     }
 

@@ -67,6 +67,7 @@ public static class ServiceConfiguration
             sp.GetRequiredService<ILogger<VaultService>>()));
         services.AddSingleton<IVaultBackupService, VaultBackupService>();
         services.AddSingleton<IPasswordGenerator, PasswordGenerator>();
+        services.AddSingleton<GeneratorSettings>();
         services.AddSingleton<ISecurityAnalyzer, SecurityAnalyzer>();
         services.AddSingleton<IKeyDerivationBenchmark>(_ => new KeyDerivationBenchmark(new Argon2idKeyDerivation()));
 
@@ -96,6 +97,12 @@ public static class ServiceConfiguration
             MainWindowReference mainWindow = sp.GetRequiredService<MainWindowReference>();
             return new AvaloniaFilePicker(() => mainWindow.Window);
         });
+        services.AddSingleton<ILinkOpener>(sp =>
+        {
+            MainWindowReference mainWindow = sp.GetRequiredService<MainWindowReference>();
+            return new AvaloniaLinkOpener(() => mainWindow.Window);
+        });
+        services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
         services.AddSingleton<ISystemSessionEvents>(_ =>
             OperatingSystem.IsWindows() ? new WindowsSystemSessionEvents() : new NullSystemSessionEvents());
 

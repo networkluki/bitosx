@@ -13,7 +13,7 @@
         <StackPanel Margin="24" Spacing="16" MaxWidth="640" HorizontalAlignment="Left">
             <TextBlock Text="Account" Classes="h1" />
             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                       Text="Your BitosX account signs you in to the BitosX server. It is separate from your vault: the account password is not the master password. Sync sends the vault only as the encrypted file it is on disk; the server cannot open it." />
+                       Text="Your BitosX account signs you in to the BitosX server. It is separate from your vault: the account password is not the vault master password, and changing one never changes the other. Sync sends the vault only as the encrypted file it is on disk; the server cannot open it." />
 
             <!-- No server for this run -->
             <Border Classes="card" IsVisible="{Binding !IsAvailable}">
@@ -29,15 +29,22 @@
                     <StackPanel Name="CredentialsPanel" Spacing="10" IsVisible="{Binding IsEnteringCredentials}">
                         <TextBox Name="AccountEmailBox" AutomationProperties.Name="Account email" PlaceholderText="Email" Text="{Binding Email}" />
                         <controls:SecretBox Name="AccountPasswordBox" AutomationProperties.Name="Account password" PlaceholderText="Account password" Text="{Binding Password}" />
-                        <Button Name="SignInButton" Content="Sign in" Classes="accent" Command="{Binding SignInCommand}" HorizontalAlignment="Left" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <Button Name="SignInButton" Content="Sign in" Classes="accent" Command="{Binding SignInCommand}" HorizontalAlignment="Left" />
+                            <!-- Resets the account password on the production server's web vault; not shown for another server. -->
+                            <Button Name="ForgotPasswordButton" Content="Forgot your password?" Command="{Binding ForgotPasswordCommand}"
+                                    IsVisible="{Binding IsProductionServer}" VerticalAlignment="Center"
+                                    AutomationProperties.Name="Forgot your account password? Opens vault.bitosx.se in your browser"
+                                    Background="Transparent" Foreground="{StaticResource BitosXAccentBrush}" Padding="4,2" />
+                        </StackPanel>
                         <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
                                    Text="No account yet? Create one at vault.bitosx.se: you confirm your email there and choose the account password. Signing in keeps you signed in until you sign out, lock the vault, or close BitosX." />
                     </StackPanel>
                     <!-- Second factor: shown when the server accepted the password and waits for a code -->
                     <StackPanel Name="SecondFactorPanel" Spacing="10" IsVisible="{Binding IsAwaitingCode}">
                         <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                                   Text="This account has two-factor authentication. Enter the 6-digit code from your authenticator app, or one of your recovery codes. The code is sent only to the BitosX server, together with the one-time token it issued for this sign-in." />
-                        <TextBox Name="AccountCodeBox" AutomationProperties.Name="Sign-in code" PlaceholderText="123456 or xxxxx-xxxxx" Text="{Binding Code}" MaxLength="12" />
+                                   Text="This account has two-factor authentication. Enter the code from your authenticator app (6 to 8 digits), or one of your recovery codes. The code is sent only to the BitosX server, together with the one-time token it issued for this sign-in." />
+                        <TextBox Name="AccountCodeBox" AutomationProperties.Name="Sign-in code" PlaceholderText="123456 or xxxxx-xxxxx" Text="{Binding Code}" MaxLength="11" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Name="SubmitCodeButton" Content="Continue" Classes="accent" Command="{Binding SubmitCodeCommand}" />
                             <Button Name="CancelCodeButton" Content="Start over" Command="{Binding CancelCodeCommand}" />
@@ -103,7 +110,39 @@
             </Border>
 
             <TextBlock Name="AccountStatus" Text="{Binding Status}" TextWrapping="Wrap" Classes="muted"
+                       AutomationProperties.LiveSetting="Polite"
                        IsVisible="{Binding Status, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+            <!-- Two-factor authentication: shown, never changed here -->
+            <Border Name="TwoFactorPanel" Classes="card" IsVisible="{Binding IsSignedIn}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Two-factor authentication" Classes="h2" />
+                    <TextBlock Name="TwoFactorSummary" Text="{Binding TwoFactorSummary}" TextWrapping="Wrap" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding TwoFactorNote}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Change the account password (never the vault master password) -->
+            <Border Name="ChangeAccountPasswordPanel" Classes="card" IsVisible="{Binding IsSignedIn}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Change account password" Classes="h2" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="This changes the password you sign in to your BitosX account with. It does not change your vault master password, which only this device knows. Every other device and browser is signed out; this one stays signed in." />
+                    <controls:SecretBox Name="CurrentAccountPasswordBox" AutomationProperties.Name="Current account password"
+                                        PlaceholderText="Current account password" Text="{Binding CurrentAccountPassword}" />
+                    <controls:SecretBox Name="NewAccountPasswordBox" AutomationProperties.Name="New account password"
+                                        PlaceholderText="New account password (12 to 128 characters)" Text="{Binding NewAccountPassword}" />
+                    <controls:SecretBox Name="RepeatAccountPasswordBox" AutomationProperties.Name="Repeat the new account password"
+                                        PlaceholderText="Repeat the new account password" Text="{Binding RepeatAccountPassword}" />
+                    <TextBox Name="ChangePasswordCodeBox" AutomationProperties.Name="Two-factor code for changing the account password"
+                             PlaceholderText="{Binding CodeHint}" Text="{Binding ChangePasswordCode}" MaxLength="11"
+                             IsVisible="{Binding AsksForCode}" />
+                    <Button Name="ChangeAccountPasswordButton" Content="Change account password" Command="{Binding ChangePasswordCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Name="ChangePasswordStatus" Text="{Binding ChangePasswordStatus}" TextWrapping="Wrap" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
+                               IsVisible="{Binding ChangePasswordStatus, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
 
             <!-- Encrypted sync: the vault file goes up and comes down as it is; see docs/SYNC.md -->
             <Border Name="SyncPanel" Classes="card" IsVisible="{Binding IsSignedIn}">
@@ -117,6 +156,7 @@
                     <TextBlock Name="SyncSummary" Text="{Binding Summary}" TextWrapping="Wrap" FontSize="12"
                                IsVisible="{Binding Summary, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
                     <TextBlock Name="SyncStatus" Text="{Binding Status}" TextWrapping="Wrap" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
                                IsVisible="{Binding Status, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
                     <!-- Take the server's vault: its master password first, then an explicit confirmation -->
@@ -152,6 +192,27 @@
                                     Foreground="{StaticResource BitosXDangerBrush}" HorizontalAlignment="Left" />
                         </StackPanel>
                     </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Delete the account: the server side only; the vault file on this device stays -->
+            <Border Name="DeleteAccountPanel" Classes="card" IsVisible="{Binding IsSignedIn}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Delete account" Classes="h2" Foreground="{StaticResource BitosXDangerBrush}" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="Deletes your BitosX account for good, with its sessions and the encrypted vault stored on the server. The vault file on this device is not touched: it stays here and keeps opening with your vault master password. Confirm with the account password, not the master password." />
+                    <controls:SecretBox Name="DeleteAccountPasswordBox" AutomationProperties.Name="Account password to confirm deleting the account"
+                                        PlaceholderText="Account password" Text="{Binding DeletePassword}" />
+                    <TextBox Name="DeleteAccountCodeBox" AutomationProperties.Name="Two-factor code for deleting the account"
+                             PlaceholderText="{Binding CodeHint}" Text="{Binding DeleteCode}" MaxLength="11"
+                             IsVisible="{Binding AsksForCode}" />
+                    <CheckBox Name="DeleteAccountAcknowledgeCheckBox" IsChecked="{Binding DeleteAcknowledged}"
+                              Content="I understand that my account and the vault stored on the server are deleted for good" />
+                    <Button Name="DeleteAccountButton" Content="Delete my account" Command="{Binding DeleteAccountCommand}"
+                            Foreground="{StaticResource BitosXDangerBrush}" HorizontalAlignment="Left" />
+                    <TextBlock Name="DeleteAccountStatus" Text="{Binding DeleteStatus}" TextWrapping="Wrap" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
+                               IsVisible="{Binding DeleteStatus, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
             </Border>
         </StackPanel>

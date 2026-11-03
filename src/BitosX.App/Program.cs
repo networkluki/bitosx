@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
 using BitosX.ApiClient;
+using BitosX.App.Services;
 using BitosX.Platform.Instance;
 
 namespace BitosX.App;
@@ -32,14 +33,12 @@ sealed class Program
         catch (AppLocationException ex)
         {
             // Never the default vault instead of the one that was asked for.
-            Console.Error.WriteLine(ex.Message);
-            return UsageErrorExitCode;
+            return UsageError(ex.Message, args);
         }
         catch (ApiServerSelectionException ex)
         {
             // Never the production server instead of the one that was asked for.
-            Console.Error.WriteLine(ex.Message);
-            return UsageErrorExitCode;
+            return UsageError(ex.Message, args);
         }
 
         // One instance per vault: a second one would hold its own copy of the contents and could
@@ -47,15 +46,66 @@ sealed class Program
         using SingleInstanceGuard? instance = SingleInstanceGuard.TryAcquire(location.VaultFilePath);
         if (instance is null)
         {
-            if (OperatingSystem.IsWindows())
+            // On Windows the running window comes to the front. Elsewhere it cannot be reached from
+            // here, so the user is told rather than seeing nothing happen.
+            if (!(OperatingSystem.IsWindows() && ShowRunningInstance(location.WindowTitle)))
             {
-                ShowRunningInstance(location.WindowTitle);
+                const string AlreadyRunning = "BitosX is already running on this vault. Switch to its window: it may be minimized or on another workspace.";
+                Console.Error.WriteLine(AlreadyRunning);
+                if (!IsErrorStreamCaptured())
+                {
+                    StartupNotice.Show(location.WindowTitle, AlreadyRunning, args);
+                }
             }
 
             return AlreadyRunningExitCode;
         }
 
         return BuildAvaloniaApp(location, server).StartWithClassicDesktopLifetime(args);
+    }
+
+    /// <summary>A command line that cannot be used: said on the standard error stream and in a window, since a shortcut has no console.</summary>
+    private static int UsageError(string message, string[] args)
+    {
+        Console.Error.WriteLine(message);
+        if (!IsErrorStreamCaptured())
+        {
+            StartupNotice.Show("BitosX did not start", message + Environment.NewLine + Environment.NewLine + "Nothing was opened or changed.", args);
+        }
+
+        return UsageErrorExitCode;
+    }
+
+    /// <summary>
+    /// Whether someone reads the standard error stream: a script or a test that captured it, or a
+    /// terminal. Then the message is already where it is read, and a window would only keep the
+    /// process from ending. On Windows a GUI application started from a shortcut has no error
+    /// handle at all, which <see cref="Console.IsErrorRedirected"/> also reports as "redirected", so
+    /// the handle's own type decides there: a pipe, a file or a console means read. Elsewhere a terminal
+    /// shows the message; a desktop launcher does not, so the window is shown when stderr is not one.
+    /// </summary>
+    private static bool IsErrorStreamCaptured()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                nint handle = NativeMethods.GetStdHandle(NativeMethods.StdErrorHandle);
+                if (handle == 0 || handle == -1)
+                {
+                    return false;
+                }
+
+                uint type = NativeMethods.GetFileType(handle) & ~NativeMethods.FileTypeRemote;
+                return type is NativeMethods.FileTypeDisk or NativeMethods.FileTypePipe or NativeMethods.FileTypeChar;
+            }
+            catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
+            {
+                return false;
+            }
+        }
+
+        return !Console.IsErrorRedirected;
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.
@@ -74,8 +124,9 @@ sealed class Program
     /// Brings the window of the instance that is already running to the front. Instances on other
     /// vaults are told apart by their window title.
     /// </summary>
+    /// <returns>Whether a window was found and brought to the front.</returns>
     [SupportedOSPlatform("windows")]
-    private static void ShowRunningInstance(string windowTitle)
+    private static bool ShowRunningInstance(string windowTitle)
     {
         try
         {
@@ -100,7 +151,7 @@ sealed class Program
                         }
 
                         NativeMethods.SetForegroundWindow(window);
-                        return;
+                        return true;
                     }
                 }
             }
@@ -109,6 +160,8 @@ sealed class Program
         {
             // Only a courtesy; the second instance exits either way.
         }
+
+        return false;
     }
 
     private static class NativeMethods
@@ -129,5 +182,19 @@ sealed class Program
         [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
         [return: MarshalAs(UnmanagedType.Bool)]
         public static extern bool IsIconic(nint window);
+
+        public const int StdErrorHandle = -12; // STD_ERROR_HANDLE
+        public const uint FileTypeDisk = 0x0001; // FILE_TYPE_DISK
+        public const uint FileTypeChar = 0x0002; // FILE_TYPE_CHAR (a console)
+        public const uint FileTypePipe = 0x0003; // FILE_TYPE_PIPE
+        public const uint FileTypeRemote = 0x8000; // FILE_TYPE_REMOTE (flag)
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        public static extern nint GetStdHandle(int standardHandle);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+        public static extern uint GetFileType(nint file);
     }
 }

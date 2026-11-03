@@ -1,6 +1,7 @@
 using System.Globalization;
 using BitosX.ApiClient;
 using BitosX.ApiClient.Sync;
+using BitosX.App.Services;
 using BitosX.Core.Services;
 using BitosX.Core.Domain;
 using BitosX.Crypto;
@@ -20,14 +21,16 @@ public sealed partial class VaultSyncViewModel : ViewModelBase, IDisposable
 {
     private readonly IVaultSyncService _sync;
     private readonly IAccountSession _session;
+    private readonly IUiDispatcher _ui;
     private readonly RestoreConfirmationState _download = new();
     private SyncDownload? _pendingDownload;
     private bool _disposed;
 
-    public VaultSyncViewModel(IVaultSyncService sync, IAccountSession session)
+    public VaultSyncViewModel(IVaultSyncService sync, IAccountSession session, IUiDispatcher ui)
     {
         _sync = sync ?? throw new ArgumentNullException(nameof(sync));
         _session = session ?? throw new ArgumentNullException(nameof(session));
+        _ui = ui ?? throw new ArgumentNullException(nameof(ui));
         _session.Changed += OnSessionChanged;
         IsSignedIn = session.IsSignedIn;
     }
@@ -281,7 +284,9 @@ public sealed partial class VaultSyncViewModel : ViewModelBase, IDisposable
         }
         catch (IOException)
         {
-            Status = "A file could not be written. Nothing was changed.";
+            // Not "nothing was changed": the write that failed may come after an upload or a replace
+            // that succeeded. The next sync compares both sides again and says where things stand.
+            Status = "A file could not be read or written. Run Sync now again to see where things stand.";
         }
         catch (OperationCanceledException)
         {
@@ -305,8 +310,16 @@ public sealed partial class VaultSyncViewModel : ViewModelBase, IDisposable
 
     private static string When(DateTimeOffset moment) => moment.ToLocalTime().ToString("g", CultureInfo.CurrentCulture);
 
-    private void OnSessionChanged(object? sender, EventArgs e)
+    // The session may say so from any thread; the card changes on the UI thread.
+    private void OnSessionChanged(object? sender, EventArgs e) => _ui.Run(ApplySessionState);
+
+    private void ApplySessionState()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         bool signedIn = _session.IsSignedIn;
         if (signedIn == IsSignedIn)
         {
@@ -314,15 +327,15 @@ public sealed partial class VaultSyncViewModel : ViewModelBase, IDisposable
         }
 
         IsSignedIn = signedIn;
-        if (!signedIn)
-        {
-            ClearPending();
-            IsServerAhead = false;
-            IsConflict = false;
-            ServerChangeAcknowledged = false;
-            DownloadMasterPassword = string.Empty;
-            Summary = null;
-        }
+
+        // Either way, nothing from the previous session carries over: not a prepared download, not an
+        // acknowledgement, not what the server held for that account.
+        ClearPending();
+        IsServerAhead = false;
+        IsConflict = false;
+        ServerChangeAcknowledged = false;
+        DownloadMasterPassword = string.Empty;
+        Summary = null;
     }
 
     public void Dispose()

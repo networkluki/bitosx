@@ -234,7 +234,10 @@ public sealed class VaultService : IVaultService, IDisposable
             byte[]? vaultKey = null;
             try
             {
-                VaultCreationResult created = Create(passwordBytes, plaintext);
+                // Argon2id with the settings for new vaults takes seconds and hundreds of MiB: never on
+                // the caller's thread, which is the UI thread (every await before here completes at once).
+                // A derivation cannot be cancelled half-way; cancellation is checked around it as before.
+                VaultCreationResult created = await Task.Run(() => Create(passwordBytes, plaintext)).ConfigureAwait(false);
                 vaultKey = created.VaultKey;
                 await _storage.WriteAsync(created.Encrypted, cancellationToken).ConfigureAwait(false);
                 byte[] fingerprint = EncryptedVaultFingerprint.Compute(created.Encrypted);
@@ -274,8 +277,9 @@ public sealed class VaultService : IVaultService, IDisposable
             bool canonicalEncoding;
             try
             {
-                (unlocked, canonicalEncoding) = candidates.FirstAccepted(
-                    encoding => _cryptor.Unlock(encrypted, encoding));
+                // Off the caller's thread: the read above may have completed synchronously.
+                (unlocked, canonicalEncoding) = await Task.Run(
+                    () => candidates.FirstAccepted(encoding => _cryptor.Unlock(encrypted, encoding))).ConfigureAwait(false);
             }
             catch (BitosXCryptographicException)
             {
@@ -440,7 +444,8 @@ public sealed class VaultService : IVaultService, IDisposable
                 EncryptedVault reWrapped;
                 try
                 {
-                    (reWrapped, _) = candidates.FirstAccepted(encoding => reWrap(current, encoding));
+                    (reWrapped, _) = await Task.Run(
+                        () => candidates.FirstAccepted(encoding => reWrap(current, encoding))).ConfigureAwait(false);
                 }
                 catch (BitosXCryptographicException)
                 {
@@ -532,8 +537,8 @@ public sealed class VaultService : IVaultService, IDisposable
                 {
                     // Verifies the current password (authenticated decrypt), re-encrypts under a fresh
                     // key, and self-checks. All expensive work happens here, before any write.
-                    (rotated, _) = candidates.FirstAccepted(
-                        encoding => _cryptor.RotateVaultKey(current, encoding, canonical ?? encoding));
+                    (rotated, _) = await Task.Run(
+                        () => candidates.FirstAccepted(encoding => _cryptor.RotateVaultKey(current, encoding, canonical ?? encoding))).ConfigureAwait(false);
                 }
                 catch (BitosXCryptographicException)
                 {

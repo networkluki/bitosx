@@ -102,9 +102,10 @@ public sealed class SecurityAnalyzer : ISecurityAnalyzer
             => string.Equals(x.Name, y.Name, StringComparison.OrdinalIgnoreCase)
                && string.Equals(x.Username, y.Username, StringComparison.OrdinalIgnoreCase);
 
+        // Hashed with the same comparison as Equals, so that keys Equals calls equal always hash alike.
         public int GetHashCode((string Name, string Username) obj)
             => HashCode.Combine(
-                obj.Name.ToLowerInvariant(),
-                obj.Username.ToLowerInvariant());
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Name),
+                StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Username));
     }
 }

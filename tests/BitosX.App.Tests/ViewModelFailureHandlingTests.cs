@@ -201,12 +201,14 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
     }
 
     [Fact]
-    public void AutoLockSetting_WhenItCannotBeSaved_StillApplies_AndSaysSo()
+    public async Task AutoLockSetting_WhenItCannotBeSaved_StillApplies_AndSaysSo()
     {
         (SettingsPageViewModel vm, _, FakeAppSettingsStore store, AutoLockController controller) = NewSettingsPage();
         store.SaveThrow = new IOException("disk full");
 
         vm.LockOnMinimize = true;
+        Assert.True(controller.Settings.LockOnMinimize); // at once, before the write
+        await vm.PendingSave;
 
         Assert.True(controller.Settings.LockOnMinimize);           // in effect for this session
         Assert.False(string.IsNullOrWhiteSpace(vm.AutoLockStatus)); // and the user is told it was not saved
@@ -214,14 +216,16 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
     }
 
     [Fact]
-    public void AutoLockSetting_WhenSaved_ClearsAnEarlierWarning()
+    public async Task AutoLockSetting_WhenSaved_ClearsAnEarlierWarning()
     {
         (SettingsPageViewModel vm, _, FakeAppSettingsStore store, _) = NewSettingsPage();
         store.SaveThrow = new UnauthorizedAccessException("read-only");
         vm.LockOnMinimize = true;
+        await vm.PendingSave;
         store.SaveThrow = null;
 
         vm.InactivityMinutes = 3;
+        await vm.PendingSave;
 
         Assert.Null(vm.AutoLockStatus);
         Assert.Equal(TimeSpan.FromMinutes(3), store.Saved!.InactivityTimeout);

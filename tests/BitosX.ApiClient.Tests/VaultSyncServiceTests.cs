@@ -45,7 +45,7 @@ public sealed class VaultSyncServiceTests : IDisposable
         Assert.Equal(1, result.Server!.Revision);
         Assert.Equal(0, _s.Account.LastUpload!.Value.BaseRevision);
         Assert.Equal(Bytes(Vault(1)), _s.Account.LastUpload.Value.Envelope);
-        Assert.Equal(new SyncState(1, Fp(Vault(1)), _s.Clock.Now), _s.State.Saved);
+        Assert.Equal(_s.Record(1, Fp(Vault(1)), _s.Clock.Now), _s.State.Saved);
         Assert.Equal(_s.Clock.Now, result.LastSyncedAt);
     }
 
@@ -81,7 +81,7 @@ public sealed class VaultSyncServiceTests : IDisposable
     public async Task OnlyThisDeviceChanged_Uploads_AgainstTheRevisionItLastSaw()
     {
         _s.Account.Store(Bytes(Vault(1)));
-        _s.State.Saved = new SyncState(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
         _s.Storage.Stored = Vault(2); // edited here since
 
         SyncResult result = await _s.Service.SyncAsync();
@@ -89,14 +89,14 @@ public sealed class VaultSyncServiceTests : IDisposable
         Assert.Equal(SyncOutcome.Uploaded, result.Outcome);
         Assert.Equal(1, _s.Account.LastUpload!.Value.BaseRevision);
         Assert.Equal(2, result.Server!.Revision);
-        Assert.Equal(new SyncState(2, Fp(Vault(2)), _s.Clock.Now), _s.State.Saved);
+        Assert.Equal(_s.Record(2, Fp(Vault(2)), _s.Clock.Now), _s.State.Saved);
     }
 
     [Fact]
     public async Task OnlyTheServerChanged_IsServerAhead_AndNothingMoves()
     {
         _s.Storage.Stored = Vault(1);
-        _s.State.Saved = new SyncState(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
         _s.Account.Store(Bytes(Vault(1)));
         _s.Account.Store(Bytes(Vault(2))); // another device uploaded revision 2
 
@@ -112,7 +112,7 @@ public sealed class VaultSyncServiceTests : IDisposable
     [Fact]
     public async Task BothChanged_IsAConflict_AndNothingMoves()
     {
-        _s.State.Saved = new SyncState(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
         _s.Storage.Stored = Vault(2);
         _s.Account.Store(Bytes(Vault(1)));
         _s.Account.Store(Bytes(Vault(3)));
@@ -129,7 +129,7 @@ public sealed class VaultSyncServiceTests : IDisposable
     public async Task AnUploadAnotherDeviceBeatsToIt_IsAConflict_AndTheRecordIsUnchanged()
     {
         _s.Account.Store(Bytes(Vault(1)));
-        _s.State.Saved = new SyncState(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
         _s.Storage.Stored = Vault(2);
         _s.Account.RaceBeforeUpload = () => _s.Account.Store(Bytes(Vault(3)));
 
@@ -139,6 +139,125 @@ public sealed class VaultSyncServiceTests : IDisposable
         Assert.Equal(2, result.Server!.Revision);
         Assert.Equal(Bytes(Vault(3)), _s.Account.StoredEnvelope);
         Assert.Equal(1, _s.State.Saved!.Revision);
+    }
+
+    // ---- the record is about one server, one account, and one revision with its bytes ----
+
+    [Fact]
+    public async Task ARecordOfAnotherAccount_CountsAsNeverSynced_SoNothingIsOverwritten()
+    {
+        _s.Account.Store(Bytes(Vault(1)));
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1)) with { AccountId = Guid.NewGuid() };
+        _s.Storage.Stored = Vault(2); // a different vault than the server's
+
+        SyncResult result = await _s.Service.SyncAsync();
+
+        Assert.Equal(SyncOutcome.Conflict, result.Outcome);
+        Assert.Null(_s.Account.LastUpload);
+        Assert.Equal(Bytes(Vault(1)), _s.Account.StoredEnvelope);
+    }
+
+    [Fact]
+    public async Task ARecordOfAnotherServer_CountsAsNeverSynced()
+    {
+        _s.Account.Store(Bytes(Vault(1)));
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1)) with { Server = "https://api.other.example/" };
+        _s.Storage.Stored = Vault(1);
+        _s.Account.Store(Bytes(Vault(2)));
+        _s.Account.Store(Bytes(Vault(1))); // revision 3, the same bytes as this device: up to date, and recorded for this server
+
+        SyncResult result = await _s.Service.SyncAsync();
+
+        Assert.Equal(SyncOutcome.UpToDate, result.Outcome);
+        Assert.Equal(FakeServer.Address.BaseAddress.ToString(), _s.State.Saved!.Server);
+        Assert.Equal(3, _s.State.Saved.Revision);
+    }
+
+    [Fact]
+    public async Task TheSameRevisionWithOtherBytes_IsNotUpToDate_OnAServerThatNumbersAnewAfterADelete()
+    {
+        // Two devices synced at revision 1. The other one removes the vault from the server, edits, and
+        // syncs: a server that numbers anew stores its vault as revision 1 again.
+        _s.Account.RestartsRevisionsAfterDelete = true;
+        _s.Storage.Stored = Vault(1);
+        _s.Account.Store(Bytes(Vault(1)));
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
+        _s.Account.DeleteFromOutside();
+        _s.Account.Store(Bytes(Vault(2)));
+        Assert.Equal(1, _s.Account.Revision);
+
+        SyncResult result = await _s.Service.SyncAsync();
+
+        Assert.Equal(SyncOutcome.ServerAhead, result.Outcome); // not "up to date"
+        Assert.Null(_s.Account.LastUpload);
+    }
+
+    [Fact]
+    public async Task TheSameRevisionWithOtherBytes_IsNeverSilentlyOverwritten()
+    {
+        _s.Account.RestartsRevisionsAfterDelete = true;
+        _s.Account.Store(Bytes(Vault(1)));
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
+        _s.Account.DeleteFromOutside();
+        _s.Account.Store(Bytes(Vault(3))); // another device's vault, as revision 1 again
+        _s.Storage.Stored = Vault(2); // and this device edited too
+
+        SyncResult result = await _s.Service.SyncAsync();
+
+        Assert.Equal(SyncOutcome.Conflict, result.Outcome);
+        Assert.Null(_s.Account.LastUpload);
+        Assert.Equal(Bytes(Vault(3)), _s.Account.StoredEnvelope);
+    }
+
+    [Fact]
+    public async Task AfterTheServerRemovedTheVault_RevisionsGoOn_AndThisDeviceUploadsAgainstNothing()
+    {
+        // The real server (0.11.0+): revisions never restart. After a delete, the next upload is the
+        // previous revision + 1, uploaded against "nothing stored" (0).
+        _s.Storage.Stored = Vault(1);
+        _s.Account.Store(Bytes(Vault(1)));
+        _s.Account.Store(Bytes(Vault(2)));
+        _s.State.Saved = _s.Record(2, Fp(Vault(2)), _s.Clock.Now.AddHours(-1));
+        _s.Account.DeleteFromOutside();
+
+        SyncResult result = await _s.Service.SyncAsync();
+
+        Assert.Equal(SyncOutcome.Uploaded, result.Outcome);
+        Assert.Equal(0, _s.Account.LastUpload!.Value.BaseRevision);
+        Assert.Equal(3, result.Server!.Revision);
+        Assert.Equal(3, _s.State.Saved!.Revision);
+    }
+
+    [Fact]
+    public async Task DeleteThenSyncFromTheSameDevice_UploadsAsTheNextRevision()
+    {
+        _s.Storage.Stored = Vault(1);
+        Assert.Equal(SyncOutcome.Uploaded, (await _s.Service.SyncAsync()).Outcome);
+        await _s.Service.DeleteFromServerAsync();
+
+        SyncResult again = await _s.Service.SyncAsync();
+
+        Assert.Equal(SyncOutcome.Uploaded, again.Outcome);
+        Assert.Equal(2, again.Server!.Revision);
+        Assert.Equal(0, _s.Account.LastUpload!.Value.BaseRevision);
+    }
+
+    [Fact]
+    public async Task ADownloadWhoseBytesAreWrittenDifferentlyHere_IsStillUpToDateAfterwards()
+    {
+        // The server's bytes are another client's serialization; this device writes its own. The record
+        // keeps both fingerprints, so the next sync knows nothing changed on either side.
+        byte[] serverBytes = Bytes(Vault(2));
+        serverBytes = [.. System.Text.Encoding.UTF8.GetBytes(" "), .. serverBytes]; // same vault, other bytes
+        _s.Storage.Stored = Vault(1);
+        _s.Account.Store(serverBytes);
+        SyncDownload download = await _s.Service.PrepareDownloadAsync("pw");
+        await _s.Service.CommitDownloadAsync(download);
+        Assert.NotEqual(_s.State.Saved!.ServerFingerprint, _s.State.Saved.LocalFingerprint);
+
+        _s.Vault.State = VaultState.Unlocked;
+        Assert.Equal(SyncOutcome.UpToDate, (await _s.Service.SyncAsync()).Outcome);
+        Assert.Null(_s.Account.LastUpload);
     }
 
     // ---- download ----
@@ -198,7 +317,7 @@ public sealed class VaultSyncServiceTests : IDisposable
 
         AssertVault(Vault(2), _s.Storage.Stored);
         Assert.Equal(1, _s.Backup.CommitCount);
-        Assert.Equal(new SyncState(1, Fp(Vault(2)), _s.Clock.Now), _s.State.Saved);
+        Assert.Equal(_s.Record(1, Fp(Vault(2)), _s.Clock.Now), _s.State.Saved);
 
         // ...so that the next sync, after unlocking, finds this device up to date.
         _s.Vault.State = VaultState.Unlocked;
@@ -225,7 +344,7 @@ public sealed class VaultSyncServiceTests : IDisposable
     [Fact]
     public async Task OverwriteServer_UploadsThisDevicesVault_OverWhateverTheServerHolds()
     {
-        _s.State.Saved = new SyncState(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now.AddHours(-1));
         _s.Storage.Stored = Vault(2);
         _s.Account.Store(Bytes(Vault(1)));
         _s.Account.Store(Bytes(Vault(3)));
@@ -257,7 +376,7 @@ public sealed class VaultSyncServiceTests : IDisposable
     {
         _s.Storage.Stored = Vault(1);
         _s.Account.Store(Bytes(Vault(1)));
-        _s.State.Saved = new SyncState(1, Fp(Vault(1)), _s.Clock.Now);
+        _s.State.Saved = _s.Record(1, Fp(Vault(1)), _s.Clock.Now);
 
         await _s.Service.DeleteFromServerAsync();
 
@@ -319,6 +438,10 @@ public sealed class VaultSyncServiceTests : IDisposable
         }
 
         public void Dispose() => Service.Dispose();
+
+        /// <summary>A record of a sync with this server and account, at which the server held what this device held.</summary>
+        public SyncState Record(long revision, string fingerprint, DateTimeOffset at)
+            => new(FakeServer.Address.BaseAddress.ToString(), Account.AccountId, revision, fingerprint, fingerprint, at);
     }
 
     private sealed class Clock : TimeProvider
@@ -339,6 +462,16 @@ public sealed class VaultSyncServiceTests : IDisposable
         public Action? RaceBeforeUpload { get; set; }
         public Func<Task>? BeforeStatus { get; set; }
 
+        /// <summary>The account the session is signed in to.</summary>
+        public Guid AccountId { get; set; } = Guid.Parse("11111111-2222-4333-8444-555555555555");
+
+        /// <summary>
+        /// When set, the server numbers revisions anew after a delete, as servers before 0.11.0 did. The
+        /// real server never does that any more (revisions only grow); the client must not depend on it.
+        /// </summary>
+        public bool RestartsRevisionsAfterDelete { get; set; }
+
+        /// <summary>Puts an envelope on the server, as an upload by this or any other device does: the next revision.</summary>
         public void Store(byte[] envelope)
         {
             StoredEnvelope = envelope;
@@ -349,6 +482,7 @@ public sealed class VaultSyncServiceTests : IDisposable
 
         public bool IsAvailable => true;
         public string? ServerName => "api.example.test";
+        public ApiServer? Server { get; set; } = FakeServer.Address;
         public bool IsSignedIn => SignedIn;
         public event EventHandler? Changed { add { } remove { } }
 
@@ -375,7 +509,11 @@ public sealed class VaultSyncServiceTests : IDisposable
             RaceBeforeUpload?.Invoke();
             RaceBeforeUpload = null;
             LastUpload = (baseRevision, envelope.ToArray());
-            if (baseRevision != Revision)
+
+            // As the server: 0 means "nothing stored" and is accepted only while nothing is; otherwise the
+            // base must be the stored revision.
+            long expected = StoredEnvelope is null ? 0 : Revision;
+            if (baseRevision != expected)
             {
                 throw new ApiException(ApiFailure.Conflict, 409);
             }
@@ -388,7 +526,22 @@ public sealed class VaultSyncServiceTests : IDisposable
         {
             Calls++;
             StoredEnvelope = null;
+            if (RestartsRevisionsAfterDelete)
+            {
+                Revision = 0;
+            }
+
             return Task.CompletedTask;
+        }
+
+        /// <summary>Removes the vault from the server, as another device would.</summary>
+        public void DeleteFromOutside()
+        {
+            StoredEnvelope = null;
+            if (RestartsRevisionsAfterDelete)
+            {
+                Revision = 0;
+            }
         }
 
         public bool IsAwaitingSecondFactor => false;
@@ -396,10 +549,21 @@ public sealed class VaultSyncServiceTests : IDisposable
         public Task CompleteSignInAsync(string code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public void CancelSignIn() => throw new NotSupportedException();
         public Task<AccountProfile> GetProfileAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<Guid> GetAccountIdAsync(CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            return Task.FromResult(AccountId);
+        }
+
         public Task<IReadOnlyList<AccountSessionInfo>> GetSessionsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task RevokeSessionAsync(Guid sessionId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task SignOutAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<bool> SignOutAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task SignOutEverywhereAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task EndSessionAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<TwoFactorStatus?> GetTwoFactorStatusAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task ChangePasswordAsync(string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task DeleteAccountAsync(string password, string? code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeVault : IVaultService

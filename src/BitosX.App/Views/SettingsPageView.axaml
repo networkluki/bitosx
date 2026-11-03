@@ -48,6 +48,7 @@
                               Content="Lock when the window is minimized" />
 
                     <TextBlock Name="AutoLockStatus" Text="{Binding AutoLockStatus}" TextWrapping="Wrap" Classes="error"
+                               AutomationProperties.LiveSetting="Polite"
                                IsVisible="{Binding AutoLockStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                     <StackPanel Spacing="2">
@@ -72,7 +73,10 @@
                                IsVisible="{Binding NewPasswordStrengthText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                     <controls:SecretBox Name="ConfirmPasswordBox" AutomationProperties.Name="Confirm new password" PlaceholderText="Confirm new password" Text="{Binding ConfirmPassword}" />
                     <Button Name="ChangePasswordButton" Content="Change password" Command="{Binding ChangeMasterPasswordCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Name="ChangePasswordProgress" Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsChangingMasterPassword}"
+                               AutomationProperties.LiveSetting="Polite" Text="Changing the master password… this takes a few seconds." />
                     <TextBlock Name="ChangePasswordStatus" Text="{Binding ChangePasswordStatus}" TextWrapping="Wrap" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
                                IsVisible="{Binding ChangePasswordStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
             </Border>
@@ -84,7 +88,10 @@
                                Text="Generates a new encryption key and re-encrypts your entire vault under it, retiring the previous key. Your items and master password are unchanged. Requires your current master password." />
                     <controls:SecretBox Name="RotatePasswordBox" AutomationProperties.Name="Current password, to rotate the vault key" PlaceholderText="Current password" Text="{Binding RotatePassword}" />
                     <Button Name="RotateVaultKeyButton" Content="Rotate vault key" Command="{Binding RotateVaultKeyCommand}" HorizontalAlignment="Left" />
+                    <TextBlock Name="RotateProgress" Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsRotating}"
+                               AutomationProperties.LiveSetting="Polite" Text="Rotating the vault key… this takes a few seconds." />
                     <TextBlock Name="RotateStatus" Text="{Binding RotateStatus}" TextWrapping="Wrap" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
                                IsVisible="{Binding RotateStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                 </StackPanel>
             </Border>
@@ -127,6 +134,7 @@
 
                     <Button Name="ExportBackupButton" Content="Export encrypted backup…" Command="{Binding ExportBackupCommand}" HorizontalAlignment="Left" />
                     <TextBlock Name="BackupStatus" Text="{Binding BackupStatus}" TextWrapping="Wrap" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
                                IsVisible="{Binding BackupStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                     <Border Height="1" Background="#33888888" Margin="0,6" />
@@ -144,7 +152,10 @@
                              IsVisible="{Binding HasSelectedBackup}" />
                     <Button Name="ValidateBackupButton" Content="Validate backup" Command="{Binding ValidateRestoreCommand}" HorizontalAlignment="Left"
                             IsVisible="{Binding HasSelectedBackup}" />
+                    <TextBlock Name="ValidateProgress" Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsValidatingRestore}"
+                               AutomationProperties.LiveSetting="Polite" Text="Checking the backup with its master password… this takes a few seconds." />
                     <TextBlock Name="RestoreStatus" Text="{Binding RestoreStatus}" TextWrapping="Wrap" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
                                IsVisible="{Binding RestoreStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                     <Border x:Name="RestoreConfirmPanel" IsVisible="{Binding IsRestorePending}" Padding="12" CornerRadius="6" Background="#22CC3333">
@@ -152,7 +163,7 @@
                             <TextBlock Text="This will REPLACE your current vault." FontWeight="Bold" TextWrapping="Wrap" />
                             <TextBlock Name="RestoreSummary" Text="{Binding RestoreSummary}" TextWrapping="Wrap" Classes="muted" />
                             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                                       Text="After restoring, unlock with the backup's master password. Your current vault is saved as a recovery copy first." />
+                                       Text="After restoring, unlock with the backup's master password. Your current vault is saved first as a recovery copy next to it (vault.bitosx.pre-restore; the three before it are kept too). If you use Sync, the restored vault is what the next “Sync now” uploads, replacing the server's vault for every device." />
                             <CheckBox Name="RestoreAcknowledgeCheckBox" IsChecked="{Binding RestoreAcknowledged}"
                                       Content="I understand that this will replace my current vault." />
                             <StackPanel Orientation="Horizontal" Spacing="8">
@@ -202,7 +213,7 @@
                     <TextBlock Text="About" Classes="h2" />
                     <TextBlock Name="AppVersion" Text="{Binding AppVersion, StringFormat='BitosX version {0}'}" />
                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
-                               Text="Your vault is encrypted on this device and never leaves it. The optional account (see the Account page) only signs you in to the BitosX server; it carries nothing from the vault." />
+                               Text="Your vault is encrypted on this device. If you use Sync (on the Account page), the encrypted vault file — never the master password, the vault key or anything decrypted — is stored on the BitosX server, which cannot open it. Without Sync, the vault stays on this device." />
                 </StackPanel>
             </Border>
         </StackPanel>

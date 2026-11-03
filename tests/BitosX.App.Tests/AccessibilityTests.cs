@@ -102,13 +102,13 @@ public sealed class AccessibilityTests
         await HeadlessUi.WaitUntilAsync(() => !app.Shows("NameBox"), "the editor closes");
 
         Button star = app.FindInItem<Button>("GitHub", "FavoriteButton");
-        Assert.Equal("Add to favorites", ControlAutomationPeer.CreatePeerForElement(star).GetName());
+        Assert.Equal("Add GitHub to favorites", ControlAutomationPeer.CreatePeerForElement(star).GetName());
 
         HeadlessUi.Click(app.Window, star);
         await HeadlessUi.WaitUntilAsync(
             () => (string?)app.FindInItem<Button>("GitHub", "FavoriteButton").Content == "★", "the favourite is marked");
         Assert.Equal(
-            "Remove from favorites",
+            "Remove GitHub from favorites",
             ControlAutomationPeer.CreatePeerForElement(app.FindInItem<Button>("GitHub", "FavoriteButton")).GetName());
     });
 

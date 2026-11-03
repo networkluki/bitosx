@@ -147,16 +147,65 @@ public sealed class AccountSessionTests
     }
 
     [Fact]
-    public async Task A401OnACall_EndsTheSession()
+    public async Task A401OnACall_RefreshesOnce_RetriesOnce_AndThenEndsTheSession()
     {
         using var s = new Setup();
         await s.SignedInAsync();
+        s.Api.RefreshResult = s.Tokens(access: "jwt.2", refresh: "r.2");
         s.Api.ProfileThrows = new ApiException(ApiFailure.Unauthenticated, 401);
 
         ApiException ex = await Assert.ThrowsAsync<ApiException>(() => s.Session.GetProfileAsync());
 
         Assert.Equal(ApiFailure.Unauthenticated, ex.Failure);
+        Assert.Equal(1, s.Api.RefreshCount);
+        Assert.Equal(["jwt.1", "jwt.2"], s.Api.AccessTokensSeen);
         Assert.False(s.Session.IsSignedIn);
+        Assert.Equal(2, s.Changes);
+    }
+
+    [Fact]
+    public async Task A401ThatARefreshCures_IsRetried_AndTheSessionLives()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+        s.Api.RefreshResult = s.Tokens(access: "jwt.2", refresh: "r.2");
+        s.Api.ProfileThrowsOnce = new ApiException(ApiFailure.Unauthenticated, 401);
+
+        AccountProfile profile = await s.Session.GetProfileAsync();
+
+        Assert.Equal("alice@example.com", profile.Email);
+        Assert.Equal(1, s.Api.RefreshCount);
+        Assert.Equal(["jwt.1", "jwt.2"], s.Api.AccessTokensSeen);
+        Assert.True(s.Session.IsSignedIn);
+        Assert.Equal(1, s.Changes);
+    }
+
+    [Fact]
+    public async Task A401WhoseRefreshIsRefused_EndsTheSession_WithoutARetry()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+        s.Api.RefreshThrows = new ApiException(ApiFailure.Unauthenticated, 401);
+        s.Api.ProfileThrows = new ApiException(ApiFailure.Unauthenticated, 401);
+
+        await Assert.ThrowsAsync<ApiException>(() => s.Session.GetProfileAsync());
+
+        Assert.Equal(["jwt.1"], s.Api.AccessTokensSeen);
+        Assert.False(s.Session.IsSignedIn);
+    }
+
+    [Fact]
+    public async Task A403_IsNotASignOut()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+        s.Api.ChangePasswordThrows = new ApiException(ApiFailure.Forbidden, 403);
+
+        ApiException ex = await Assert.ThrowsAsync<ApiException>(() => s.Session.ChangePasswordAsync("wrong", "new account password", null));
+
+        Assert.Equal(ApiFailure.Forbidden, ex.Failure);
+        Assert.True(s.Session.IsSignedIn);
+        Assert.Equal(0, s.Api.RefreshCount);
     }
 
     [Fact]
@@ -185,15 +234,24 @@ public sealed class AccountSessionTests
     }
 
     [Fact]
-    public async Task SignOut_ForgetsEvenWhenTheServerCannotBeTold()
+    public async Task SignOut_ForgetsEvenWhenTheServerCannotBeTold_AndSaysSo()
     {
         using var s = new Setup();
         await s.SignedInAsync();
         s.Api.LogoutThrows = new ApiException(ApiFailure.Network);
 
-        await Assert.ThrowsAsync<ApiException>(() => s.Session.SignOutAsync());
+        Assert.False(await s.Session.SignOutAsync());
 
         Assert.False(s.Session.IsSignedIn);
+    }
+
+    [Fact]
+    public async Task SignOut_ThatTheServerConfirms_SaysSo()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+
+        Assert.True(await s.Session.SignOutAsync());
     }
 
     [Fact]
@@ -210,6 +268,126 @@ public sealed class AccountSessionTests
     }
 
     [Fact]
+    public async Task SignOutEverywhere_WithAnExpiredAccessToken_RefreshesFirst()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync(accessSeconds: 0);
+        s.Api.RefreshResult = s.Tokens(access: "jwt.2", refresh: "r.2");
+
+        await s.Session.SignOutEverywhereAsync();
+
+        Assert.Equal(["jwt.2"], s.Api.AccessTokensSeen);
+        Assert.Equal(1, s.Api.LogoutAllCount);
+    }
+
+    [Theory]
+    [InlineData(ApiFailure.Network)]
+    [InlineData(ApiFailure.Unavailable)]
+    [InlineData(ApiFailure.RateLimited)]
+    public async Task SignOutEverywhere_ThatCannotRefresh_FailsLoudly_AndKeepsTheSessionForARetry(ApiFailure failure)
+    {
+        using var s = new Setup();
+        await s.SignedInAsync(accessSeconds: 0);
+        s.Api.RefreshThrows = new ApiException(failure);
+
+        ApiException ex = await Assert.ThrowsAsync<ApiException>(() => s.Session.SignOutEverywhereAsync());
+
+        Assert.Equal(failure, ex.Failure);
+        Assert.Equal(0, s.Api.LogoutAllCount);
+        Assert.True(s.Session.IsSignedIn);
+    }
+
+    [Fact]
+    public async Task SignOutEverywhere_ThatTheServerDoesNotHear_FailsLoudly_AndKeepsTheSession()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+        s.Api.LogoutThrows = new ApiException(ApiFailure.Network);
+
+        await Assert.ThrowsAsync<ApiException>(() => s.Session.SignOutEverywhereAsync());
+
+        Assert.True(s.Session.IsSignedIn);
+    }
+
+    [Fact]
+    public async Task SignOutEverywhere_WhoseRefreshIsRefused_FailsLoudly_AndIsSignedOutHere()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync(accessSeconds: 0);
+        s.Api.RefreshThrows = new ApiException(ApiFailure.Unauthenticated, 401);
+
+        await Assert.ThrowsAsync<ApiException>(() => s.Session.SignOutEverywhereAsync());
+
+        Assert.Equal(0, s.Api.LogoutAllCount);
+        Assert.False(s.Session.IsSignedIn);
+    }
+
+    // ---- ending this session from the list, and the account itself ----
+
+    [Fact]
+    public async Task EndingThisSessionFromTheList_SignsOutHere()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+        var current = Guid.NewGuid();
+        s.Api.SessionsResult = [new AccountSessionInfo(current, Start, Start, Start.AddDays(30), Current: true), new AccountSessionInfo(Guid.NewGuid(), Start, Start, Start.AddDays(30), Current: false)];
+        await s.Session.GetSessionsAsync();
+
+        await s.Session.RevokeSessionAsync(s.Api.SessionsResult[1].Id);
+        Assert.True(s.Session.IsSignedIn);
+
+        await s.Session.RevokeSessionAsync(current);
+        Assert.False(s.Session.IsSignedIn);
+        Assert.Equal(2, s.Changes);
+    }
+
+    [Fact]
+    public async Task ChangePassword_KeepsThisSession()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+
+        await s.Session.ChangePasswordAsync("old account password", "new account password", "123456");
+
+        Assert.Equal(("old account password", "new account password", "123456"), s.Api.LastPasswordChange);
+        Assert.True(s.Session.IsSignedIn);
+    }
+
+    [Fact]
+    public async Task DeleteAccount_SignsOutHere_OnlyWhenTheServerDeletedIt()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+        s.Api.DeleteAccountThrows = new ApiException(ApiFailure.Forbidden, 403);
+
+        await Assert.ThrowsAsync<ApiException>(() => s.Session.DeleteAccountAsync("wrong", null));
+        Assert.True(s.Session.IsSignedIn);
+
+        s.Api.DeleteAccountThrows = null;
+        await s.Session.DeleteAccountAsync("account password", "abcde-fghjk");
+        Assert.Equal(("account password", "abcde-fghjk"), s.Api.LastDeleteAccount);
+        Assert.False(s.Session.IsSignedIn);
+    }
+
+    [Fact]
+    public async Task TheAccountId_IsAskedForOncePerSession()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+
+        Guid first = await s.Session.GetAccountIdAsync();
+        Guid again = await s.Session.GetAccountIdAsync();
+
+        Assert.Equal(first, again);
+        Assert.Equal(1, s.Api.ProfileCount);
+
+        await s.Session.SignOutAsync();
+        await s.SignedInAsync();
+        await s.Session.GetAccountIdAsync();
+        Assert.Equal(2, s.Api.ProfileCount);
+    }
+
+    [Fact]
     public async Task LockingTheVault_SignsOut_AndTellsTheServerBestEffort()
     {
         using var s = new Setup();
@@ -221,6 +399,139 @@ public sealed class AccountSessionTests
         Assert.Equal(2, s.Changes);
         await s.Api.WaitForLogoutsAsync(1);
         Assert.Equal(1, s.Api.LogoutCount);
+    }
+
+    [Fact]
+    public async Task LockingTheVault_AfterTheAccessTokenExpired_RefreshesToTellTheServer()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync(accessSeconds: 900);
+        s.Clock.Now = s.Clock.Now.AddMinutes(20); // an inactivity lock always comes after the access token expired
+        s.Api.RefreshResult = s.Tokens(access: "jwt.2", refresh: "r.2");
+
+        s.Vault.Lock();
+
+        Assert.False(s.Session.IsSignedIn);
+        await s.Api.WaitForLogoutsAsync(1);
+        Assert.Equal("r.1", s.Api.LastRefreshToken);
+        Assert.Equal(["jwt.2"], s.Api.AccessTokensSeen);
+    }
+
+    [Fact]
+    public async Task Closing_TellsTheServer_AndWaitsForIt()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync(accessSeconds: 0);
+        s.Api.RefreshResult = s.Tokens(access: "jwt.2", refresh: "r.2");
+
+        await s.Session.EndSessionAsync();
+
+        Assert.False(s.Session.IsSignedIn);
+        Assert.Equal(1, s.Api.LogoutCount);
+        Assert.Equal(["jwt.2"], s.Api.AccessTokensSeen);
+    }
+
+    [Fact]
+    public async Task Closing_NeverThrows_EvenWhenTheServerIsDown()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+        s.Api.LogoutThrows = new ApiException(ApiFailure.Network);
+
+        await s.Session.EndSessionAsync();
+
+        Assert.False(s.Session.IsSignedIn);
+    }
+
+    // ---- what completes after the session ended does not bring it back ----
+
+    [Fact]
+    public async Task ARefreshThatCompletesAfterTheVaultLocked_DoesNotResurrectTheSession()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync(accessSeconds: 0);
+        var answer = new TaskCompletionSource<AccountTokens>(TaskCreationOptions.RunContinuationsAsynchronously);
+        s.Api.RefreshGate = answer.Task;
+
+        Task<AccountProfile> call = s.Session.GetProfileAsync();
+        await s.Api.WaitForRefreshStartedAsync();
+        s.Vault.Lock();
+        answer.SetResult(s.Tokens(access: "jwt.late", refresh: "r.late"));
+
+        await Assert.ThrowsAnyAsync<Exception>(() => call);
+        Assert.False(s.Session.IsSignedIn);
+        Assert.Equal(2, s.Changes); // signed in, then the lock; nothing after
+        await s.Api.WaitUntilLoggedOutAsync("jwt.late"); // the late pair's session is ended on the server
+        Assert.DoesNotContain("jwt.late", s.Api.ProfileTokensSeen);
+    }
+
+    [Fact]
+    public async Task ASignInThatCompletesAfterTheVaultLocked_DoesNotSignIn()
+    {
+        using var s = new Setup();
+        var answer = new TaskCompletionSource<SignInResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        s.Api.LoginGate = answer.Task;
+
+        Task<SignInOutcome> signIn = s.Session.SignInAsync("alice@example.com", "correct horse battery");
+        s.Vault.Lock();
+        answer.SetResult(SignInResult.SignedIn(s.Tokens(access: "jwt.late", refresh: "r.late")));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => signIn);
+        Assert.False(s.Session.IsSignedIn);
+        Assert.Equal(0, s.Changes);
+        await s.Api.WaitUntilLoggedOutAsync("jwt.late");
+    }
+
+    [Fact]
+    public async Task ASecondFactorStepThatCompletesAfterTheVaultLocked_DoesNotSignIn()
+    {
+        using var s = new Setup();
+        s.Api.LoginChallenge = new SecondFactorChallenge(new string('A', 43), s.Clock.Now.AddMinutes(5));
+        await s.Session.SignInAsync("alice@example.com", "correct horse battery");
+        var answer = new TaskCompletionSource<AccountTokens>(TaskCreationOptions.RunContinuationsAsynchronously);
+        s.Api.SecondFactorGate = answer.Task;
+
+        Task complete = s.Session.CompleteSignInAsync("123456");
+        s.Vault.Lock();
+        answer.SetResult(s.Tokens(access: "jwt.late", refresh: "r.late"));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => complete);
+        Assert.False(s.Session.IsSignedIn);
+        Assert.False(s.Session.IsAwaitingSecondFactor);
+        await s.Api.WaitUntilLoggedOutAsync("jwt.late");
+    }
+
+    [Fact]
+    public async Task ASignInThatCompletesAfterASignOutAndANewSignIn_DoesNotReplaceTheNewSession()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync(accessSeconds: 0);
+        var answer = new TaskCompletionSource<AccountTokens>(TaskCreationOptions.RunContinuationsAsynchronously);
+        s.Api.RefreshGate = answer.Task;
+        Task<AccountProfile> stale = s.Session.GetProfileAsync();
+        await s.Api.WaitForRefreshStartedAsync();
+
+        s.Api.LoginResult = s.Tokens(access: "jwt.new", refresh: "r.new");
+        await s.Session.SignInAsync("alice@example.com", "correct horse battery"); // the old session is dropped, a new one held
+        answer.SetResult(s.Tokens(access: "jwt.old-late", refresh: "r.old-late"));
+        await Assert.ThrowsAnyAsync<Exception>(() => stale);
+
+        Assert.True(s.Session.IsSignedIn);
+        s.Api.RefreshGate = null;
+        await s.Session.GetSessionsAsync();
+        Assert.Equal("jwt.new", s.Api.AccessTokensSeen[^1]);
+    }
+
+    [Fact]
+    public async Task AnExpiredRefreshToken_EndsTheSessionLikeEveryOtherSignOut()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+        s.Clock.Now = s.Clock.Now.AddDays(31);
+
+        await Assert.ThrowsAsync<ApiException>(() => s.Session.GetProfileAsync());
+
+        Assert.Equal(2, s.Changes); // Changed is raised, so every page follows
     }
 
     [Fact]
@@ -370,7 +681,11 @@ public sealed class AccountSessionTests
     {
         private readonly SemaphoreSlim _logouts = new(0);
 
-        public void Dispose() => _logouts.Dispose();
+        public void Dispose()
+        {
+            _logouts.Dispose();
+            _refreshStarted.Dispose();
+        }
 
         public bool IsServerIntegrationEnabled => true;
 
@@ -393,7 +708,20 @@ public sealed class AccountSessionTests
         public string? LastRefreshToken { get; private set; }
 
         public Exception? ProfileThrows { get; set; }
+        public Exception? ProfileThrowsOnce { get; set; }
+        public int ProfileCount { get; private set; }
+        public List<string> ProfileTokensSeen { get; } = [];
         public Exception? LogoutThrows { get; set; }
+        public List<string> LoggedOut { get; } = [];
+        public IReadOnlyList<AccountSessionInfo> SessionsResult { get; set; } = [];
+        public Task<AccountTokens>? RefreshGate { get; set; }
+        public Task<SignInResult>? LoginGate { get; set; }
+        public Task<AccountTokens>? SecondFactorGate { get; set; }
+        public Exception? ChangePasswordThrows { get; set; }
+        public (string Current, string New, string? Code)? LastPasswordChange { get; private set; }
+        public Exception? DeleteAccountThrows { get; set; }
+        public (string Password, string? Code)? LastDeleteAccount { get; private set; }
+        private readonly SemaphoreSlim _refreshStarted = new(0);
         public int LogoutCount { get; private set; }
         public int LogoutAllCount { get; private set; }
 
@@ -409,6 +737,11 @@ public sealed class AccountSessionTests
                 return Task.FromException<SignInResult>(LoginThrows);
             }
 
+            if (LoginGate is { } gate)
+            {
+                return gate;
+            }
+
             return Task.FromResult(LoginChallenge is { } c ? SignInResult.SecondFactor(c) : SignInResult.SignedIn(LoginResult!));
         }
 
@@ -416,6 +749,11 @@ public sealed class AccountSessionTests
         {
             SecondFactorCount++;
             LastSecondFactor = (mfaToken, code);
+            if (SecondFactorGate is { } gate)
+            {
+                return gate;
+            }
+
             return SecondFactorThrows is not null ? Task.FromException<AccountTokens>(SecondFactorThrows) : Task.FromResult(SecondFactorResult!);
         }
 
@@ -423,6 +761,12 @@ public sealed class AccountSessionTests
         {
             RefreshCount++;
             LastRefreshToken = refreshToken;
+            _refreshStarted.Release();
+            if (RefreshGate is { } gate)
+            {
+                return await gate.ConfigureAwait(false);
+            }
+
             if (RefreshDelay > TimeSpan.Zero)
             {
                 await Task.Delay(RefreshDelay, cancellationToken).ConfigureAwait(false);
@@ -439,6 +783,11 @@ public sealed class AccountSessionTests
         public Task LogoutAsync(string accessToken, CancellationToken cancellationToken = default)
         {
             AccessTokensSeen.Add(accessToken);
+            lock (LoggedOut)
+            {
+                LoggedOut.Add(accessToken);
+            }
+
             LogoutCount++;
             _logouts.Release();
             return LogoutThrows is not null ? Task.FromException(LogoutThrows) : Task.CompletedTask;
@@ -454,6 +803,14 @@ public sealed class AccountSessionTests
         public Task<AccountProfile> GetProfileAsync(string accessToken, CancellationToken cancellationToken = default)
         {
             AccessTokensSeen.Add(accessToken);
+            ProfileTokensSeen.Add(accessToken);
+            ProfileCount++;
+            if (ProfileThrowsOnce is { } once)
+            {
+                ProfileThrowsOnce = null;
+                return Task.FromException<AccountProfile>(once);
+            }
+
             return ProfileThrows is not null
                 ? Task.FromException<AccountProfile>(ProfileThrows)
                 : Task.FromResult(new AccountProfile(Guid.NewGuid(), "alice@example.com", true, Start));
@@ -462,13 +819,55 @@ public sealed class AccountSessionTests
         public Task<IReadOnlyList<AccountSessionInfo>> GetSessionsAsync(string accessToken, CancellationToken cancellationToken = default)
         {
             AccessTokensSeen.Add(accessToken);
-            return Task.FromResult<IReadOnlyList<AccountSessionInfo>>([]);
+            return Task.FromResult(SessionsResult);
         }
 
         public Task RevokeSessionAsync(string accessToken, Guid sessionId, CancellationToken cancellationToken = default)
         {
             AccessTokensSeen.Add(accessToken);
             return Task.CompletedTask;
+        }
+
+        public Task ChangePasswordAsync(string accessToken, string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default)
+        {
+            AccessTokensSeen.Add(accessToken);
+            LastPasswordChange = (currentPassword, newPassword, code);
+            return ChangePasswordThrows is not null ? Task.FromException(ChangePasswordThrows) : Task.CompletedTask;
+        }
+
+        public Task DeleteAccountAsync(string accessToken, string password, string? code, CancellationToken cancellationToken = default)
+        {
+            AccessTokensSeen.Add(accessToken);
+            LastDeleteAccount = (password, code);
+            return DeleteAccountThrows is not null ? Task.FromException(DeleteAccountThrows) : Task.CompletedTask;
+        }
+
+        public Task<TwoFactorStatus?> GetTwoFactorStatusAsync(string accessToken, CancellationToken cancellationToken = default)
+        {
+            AccessTokensSeen.Add(accessToken);
+            return Task.FromResult<TwoFactorStatus?>(new TwoFactorStatus(false, null, 0, false));
+        }
+
+        public async Task WaitForRefreshStartedAsync()
+            => Assert.True(await _refreshStarted.WaitAsync(TimeSpan.FromSeconds(5)), "no refresh started");
+
+        public async Task WaitUntilLoggedOutAsync(string accessToken)
+        {
+            DateTime deadline = DateTime.UtcNow.AddSeconds(5);
+            while (DateTime.UtcNow < deadline)
+            {
+                lock (LoggedOut)
+                {
+                    if (LoggedOut.Contains(accessToken))
+                    {
+                        return;
+                    }
+                }
+
+                await Task.Delay(10);
+            }
+
+            Assert.Fail("the server was not told to end that session");
         }
 
         public SyncStatus? SyncStatusResult { get; set; }

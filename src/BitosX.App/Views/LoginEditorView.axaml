@@ -17,11 +17,12 @@
 
             <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10"
                         Margin="0,12,0,0">
-                <Button Name="CancelButton" Content="Cancel" Command="{Binding CancelCommand}" />
-                <Button Name="SaveButton" Content="Save" Classes="accent" Command="{Binding SaveCommand}" />
+                <Button Name="CancelButton" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+                <Button Name="SaveButton" Content="Save" Classes="accent" Command="{Binding SaveCommand}" IsDefault="True" />
             </StackPanel>
 
             <TextBlock Name="ErrorMessage" DockPanel.Dock="Bottom" Text="{Binding ErrorMessage}" Classes="error"
+                       AutomationProperties.LiveSetting="Assertive"
                        Margin="0,12,0,0"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
@@ -46,6 +47,7 @@
                             <Button Name="RevealPasswordButton" Grid.Column="1" Content="{Binding PasswordToggleText}" Margin="6,0,0,0"
                                     Command="{Binding TogglePasswordVisibilityCommand}" ToolTip.Tip="Show or hide the password" />
                             <Button Name="GeneratePasswordButton" Grid.Column="2" Content="Generate" Margin="6,0,0,0"
+                                    ToolTip.Tip="Generates a password with the Generator page's settings"
                                     Command="{Binding GeneratePasswordCommand}" />
                         </Grid>
                     </StackPanel>

@@ -21,17 +21,26 @@
 
             <StackPanel Spacing="6">
                 <TextBlock Text="Confirm master password" />
-                <controls:SecretBox Name="ConfirmPasswordBox" AutomationProperties.Name="Confirm master password" Text="{Binding ConfirmPassword}" />
+                <controls:SecretBox Name="ConfirmPasswordBox" AutomationProperties.Name="Confirm master password" Text="{Binding ConfirmPassword}">
+                    <controls:SecretBox.KeyBindings>
+                        <KeyBinding Gesture="Enter" Command="{Binding CreateCommand}" />
+                    </controls:SecretBox.KeyBindings>
+                </controls:SecretBox>
             </StackPanel>
 
             <TextBlock Name="StrengthText" Text="{Binding StrengthText}" Classes="muted"
                        IsVisible="{Binding StrengthText, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
             <TextBlock Name="ErrorMessage" Text="{Binding ErrorMessage}" Classes="error"
+                       AutomationProperties.LiveSetting="Assertive"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
-            <Button Name="CreateButton" Content="Create Vault" Classes="accent" HorizontalAlignment="Stretch"
+            <Button Name="CreateButton" Content="Create vault" Classes="accent" HorizontalAlignment="Stretch"
                     Command="{Binding CreateCommand}" IsEnabled="{Binding !IsBusy}" />
+
+            <TextBlock Name="CreatingNote" Classes="muted" FontSize="12" TextWrapping="Wrap" HorizontalAlignment="Center"
+                       AutomationProperties.LiveSetting="Polite" IsVisible="{Binding IsBusy}"
+                       Text="Creating the vault… deriving the key from your master password takes a few seconds." />
 
             <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
                        Text="Your master password is never stored or transmitted. If you forget it, the vault cannot be recovered." />

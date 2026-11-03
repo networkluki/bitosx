@@ -23,6 +23,9 @@ public sealed class MainWindowReference
 /// </summary>
 public sealed class MainWindowSession : IDisposable
 {
+    /// <summary>How long closing BitosX waits for the server to hear that the account session ended.</summary>
+    public static readonly TimeSpan ExitSignOutBudget = TimeSpan.FromSeconds(2);
+
     private readonly MainWindowViewModel _viewModel;
     private readonly AutoLockService _autoLock;
     private readonly ClipboardSessionGuard _clipboardGuard;
@@ -89,6 +92,19 @@ public sealed class MainWindowSession : IDisposable
         }
 
         _disposed = true;
+
+        // Closing BitosX ends the account session on the server too, best effort and briefly: the
+        // tokens are forgotten at once, and the server is given a couple of seconds to hear about it.
+        try
+        {
+            using var budget = new CancellationTokenSource(ExitSignOutBudget);
+            _account.EndSessionAsync(budget.Token).Wait(ExitSignOutBudget + TimeSpan.FromSeconds(1));
+        }
+        catch (AggregateException)
+        {
+            // EndSessionAsync does not throw; nothing here may keep the application from closing.
+        }
+
         (_account as IDisposable)?.Dispose();
         _errorGuard.Dispose();
         _clipboardGuard.Dispose();

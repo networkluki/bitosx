@@ -11,8 +11,16 @@ namespace BitosX.Storage;
 /// </summary>
 public sealed class FileVaultBackup : IVaultBackup
 {
-    /// <summary>Suffix of the recovery copy written before a restore replaces the live vault.</summary>
+    /// <summary>Suffix of the recovery copy written before a restore replaces the live vault: the most recent one.</summary>
     public const string RecoverySuffix = ".pre-restore";
+
+    /// <summary>
+    /// How many earlier recovery copies are kept besides the most recent one, as
+    /// <c>.pre-restore.1</c> (the one before) to <c>.pre-restore.3</c> (the oldest). A second
+    /// restore, or a download right after one, no longer overwrites the only copy of the vault
+    /// that was there before both.
+    /// </summary>
+    public const int EarlierRecoveryCopies = 3;
 
     private readonly string _vaultFilePath;
 
@@ -83,13 +91,53 @@ public sealed class FileVaultBackup : IVaultBackup
 
         byte[] bytes = EncryptedVaultSerializer.SerializeToUtf8Bytes(backup);
 
-        // Preserve the current vault as a recovery copy before touching it.
+        // Preserve the current vault as a recovery copy before touching it, written as durably as the
+        // vault itself (flushed, then moved into place), after moving the earlier copies down a slot.
         if (File.Exists(_vaultFilePath))
         {
-            File.Copy(_vaultFilePath, _vaultFilePath + RecoverySuffix, overwrite: true);
+            string recovery = _vaultFilePath + RecoverySuffix;
+            byte[]? current;
+            try
+            {
+                current = await StorageFiles
+                    .ReadBoundedAsync(_vaultFilePath, FileLocalVaultStorage.MaxFileSizeBytes, "vault file", cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (UnsupportedVaultFormatException)
+            {
+                current = null; // larger than any vault: kept as it is, by a plain copy
+            }
+
+            ShiftEarlierRecoveryCopies(recovery);
+            if (current is not null)
+            {
+                await StorageFiles.WriteAtomicAsync(recovery, current, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                File.Copy(_vaultFilePath, recovery, overwrite: true);
+            }
         }
 
         await StorageFiles.WriteAtomicAsync(_vaultFilePath, bytes, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary><c>.pre-restore.2</c> becomes <c>.3</c>, <c>.1</c> becomes <c>.2</c>, the most recent becomes <c>.1</c>; the oldest beyond that goes.</summary>
+    private static void ShiftEarlierRecoveryCopies(string recovery)
+    {
+        for (int slot = EarlierRecoveryCopies - 1; slot >= 1; slot--)
+        {
+            string from = $"{recovery}.{slot}";
+            if (File.Exists(from))
+            {
+                File.Move(from, $"{recovery}.{slot + 1}", overwrite: true);
+            }
+        }
+
+        if (File.Exists(recovery))
+        {
+            File.Move(recovery, recovery + ".1", overwrite: true);
+        }
     }
 
     private static StringComparison PathComparison =>

@@ -1,8 +1,9 @@
 namespace BitosX.Platform.Files;
 
 /// <summary>
-/// Abstraction over the platform file-chooser, returning a local filesystem path (or
-/// <see langword="null"/> if the user cancels or the chosen item has no local path). Keeps the
+/// Abstraction over the platform file-chooser, returning a local filesystem path, or
+/// <see langword="null"/> if the user cancels. A chosen item that has no local path is reported
+/// with <see cref="FileLocationNotLocalException"/>, so it is not mistaken for a cancel. Keeps the
 /// UI framework out of Core. Callers must still validate the actual file contents — never trust the
 /// name, extension, or type reported by the picker.
 /// </summary>

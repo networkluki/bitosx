@@ -45,6 +45,52 @@ public sealed class VaultServiceCreationSettingsTests
             fallback,
             NullLogger<VaultService>.Instance);
 
+    /// <summary>Records which kind of thread the key derivation ran on.</summary>
+    private sealed class ThreadRecordingKeyDerivation : IKeyDerivation
+    {
+        private readonly Argon2idKeyDerivation _inner = new();
+
+        public string Name => _inner.Name;
+
+        public List<bool> RanOnThreadPool { get; } = [];
+
+        public byte[] DeriveKey(ReadOnlySpan<byte> password, ReadOnlySpan<byte> salt, Argon2Parameters parameters)
+        {
+            lock (RanOnThreadPool)
+            {
+                RanOnThreadPool.Add(Thread.CurrentThread.IsThreadPoolThread);
+            }
+
+            return _inner.DeriveKey(password, salt, parameters);
+        }
+    }
+
+    [Fact]
+    public async Task CreatingAndUnlocking_DeriveTheKeyOffTheCallersThread()
+    {
+        // The caller is the UI thread in the application, which must keep drawing meanwhile. A thread
+        // of its own stands in for it here: it is not a pool thread, so whatever runs on it shows.
+        var storage = new InstrumentedVaultStorage();
+        var derivation = new ThreadRecordingKeyDerivation();
+        using VaultService service = NewService(storage, derivation, Fallback);
+
+        Task? created = null;
+        var caller = new Thread(() => created = service.CreateVaultAsync(MasterPassword));
+        caller.Start();
+        caller.Join();
+        await created!;
+
+        service.Lock();
+        Task? unlocked = null;
+        caller = new Thread(() => unlocked = service.UnlockAsync(MasterPassword));
+        caller.Start();
+        caller.Join();
+        await unlocked!;
+
+        Assert.NotEmpty(derivation.RanOnThreadPool);
+        Assert.All(derivation.RanOnThreadPool, Assert.True);
+    }
+
     [Fact]
     public async Task ADeviceWithTheMemory_GetsTheSettingsForNewVaults()
     {

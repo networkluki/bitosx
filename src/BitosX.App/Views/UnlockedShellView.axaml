@@ -14,29 +14,29 @@
             <DockPanel Margin="14">
                 <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="6,6,6,18">
                     <TextBlock Text="BitosX" Classes="h2" />
-                    <TextBlock Text="Local vault" Classes="muted" FontSize="12" />
+                    <TextBlock Text="Encrypted password vault" Classes="muted" FontSize="12" />
                 </StackPanel>
 
                 <!-- The padlock is drawn, not an emoji: it looks the same whatever fonts the system has. -->
-                <Button Name="LockButton" DockPanel.Dock="Bottom" Classes="nav" AutomationProperties.Name="Lock Vault"
+                <Button Name="LockButton" DockPanel.Dock="Bottom" Classes="nav" AutomationProperties.Name="Lock vault"
                         Command="{Binding LockCommand}" Margin="0,10,0,0">
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <PathIcon Data="{StaticResource BitosXLockIcon}" Width="14" Height="14"
                                   Foreground="{StaticResource BitosXWarningBrush}" />
-                        <TextBlock Text="Lock Vault" VerticalAlignment="Center" />
+                        <TextBlock Text="Lock vault" VerticalAlignment="Center" />
                     </StackPanel>
                 </Button>
 
                 <StackPanel Spacing="4" VerticalAlignment="Top">
-                    <Button Name="VaultNavButton" Content="Vault" Classes="nav" Classes.selected="{Binding IsVaultSelected}"
+                    <Button Name="VaultNavButton" Content="Vault" Classes="nav" Classes.selected="{Binding IsVaultSelected}" AutomationProperties.Name="{Binding VaultNavName}"
                             Command="{Binding ShowVaultCommand}" />
-                    <Button Name="GeneratorNavButton" Content="Generator" Classes="nav" Classes.selected="{Binding IsGeneratorSelected}"
+                    <Button Name="GeneratorNavButton" Content="Generator" Classes="nav" Classes.selected="{Binding IsGeneratorSelected}" AutomationProperties.Name="{Binding GeneratorNavName}"
                             Command="{Binding ShowGeneratorCommand}" />
-                    <Button Name="SecurityNavButton" Content="Security Center" Classes="nav" Classes.selected="{Binding IsSecuritySelected}"
+                    <Button Name="SecurityNavButton" Content="Security Center" Classes="nav" Classes.selected="{Binding IsSecuritySelected}" AutomationProperties.Name="{Binding SecurityNavName}"
                             Command="{Binding ShowSecurityCommand}" />
-                    <Button Name="SettingsNavButton" Content="Settings" Classes="nav" Classes.selected="{Binding IsSettingsSelected}"
+                    <Button Name="SettingsNavButton" Content="Settings" Classes="nav" Classes.selected="{Binding IsSettingsSelected}" AutomationProperties.Name="{Binding SettingsNavName}"
                             Command="{Binding ShowSettingsCommand}" />
-                    <Button Name="AccountNavButton" Content="Account" Classes="nav" Classes.selected="{Binding IsAccountSelected}"
+                    <Button Name="AccountNavButton" Content="Account" Classes="nav" Classes.selected="{Binding IsAccountSelected}" AutomationProperties.Name="{Binding AccountNavName}"
                             Command="{Binding ShowAccountCommand}" />
                 </StackPanel>
             </DockPanel>
