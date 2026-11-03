@@ -21,6 +21,9 @@ internal sealed class FakeServer : HttpMessageHandler
 
     private Func<RecordedRequest, HttpResponseMessage>? _last;
 
+    /// <summary>When set, no answer ever comes: not even the headers.</summary>
+    public bool StallHeaders { get; set; }
+
     public void Reply(HttpStatusCode status, string? json = null, Action<HttpResponseMessage>? customize = null)
         => Answers.Enqueue(_ => Make(status, json, customize));
 
@@ -38,16 +41,71 @@ internal sealed class FakeServer : HttpMessageHandler
         return response;
     }
 
-    public HttpBitosXApiClient NewClient()
+    /// <summary>A client over this server, set up as <see cref="HttpBitosXApiClient.Create"/> sets one up; the deadlines may be shortened for a test.</summary>
+    public HttpBitosXApiClient NewClient(
+        TimeSpan? callTimeout = null,
+        TimeSpan? envelopeTimeout = null,
+        Microsoft.Extensions.Logging.ILogger<HttpBitosXApiClient>? logger = null)
     {
         var http = new HttpClient(this, disposeHandler: false)
         {
             BaseAddress = Address.BaseAddress,
-            Timeout = HttpBitosXApiClient.Timeout,
+            Timeout = Timeout.InfiniteTimeSpan, // as in the application: every call has its own deadline
             MaxResponseContentBufferSize = HttpBitosXApiClient.MaxEnvelopeResponseBytes,
         };
         HttpBitosXApiClient.ConfigureDefaultHeaders(http, "9.9.9");
-        return new HttpBitosXApiClient(http, Address, NullLogger<HttpBitosXApiClient>.Instance);
+        return new HttpBitosXApiClient(http, Address, logger ?? NullLogger<HttpBitosXApiClient>.Instance, callTimeout, envelopeTimeout);
+    }
+
+    /// <summary>A 200 whose headers arrive at once and whose body never does, as on a connection that died without a reset.</summary>
+    public void ReplyWithABodyThatNeverArrives()
+        => Answers.Enqueue(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StalledContent() });
+
+    private sealed class StalledContent : HttpContent
+    {
+        public StalledContent()
+        {
+            Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        }
+
+        protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context)
+            => Task.Delay(Timeout.Infinite);
+
+        protected override Task<Stream> CreateContentReadStreamAsync() => Task.FromResult<Stream>(new StalledStream());
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    private sealed class StalledStream : Stream
+    {
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException("synchronous read");
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+            return 0;
+        }
+
+        public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
+            => ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -61,6 +119,11 @@ internal sealed class FakeServer : HttpMessageHandler
             request.Headers.UserAgent.ToString(),
             request.Headers.Accept.ToString());
         Requests.Add(recorded);
+
+        if (StallHeaders)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken).ConfigureAwait(false);
+        }
 
         Func<RecordedRequest, HttpResponseMessage> answer = Answers.Count > 0 ? Answers.Dequeue() : _last ?? throw new InvalidOperationException("No answer scripted.");
         _last = answer;

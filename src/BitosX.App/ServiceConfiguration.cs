@@ -96,6 +96,12 @@ public static class ServiceConfiguration
             MainWindowReference mainWindow = sp.GetRequiredService<MainWindowReference>();
             return new AvaloniaFilePicker(() => mainWindow.Window);
         });
+        services.AddSingleton<ILinkOpener>(sp =>
+        {
+            MainWindowReference mainWindow = sp.GetRequiredService<MainWindowReference>();
+            return new AvaloniaLinkOpener(() => mainWindow.Window);
+        });
+        services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
         services.AddSingleton<ISystemSessionEvents>(_ =>
             OperatingSystem.IsWindows() ? new WindowsSystemSessionEvents() : new NullSystemSessionEvents());
 

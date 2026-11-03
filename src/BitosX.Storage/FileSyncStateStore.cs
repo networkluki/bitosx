@@ -7,12 +7,16 @@ namespace BitosX.Storage;
 /// <summary>
 /// The sync record as a small JSON file next to the vault. Written atomically like the vault
 /// itself; read with the same fail-closed stance — anything that is not exactly a record this
-/// build writes counts as "never synced", which only makes the next sync more careful.
+/// build writes counts as "never synced", which only makes the next sync more careful. That includes
+/// a record of an earlier build (version 1), which named neither the server nor the account.
 /// </summary>
 public sealed class FileSyncStateStore : ISyncStateStore
 {
     /// <summary>The file is a few hundred bytes; anything much larger is not ours.</summary>
     public const long MaxFileSizeBytes = 4 * 1024;
+
+    /// <summary>The record format this build writes: 2 since 0.11.0 (server, account and the server's fingerprint).</summary>
+    public const int CurrentVersion = 2;
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -64,12 +68,19 @@ public sealed class FileSyncStateStore : ISyncStateStore
             return null;
         }
 
-        if (record is null || record.Version != 1 || record.Revision is not { } revision || record.LocalFingerprint is null || record.SyncedAt is not { } synced)
+        if (record is null
+            || record.Version != CurrentVersion
+            || record.Server is null
+            || record.AccountId is not { } accountId
+            || record.Revision is not { } revision
+            || record.ServerFingerprint is null
+            || record.LocalFingerprint is null
+            || record.SyncedAt is not { } synced)
         {
             return null;
         }
 
-        var state = new SyncState(revision, record.LocalFingerprint, synced);
+        var state = new SyncState(record.Server, accountId, revision, record.ServerFingerprint, record.LocalFingerprint, synced);
         return state.IsPlausible ? state : null;
     }
 
@@ -81,7 +92,16 @@ public sealed class FileSyncStateStore : ISyncStateStore
             throw new ArgumentException("The sync state is not one that can be recorded.", nameof(state));
         }
 
-        var record = new Record { Version = 1, Revision = state.Revision, LocalFingerprint = state.LocalFingerprint, SyncedAt = state.SyncedAt };
+        var record = new Record
+        {
+            Version = CurrentVersion,
+            Server = state.Server,
+            AccountId = state.AccountId,
+            Revision = state.Revision,
+            ServerFingerprint = state.ServerFingerprint,
+            LocalFingerprint = state.LocalFingerprint,
+            SyncedAt = state.SyncedAt,
+        };
         byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(record, Json);
         StorageFiles.CreatePrivateDirectory(_directory);
         await StorageFiles.WriteAtomicAsync(_path, bytes, cancellationToken).ConfigureAwait(false);
@@ -102,7 +122,13 @@ public sealed class FileSyncStateStore : ISyncStateStore
     {
         public int? Version { get; init; }
 
+        public string? Server { get; init; }
+
+        public Guid? AccountId { get; init; }
+
         public long? Revision { get; init; }
+
+        public string? ServerFingerprint { get; init; }
 
         public string? LocalFingerprint { get; init; }
 

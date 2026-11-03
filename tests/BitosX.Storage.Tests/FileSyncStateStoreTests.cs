@@ -25,6 +25,12 @@ public sealed class FileSyncStateStoreTests : IDisposable
         }
     }
 
+    private const string Server = "https://api.example.test/";
+    private static readonly Guid Account = Guid.Parse("11111111-2222-4333-8444-555555555555");
+
+    private static SyncState State(long revision, string fingerprint, DateTimeOffset at)
+        => new(Server, Account, revision, new string('c', 64), fingerprint, at);
+
     [Fact]
     public async Task NoFile_IsNull()
         => Assert.Null(await _store.LoadAsync());
@@ -32,7 +38,7 @@ public sealed class FileSyncStateStoreTests : IDisposable
     [Fact]
     public async Task SaveThenLoad_RoundTrips_AndLeavesNoTemporaryFile()
     {
-        var state = new SyncState(7, Fingerprint, new DateTimeOffset(2026, 10, 20, 12, 0, 0, TimeSpan.Zero));
+        var state = State(7, Fingerprint, new DateTimeOffset(2026, 10, 20, 12, 0, 0, TimeSpan.Zero));
 
         await _store.SaveAsync(state);
 
@@ -40,14 +46,18 @@ public sealed class FileSyncStateStoreTests : IDisposable
         Assert.Single(Directory.GetFiles(_dir));
         string json = await File.ReadAllTextAsync(_store.FilePath);
         Assert.Contains("\"revision\": 7", json, StringComparison.Ordinal);
+        Assert.Contains("\"version\": 2", json, StringComparison.Ordinal);
+        Assert.Contains("\"server\": \"https://api.example.test/\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"accountId\": \"11111111-2222-4333-8444-555555555555\"", json, StringComparison.Ordinal);
+        Assert.Contains("\"serverFingerprint\": \"" + new string('c', 64) + "\"", json, StringComparison.Ordinal);
         Assert.DoesNotContain("password", json, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public async Task Save_ReplacesThePreviousRecord()
     {
-        await _store.SaveAsync(new SyncState(1, Fingerprint, DateTimeOffset.UtcNow));
-        await _store.SaveAsync(new SyncState(2, new string('b', 64), DateTimeOffset.UtcNow));
+        await _store.SaveAsync(State(1, Fingerprint, DateTimeOffset.UtcNow));
+        await _store.SaveAsync(State(2, new string('b', 64), DateTimeOffset.UtcNow));
 
         SyncState? loaded = await _store.LoadAsync();
         Assert.Equal(2, loaded!.Revision);
@@ -58,11 +68,16 @@ public sealed class FileSyncStateStoreTests : IDisposable
     [InlineData("")]
     [InlineData("not json")]
     [InlineData("[]")]
-    [InlineData("{\"version\":2,\"revision\":1,\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")]   // a version this build does not know
-    [InlineData("{\"version\":1,\"revision\":0,\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")]   // revision 0 is never recorded
-    [InlineData("{\"version\":1,\"revision\":1,\"localFingerprint\":\"abc\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")]  // not a SHA-256
-    [InlineData("{\"version\":1,\"revision\":1,\"localFingerprint\":\"FP\"}")]                                          // no timestamp
-    [InlineData("{\"version\":1,\"revision\":\"1\",\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")] // a number as a string
+    [InlineData("{\"version\":3,\"server\":\"https://api.example.test/\",\"accountId\":\"11111111-2222-4333-8444-555555555555\",\"revision\":1,\"serverFingerprint\":\"FP\",\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")] // a version this build does not know
+    [InlineData("{\"version\":1,\"revision\":1,\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")]   // an earlier build's record: no server, no account
+    [InlineData("{\"version\":2,\"server\":\"https://api.example.test/\",\"accountId\":\"11111111-2222-4333-8444-555555555555\",\"revision\":0,\"serverFingerprint\":\"FP\",\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")] // revision 0 is never recorded
+    [InlineData("{\"version\":2,\"server\":\"https://api.example.test/\",\"accountId\":\"11111111-2222-4333-8444-555555555555\",\"revision\":1,\"serverFingerprint\":\"FP\",\"localFingerprint\":\"abc\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")] // not a SHA-256
+    [InlineData("{\"version\":2,\"server\":\"https://api.example.test/\",\"accountId\":\"11111111-2222-4333-8444-555555555555\",\"revision\":1,\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")] // no server fingerprint
+    [InlineData("{\"version\":2,\"server\":\"https://api.example.test/\",\"revision\":1,\"serverFingerprint\":\"FP\",\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")] // no account
+    [InlineData("{\"version\":2,\"accountId\":\"11111111-2222-4333-8444-555555555555\",\"revision\":1,\"serverFingerprint\":\"FP\",\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")] // no server
+    [InlineData("{\"version\":2,\"server\":\"https://api.example.test/\",\"accountId\":\"00000000-0000-0000-0000-000000000000\",\"revision\":1,\"serverFingerprint\":\"FP\",\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")] // the empty account
+    [InlineData("{\"version\":2,\"server\":\"https://api.example.test/\",\"accountId\":\"11111111-2222-4333-8444-555555555555\",\"revision\":1,\"serverFingerprint\":\"FP\",\"localFingerprint\":\"FP\"}")] // no timestamp
+    [InlineData("{\"version\":2,\"server\":\"https://api.example.test/\",\"accountId\":\"11111111-2222-4333-8444-555555555555\",\"revision\":\"1\",\"serverFingerprint\":\"FP\",\"localFingerprint\":\"FP\",\"syncedAt\":\"2026-10-20T12:00:00Z\"}")] // a number as a string
     public async Task AnythingThatIsNotOurRecord_ReadsAsNeverSynced(string content)
     {
         Directory.CreateDirectory(_dir);
@@ -83,7 +98,7 @@ public sealed class FileSyncStateStoreTests : IDisposable
     [Fact]
     public async Task Clear_RemovesTheRecord_AndIsFineWhenThereIsNone()
     {
-        await _store.SaveAsync(new SyncState(1, Fingerprint, DateTimeOffset.UtcNow));
+        await _store.SaveAsync(State(1, Fingerprint, DateTimeOffset.UtcNow));
 
         await _store.ClearAsync();
         await _store.ClearAsync();
@@ -94,5 +109,5 @@ public sealed class FileSyncStateStoreTests : IDisposable
 
     [Fact]
     public async Task AnImplausibleState_IsNotRecorded()
-        => await Assert.ThrowsAsync<ArgumentException>(() => _store.SaveAsync(new SyncState(0, Fingerprint, DateTimeOffset.UtcNow)));
+        => await Assert.ThrowsAsync<ArgumentException>(() => _store.SaveAsync(State(0, Fingerprint, DateTimeOffset.UtcNow)));
 }

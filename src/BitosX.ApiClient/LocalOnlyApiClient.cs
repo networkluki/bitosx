@@ -42,6 +42,15 @@ public sealed class LocalOnlyApiClient : IBitosXApiClient
     public Task RevokeSessionAsync(string accessToken, Guid sessionId, CancellationToken cancellationToken = default)
         => throw new InvalidOperationException(Disabled);
 
+    public Task ChangePasswordAsync(string accessToken, string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException(Disabled);
+
+    public Task DeleteAccountAsync(string accessToken, string password, string? code, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException(Disabled);
+
+    public Task<TwoFactorStatus?> GetTwoFactorStatusAsync(string accessToken, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException(Disabled);
+
     public Task<SyncStatus?> GetSyncStatusAsync(string accessToken, CancellationToken cancellationToken = default)
         => throw new InvalidOperationException(Disabled);
 

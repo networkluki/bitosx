@@ -10,17 +10,27 @@ namespace BitosX.ApiClient;
 
 /// <summary>
 /// The BitosX server over HTTPS. One <see cref="HttpClient"/>, no cookies, no redirects, a hard
-/// timeout, a cap on what is read back, and a fixed set of endpoints. Every response is treated as
+/// deadline per call (headers and body), a cap on what is read back, and a fixed set of endpoints. Every response is treated as
 /// untrusted input: the status decides the outcome, a body is accepted only when it is JSON of the
 /// expected shape, and nothing the server says is ever shown or logged.
 /// </summary>
 public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
 {
-    /// <summary>How long a call may take in total, connect and read included.</summary>
+    /// <summary>
+    /// How long an ordinary call may take in total: connect, send, headers and the whole body. Applied
+    /// per call with a deadline of its own, because <see cref="HttpClient.Timeout"/> stops counting at
+    /// the headers when the body is read as a stream.
+    /// </summary>
     public static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
-    /// <summary>The most that is read back from the server for one call. Every real answer is far smaller — except an envelope download, which has <see cref="MaxEnvelopeResponseBytes"/>.</summary>
+    /// <summary>How long an envelope transfer (<c>GET</c>/<c>PUT /v1/sync/envelope</c>, up to 16 MiB as Base64) may take in total.</summary>
+    public static readonly TimeSpan EnvelopeTimeout = TimeSpan.FromSeconds(120);
+
+    /// <summary>The most that is read back from the server for one call. Every real answer is far smaller — except an envelope download, which has <see cref="MaxEnvelopeResponseBytes"/>, and the session list, which has <see cref="MaxSessionsResponseBytes"/>.</summary>
     public const int MaxResponseBytes = 64 * 1024;
+
+    /// <summary>The most that is read back for the session list: the server lists at most 200 sessions, about 190 bytes each.</summary>
+    public const int MaxSessionsResponseBytes = 256 * 1024;
 
     /// <summary>The largest encrypted envelope that is sent or accepted: the vault file's own limit (<c>FileLocalVaultStorage.MaxFileSizeBytes</c>), which the server mirrors.</summary>
     public const int MaxEnvelopeBytes = 16 * 1024 * 1024;
@@ -44,20 +54,40 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         MaxDepth = 8,
     };
 
+    private static readonly JsonSerializerOptions ReadJson = WithUtcTimestamps(Json);
+
     private readonly HttpClient _http;
     private readonly ILogger<HttpBitosXApiClient> _logger;
+    private readonly TimeSpan _callTimeout;
+    private readonly TimeSpan _envelopeTimeout;
     private bool _disposed;
 
     /// <summary>
-    /// A client over <paramref name="http"/>, which must already have its base address, timeout and
-    /// buffer limit set (see <see cref="Create"/>). For tests, which hand in a client over a handler of
-    /// their own.
+    /// A client over <paramref name="http"/>, which must already have its base address and buffer
+    /// limit set (see <see cref="Create"/>). For tests, which hand in a client over a handler of their
+    /// own, and may shorten the deadlines.
     /// </summary>
-    public HttpBitosXApiClient(HttpClient http, ApiServer server, ILogger<HttpBitosXApiClient> logger)
+    public HttpBitosXApiClient(
+        HttpClient http,
+        ApiServer server,
+        ILogger<HttpBitosXApiClient> logger,
+        TimeSpan? callTimeout = null,
+        TimeSpan? envelopeTimeout = null)
     {
         _http = http ?? throw new ArgumentNullException(nameof(http));
         Server = server ?? throw new ArgumentNullException(nameof(server));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _callTimeout = callTimeout ?? Timeout;
+        _envelopeTimeout = envelopeTimeout ?? EnvelopeTimeout;
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(_callTimeout, TimeSpan.Zero, nameof(callTimeout));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(_envelopeTimeout, TimeSpan.Zero, nameof(envelopeTimeout));
+    }
+
+    private static JsonSerializerOptions WithUtcTimestamps(JsonSerializerOptions options)
+    {
+        var copy = new JsonSerializerOptions(options);
+        copy.Converters.Add(new UtcTimestampConverter());
+        return copy;
     }
 
     /// <summary>A client for <paramref name="server"/> with the transport settings this class relies on.</summary>
@@ -83,7 +113,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         var http = new HttpClient(handler, disposeHandler: true)
         {
             BaseAddress = server.BaseAddress,
-            Timeout = Timeout,
+            Timeout = System.Threading.Timeout.InfiniteTimeSpan, // every call has its own deadline, body included (SendCoreAsync)
             MaxResponseContentBufferSize = MaxEnvelopeResponseBytes, // the real cap is per call, in SendAsync
         };
         ConfigureDefaultHeaders(http, productVersion);
@@ -142,7 +172,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
 
         const string path = "v1/auth/login";
         (int status, LoginDto? dto) = await SendCoreAsync<LoginDto>(
-            HttpMethod.Post, path, new { email, password }, null, cancellationToken, MaxResponseBytes).ConfigureAwait(false);
+            HttpMethod.Post, path, new { email, password }, null, Call.Default(path), cancellationToken).ConfigureAwait(false);
 
         // 202: the password was accepted and a second factor is required. The status decides; a 202 that
         // carries session tokens, or a 200 that carries a challenge, is a server this client does not trust.
@@ -240,7 +270,8 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
     {
         ArgumentException.ThrowIfNullOrEmpty(accessToken);
 
-        SessionDto[]? sessions = await SendAsync<SessionDto[]>(HttpMethod.Get, "v1/account/sessions", null, accessToken, cancellationToken).ConfigureAwait(false);
+        SessionDto[]? sessions = await SendAsync<SessionDto[]>(
+            HttpMethod.Get, "v1/account/sessions", null, accessToken, cancellationToken, Call.Default("v1/account/sessions") with { MaxResponseBytes = MaxSessionsResponseBytes }).ConfigureAwait(false);
         if (sessions is null || sessions.Length > MaxSessions)
         {
             throw Unexpected("v1/account/sessions");
@@ -268,8 +299,59 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
     public Task RevokeSessionAsync(string accessToken, Guid sessionId, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrEmpty(accessToken);
-        return SendAsync<NoBody>(HttpMethod.Delete, "v1/account/sessions/" + sessionId.ToString("D"), null, accessToken, cancellationToken);
+
+        // The id is in the path but never in the log: the endpoint is logged as its template.
+        return SendAsync<NoBody>(
+            HttpMethod.Delete, "v1/account/sessions/" + sessionId.ToString("D"), null, accessToken, cancellationToken, Call.Default("v1/account/sessions/{id}"));
     }
+
+    public Task ChangePasswordAsync(string accessToken, string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+        ArgumentNullException.ThrowIfNull(currentPassword);
+        ArgumentNullException.ThrowIfNull(newPassword);
+
+        // A null code is left out of the body (the account has no second factor).
+        return SendAsync<NoBody>(
+            HttpMethod.Post, "v1/account/password", new { currentPassword, newPassword, code = NullIfEmpty(code) }, accessToken, cancellationToken);
+    }
+
+    public Task DeleteAccountAsync(string accessToken, string password, string? code, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+        ArgumentNullException.ThrowIfNull(password);
+        return SendAsync<NoBody>(
+            HttpMethod.Post, "v1/account/delete", new { password, code = NullIfEmpty(code) }, accessToken, cancellationToken);
+    }
+
+    public async Task<TwoFactorStatus?> GetTwoFactorStatusAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+
+        const string path = "v1/account/totp";
+        TotpStatusDto? dto;
+        try
+        {
+            dto = await SendAsync<TotpStatusDto>(HttpMethod.Get, path, null, accessToken, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ApiException ex) when (ex.Failure is ApiFailure.Unavailable or ApiFailure.NotFound)
+        {
+            return null; // the server does not offer two-factor (capability off, or an older server)
+        }
+
+        if (dto is null
+            || dto.Enabled is not { } enabled
+            || dto.RecoveryCodesRemaining is not { } remaining
+            || remaining is < 0 or > 100
+            || dto.PendingEnrollment is not { } pending)
+        {
+            throw Unexpected(path);
+        }
+
+        return new TwoFactorStatus(enabled, dto.ConfirmedAt, remaining, pending);
+    }
+
+    private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
 
     // ---- encrypted sync ----
 
@@ -298,7 +380,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         try
         {
             dto = await SendAsync<SyncEnvelopeDto>(
-                HttpMethod.Get, "v1/sync/envelope", null, accessToken, cancellationToken, MaxEnvelopeResponseBytes).ConfigureAwait(false);
+                HttpMethod.Get, "v1/sync/envelope", null, accessToken, cancellationToken, Call.Envelope("v1/sync/envelope", MaxEnvelopeResponseBytes)).ConfigureAwait(false);
         }
         catch (ApiException ex) when (ex.Failure == ApiFailure.NotFound)
         {
@@ -346,7 +428,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
 
         const string path = "v1/sync/envelope";
         SyncStatusDto? stored = await SendAsync<SyncStatusDto>(
-            HttpMethod.Put, path, new { baseRevision, envelope = Convert.ToBase64String(envelope.Span) }, accessToken, cancellationToken).ConfigureAwait(false);
+            HttpMethod.Put, path, new { baseRevision, envelope = Convert.ToBase64String(envelope.Span) }, accessToken, cancellationToken, Call.Envelope(path, MaxResponseBytes)).ConfigureAwait(false);
         SyncStatus status = ToStatus(stored, path);
 
         // What the server says it stored must be what was sent.
@@ -413,19 +495,36 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
     /// an error response is never read into anything.
     /// </summary>
     private async Task<TResponse?> SendAsync<TResponse>(
-        HttpMethod method, string path, object? body, string? accessToken, CancellationToken cancellationToken, int maxResponseBytes = MaxResponseBytes)
+        HttpMethod method, string path, object? body, string? accessToken, CancellationToken cancellationToken, Call? call = null)
         where TResponse : class
     {
-        (_, TResponse? parsed) = await SendCoreAsync<TResponse>(method, path, body, accessToken, cancellationToken, maxResponseBytes).ConfigureAwait(false);
+        (_, TResponse? parsed) = await SendCoreAsync<TResponse>(method, path, body, accessToken, call ?? Call.Default(path), cancellationToken).ConfigureAwait(false);
         return parsed;
+    }
+
+    /// <summary>How one call is bounded and logged: what is read back at most, how long it may take, and the endpoint's name for the log (never an id).</summary>
+    private sealed record Call(string Endpoint, int MaxResponseBytes, bool IsEnvelopeTransfer)
+    {
+        public static Call Default(string endpoint) => new(endpoint, HttpBitosXApiClient.MaxResponseBytes, false);
+
+        public static Call Envelope(string endpoint, int maxResponseBytes) => new(endpoint, maxResponseBytes, true);
     }
 
     /// <summary>As <see cref="SendAsync{TResponse}"/>, also returning the 2xx status for the one call whose status carries meaning (login: 200 vs 202).</summary>
     private async Task<(int Status, TResponse? Body)> SendCoreAsync<TResponse>(
-        HttpMethod method, string path, object? body, string? accessToken, CancellationToken cancellationToken, int maxResponseBytes)
+        HttpMethod method, string path, object? body, string? accessToken, Call call, CancellationToken cancellationToken)
         where TResponse : class
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // One deadline for the whole call — connect, send, headers and body — linked to the caller's
+        // token. A stall anywhere ends as a network failure instead of holding the caller (and the
+        // locks it holds: the refresh, the sync) for good.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(call.IsEnvelopeTransfer ? _envelopeTimeout : _callTimeout);
+        CancellationToken token = deadline.Token;
+        string endpoint = call.Endpoint;
+        int maxResponseBytes = call.MaxResponseBytes;
 
         using var request = new HttpRequestMessage(method, new Uri(path, UriKind.Relative));
         if (body is not null)
@@ -443,16 +542,16 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         {
             // Headers only: the body is read below, under this class's own cap, so that an oversized
             // answer is judged as such rather than as a transport failure.
-            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+            response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
         {
-            throw Fail(path, ApiFailure.Network, 0, null, ex);
+            throw Fail(endpoint, ApiFailure.Network, 0, null, ex);
         }
         catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
         {
-            // The client's own timeout, not the caller's cancellation.
-            throw Fail(path, ApiFailure.Network, 0, null, ex);
+            // The call's own deadline, not the caller's cancellation.
+            throw Fail(endpoint, ApiFailure.Network, 0, null, ex);
         }
 
         using (response)
@@ -465,47 +564,47 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
 
             if (status is < 200 or > 299)
             {
-                throw Fail(path, FailureFor(status), status, RetryAfter(response), null);
+                throw Fail(endpoint, FailureFor(status), status, RetryAfter(response), null);
             }
 
             string? mediaType = response.Content.Headers.ContentType?.MediaType;
             if (!string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase))
             {
-                throw Fail(path, ApiFailure.Unexpected, status, null, null);
+                throw Fail(endpoint, ApiFailure.Unexpected, status, null, null);
             }
 
             if (response.Content.Headers.ContentLength is { } length && length > maxResponseBytes)
             {
-                throw Fail(path, ApiFailure.Unexpected, status, null, null);
+                throw Fail(endpoint, ApiFailure.Unexpected, status, null, null);
             }
 
             string text;
             try
             {
-                text = await ReadCappedAsync(response.Content, maxResponseBytes, cancellationToken).ConfigureAwait(false)
-                    ?? throw Fail(path, ApiFailure.Unexpected, status, null, null);
+                text = await ReadCappedAsync(response.Content, maxResponseBytes, token).ConfigureAwait(false)
+                    ?? throw Fail(endpoint, ApiFailure.Unexpected, status, null, null);
             }
             catch (HttpRequestException ex)
             {
-                throw Fail(path, ApiFailure.Network, status, null, ex);
+                throw Fail(endpoint, ApiFailure.Network, status, null, ex);
             }
             catch (IOException ex)
             {
-                throw Fail(path, ApiFailure.Network, status, null, ex);
+                throw Fail(endpoint, ApiFailure.Network, status, null, ex);
             }
             catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
             {
-                throw Fail(path, ApiFailure.Network, status, null, ex);
+                throw Fail(endpoint, ApiFailure.Network, status, null, ex);
             }
 
             try
             {
-                TResponse parsed = JsonSerializer.Deserialize<TResponse>(text, Json) ?? throw Fail(path, ApiFailure.Unexpected, status, null, null);
+                TResponse parsed = JsonSerializer.Deserialize<TResponse>(text, ReadJson) ?? throw Fail(endpoint, ApiFailure.Unexpected, status, null, null);
                 return (status, parsed);
             }
             catch (JsonException ex)
             {
-                throw Fail(path, ApiFailure.Unexpected, status, null, ex);
+                throw Fail(endpoint, ApiFailure.Unexpected, status, null, ex);
             }
         }
     }
@@ -550,6 +649,7 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
     {
         400 or 413 or 415 or 422 => ApiFailure.InvalidRequest,
         401 => ApiFailure.Unauthenticated,
+        403 => ApiFailure.Forbidden,
         404 => ApiFailure.NotFound,
         409 => ApiFailure.Conflict,
         429 => ApiFailure.RateLimited,
@@ -668,6 +768,17 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         public string? Envelope { get; init; }
     }
 
+    private sealed class TotpStatusDto
+    {
+        public bool? Enabled { get; init; }
+
+        public DateTimeOffset? ConfirmedAt { get; init; }
+
+        public int? RecoveryCodesRemaining { get; init; }
+
+        public bool? PendingEnrollment { get; init; }
+    }
+
     private sealed class SessionDto
     {
         public Guid? Id { get; init; }
@@ -679,5 +790,36 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         public DateTimeOffset? ExpiresAt { get; init; }
 
         public bool? Current { get; init; }
+    }
+}
+
+/// <summary>
+/// Reads the server's timestamps as ISO 8601 and, defensively, takes one without an offset as UTC
+/// (the server always sends <c>Z</c>; an offset-less value read as local time would be wrong by the
+/// machine's offset). A timestamp with an explicit offset keeps it.
+/// </summary>
+internal sealed class UtcTimestampConverter : JsonConverter<DateTimeOffset>
+{
+    public override DateTimeOffset Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String || !reader.TryGetDateTime(out DateTime parsed))
+        {
+            throw new JsonException("Not an ISO 8601 timestamp.");
+        }
+
+        if (parsed.Kind == DateTimeKind.Unspecified)
+        {
+            return new DateTimeOffset(DateTime.SpecifyKind(parsed, DateTimeKind.Utc));
+        }
+
+        return reader.TryGetDateTimeOffset(out DateTimeOffset withOffset)
+            ? withOffset
+            : throw new JsonException("Not an ISO 8601 timestamp.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, DateTimeOffset value, JsonSerializerOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.WriteStringValue(value);
     }
 }

@@ -58,6 +58,26 @@ public interface IBitosXApiClient
     /// <summary>Ends one of the account's sessions. Ending the current one is a logout.</summary>
     Task RevokeSessionAsync(string accessToken, Guid sessionId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Replaces the <b>account</b> password (<c>POST /v1/account/password</c>) — never the vault master
+    /// password, which the server does not know. <paramref name="code"/> is the TOTP or recovery code,
+    /// required when the account has two-factor authentication. On success every other session of the
+    /// account is ended and this one stays valid. A wrong password or code is
+    /// <see cref="ApiFailure.Forbidden"/> (the session is still valid); a new password outside the
+    /// server's policy is <see cref="ApiFailure.InvalidRequest"/>.
+    /// </summary>
+    Task ChangePasswordAsync(string accessToken, string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes the account for good (<c>POST /v1/account/delete</c>), with its sessions and the
+    /// encrypted vault stored on the server. <paramref name="code"/> as for <see cref="ChangePasswordAsync"/>.
+    /// A wrong password or code is <see cref="ApiFailure.Forbidden"/>.
+    /// </summary>
+    Task DeleteAccountAsync(string accessToken, string password, string? code, CancellationToken cancellationToken = default);
+
+    /// <summary>The account's two-factor state, or <see langword="null"/> when the server does not offer two-factor authentication (503 or 404).</summary>
+    Task<TwoFactorStatus?> GetTwoFactorStatusAsync(string accessToken, CancellationToken cancellationToken = default);
+
     // ---- encrypted sync (docs/SYNC.md) ----
 
     /// <summary>What the server holds for the account: revision, fingerprint and size of the stored envelope, or <see langword="null"/> when it holds nothing.</summary>

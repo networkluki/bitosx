@@ -26,6 +26,12 @@ public enum ApiFailure
 
     /// <summary>The server holds a newer revision than the one the request was based on (409). Nothing was changed; the client must look again before it decides.</summary>
     Conflict = 7,
+
+    /// <summary>
+    /// The server refused a password-confirmed operation (403): the account password, or the
+    /// second-factor code, was not accepted. The session is still valid — this is not a sign-out.
+    /// </summary>
+    Forbidden = 8,
 }
 
 /// <summary>
@@ -77,6 +83,9 @@ public sealed class ApiException : Exception
         ApiFailure.RateLimited => "Too many attempts. Try again later.",
         ApiFailure.Unavailable => "The BitosX server is temporarily unavailable. Try again shortly.",
         ApiFailure.Conflict => "Another device changed the vault on the server first. Nothing was changed.",
-        _ => "The BitosX server answered in an unexpected way. Nothing was changed.",
+        ApiFailure.Forbidden => "The server did not accept the account password or the code. You are still signed in.",
+
+        // Not "nothing was changed": an unexpected answer can follow a request the server carried out.
+        _ => "The BitosX server answered in an unexpected way.",
     };
 }

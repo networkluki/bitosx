@@ -256,6 +256,17 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
     public Guid CurrentSessionId { get; } = Guid.NewGuid();
     public Guid OtherSessionId { get; } = Guid.NewGuid();
 
+    /// <summary>
+    /// When set, every answer completes on a thread-pool thread, as a real HTTP call does: the
+    /// account session's continuations — and the events it raises — then run off the UI thread.
+    /// </summary>
+    public bool AnswersOnAnotherThread { get; set; }
+
+    private Task<T> Answer<T>(T value)
+        => AnswersOnAnotherThread ? Task.Run(async () => { await Task.Delay(5).ConfigureAwait(false); return value; }) : Task.FromResult(value);
+
+    private Task<bool> Answer() => Answer(true);
+
     private void MaybeThrow()
     {
         if (Throws is not null)
@@ -281,10 +292,10 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
 
         if (SecondFactorCode is not null)
         {
-            return Task.FromResult(BitosX.ApiClient.SignInResult.SecondFactor(new BitosX.ApiClient.SecondFactorChallenge(new string('M', 43), DateTimeOffset.UtcNow.AddMinutes(5))));
+            return Answer(BitosX.ApiClient.SignInResult.SecondFactor(new BitosX.ApiClient.SecondFactorChallenge(new string('M', 43), DateTimeOffset.UtcNow.AddMinutes(5))));
         }
 
-        return Task.FromResult(BitosX.ApiClient.SignInResult.SignedIn(Tokens()));
+        return Answer(BitosX.ApiClient.SignInResult.SignedIn(Tokens()));
     }
 
     public Task<BitosX.ApiClient.AccountTokens> CompleteSecondFactorAsync(string mfaToken, string code, CancellationToken cancellationToken = default)
@@ -296,34 +307,34 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
             throw new BitosX.ApiClient.ApiException(BitosX.ApiClient.ApiFailure.Unauthenticated, 401);
         }
 
-        return Task.FromResult(Tokens());
+        return Answer(Tokens());
     }
 
     public Task<BitosX.ApiClient.AccountTokens> RefreshAsync(string refreshToken, CancellationToken cancellationToken = default)
     {
         MaybeThrow();
         RefreshCount++;
-        return Task.FromResult(Tokens());
+        return Answer(Tokens());
     }
 
     public Task LogoutAsync(string accessToken, CancellationToken cancellationToken = default)
     {
         MaybeThrow();
         LogoutCount++;
-        return Task.CompletedTask;
+        return Answer();
     }
 
     public Task LogoutAllAsync(string accessToken, CancellationToken cancellationToken = default)
     {
         MaybeThrow();
         LogoutAllCount++;
-        return Task.CompletedTask;
+        return Answer();
     }
 
     public Task<BitosX.ApiClient.AccountProfile> GetProfileAsync(string accessToken, CancellationToken cancellationToken = default)
     {
         MaybeThrow();
-        return Task.FromResult(new BitosX.ApiClient.AccountProfile(Guid.Parse("11111111-2222-4333-8444-555555555555"), Email, true, Created));
+        return Answer(new BitosX.ApiClient.AccountProfile(Guid.Parse("11111111-2222-4333-8444-555555555555"), Email, true, Created));
     }
 
     public Task<IReadOnlyList<BitosX.ApiClient.AccountSessionInfo>> GetSessionsAsync(string accessToken, CancellationToken cancellationToken = default)
@@ -348,10 +359,48 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
     {
         MaybeThrow();
         Revoked.Add(sessionId);
-        return Task.CompletedTask;
+        return Answer();
     }
 
-    // ---- sync: one stored envelope, compare-and-set on its revision, as the real server does ----
+    /// <summary>Whether the account has two-factor authentication on; <see langword="null"/>: the server does not offer it.</summary>
+    public bool? TwoFactorEnabled { get; set; } = false;
+    public List<(string Current, string New, string? Code)> PasswordChanges { get; } = [];
+    public int AccountDeletions { get; private set; }
+
+    public Task ChangePasswordAsync(string accessToken, string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        if (!string.Equals(currentPassword, Password, StringComparison.Ordinal))
+        {
+            throw new BitosX.ApiClient.ApiException(BitosX.ApiClient.ApiFailure.Forbidden, 403);
+        }
+
+        PasswordChanges.Add((currentPassword, newPassword, code));
+        Revoked.Add(OtherSessionId); // every other session ends
+        return Answer();
+    }
+
+    public Task DeleteAccountAsync(string accessToken, string password, string? code, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        if (!string.Equals(password, Password, StringComparison.Ordinal))
+        {
+            throw new BitosX.ApiClient.ApiException(BitosX.ApiClient.ApiFailure.Forbidden, 403);
+        }
+
+        AccountDeletions++;
+        StoredEnvelope = null;
+        return Answer();
+    }
+
+    public Task<BitosX.ApiClient.TwoFactorStatus?> GetTwoFactorStatusAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        return Answer(TwoFactorEnabled is { } on ? new BitosX.ApiClient.TwoFactorStatus(on, on ? Created : null, on ? 8 : 0, false) : null);
+    }
+
+    // ---- sync: one stored envelope, compare-and-set on its revision, as the real server does: ----
+    // ---- 0 is "nothing stored", and revisions never restart, also after a delete             ----
 
     public byte[]? StoredEnvelope { get; private set; }
     public long StoredRevision { get; private set; }
@@ -374,27 +423,28 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
     public Task<BitosX.ApiClient.SyncStatus?> GetSyncStatusAsync(string accessToken, CancellationToken cancellationToken = default)
     {
         MaybeThrow();
-        return Task.FromResult(Status());
+        return Answer(Status());
     }
 
     public Task<BitosX.ApiClient.SyncEnvelope?> DownloadEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
     {
         MaybeThrow();
         DownloadCount++;
-        return Task.FromResult(Status() is { } status ? new BitosX.ApiClient.SyncEnvelope(status, StoredEnvelope!) : null);
+        return Answer(Status() is { } status ? new BitosX.ApiClient.SyncEnvelope(status, StoredEnvelope!) : null);
     }
 
     public Task<BitosX.ApiClient.SyncStatus> UploadEnvelopeAsync(string accessToken, long baseRevision, ReadOnlyMemory<byte> envelope, CancellationToken cancellationToken = default)
     {
         MaybeThrow();
         UploadCount++;
-        if (baseRevision != StoredRevision)
+        long expected = StoredEnvelope is null ? 0 : StoredRevision;
+        if (baseRevision != expected)
         {
             throw new BitosX.ApiClient.ApiException(BitosX.ApiClient.ApiFailure.Conflict, 409);
         }
 
         Store(envelope.ToArray());
-        return Task.FromResult(Status()!);
+        return Answer(Status()!);
     }
 
     public Task DeleteEnvelopeAsync(string accessToken, CancellationToken cancellationToken = default)
@@ -402,7 +452,7 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
         MaybeThrow();
         DeleteCount++;
         StoredEnvelope = null;
-        return Task.CompletedTask;
+        return Answer();
     }
 
     private static BitosX.ApiClient.AccountTokens Tokens()
@@ -489,7 +539,20 @@ internal sealed class FakeAccountSession : BitosX.ApiClient.IAccountSession
 
     public bool IsSignedIn { get; private set; }
 
+    public BitosX.ApiClient.ApiServer? Server { get; set; } = BitosX.ApiClient.ApiServer.Parse("https://api.example.test");
+
     public event EventHandler? Changed;
+
+    public BitosX.ApiClient.TwoFactorStatus? TwoFactor { get; set; } = new(false, null, 0, false);
+    public BitosX.ApiClient.ApiException? TwoFactorThrows { get; set; }
+    public BitosX.ApiClient.ApiException? ChangePasswordThrows { get; set; }
+    public BitosX.ApiClient.ApiException? DeleteAccountThrows { get; set; }
+    public BitosX.ApiClient.ApiException? SignOutEverywhereThrows { get; set; }
+    public bool SignOutEverywhereEndsSession { get; set; }
+    public bool SignOutTellsServer { get; set; } = true;
+    public (string Current, string New, string? Code)? LastPasswordChange { get; private set; }
+    public (string Password, string? Code)? LastDeleteAccount { get; private set; }
+    public int EndSessionCount { get; private set; }
 
     public (string Email, string Password)? LastSignIn { get; private set; }
     public string? LastCode { get; private set; }
@@ -569,11 +632,46 @@ internal sealed class FakeAccountSession : BitosX.ApiClient.IAccountSession
         return Task.CompletedTask;
     }
 
-    public Task SignOutAsync(CancellationToken cancellationToken = default)
+    public Task<bool> SignOutAsync(CancellationToken cancellationToken = default)
     {
         SignOutCount++;
         Set(false);
-        return SignOutThrows is not null ? Task.FromException(SignOutThrows) : Task.CompletedTask;
+        return SignOutThrows is not null ? Task.FromException<bool>(SignOutThrows) : Task.FromResult(SignOutTellsServer);
+    }
+
+    public Task EndSessionAsync(CancellationToken cancellationToken = default)
+    {
+        EndSessionCount++;
+        if (IsSignedIn)
+        {
+            Set(false);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task<Guid> GetAccountIdAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult(Guid.Parse("11111111-2222-4333-8444-555555555555"));
+
+    public Task<BitosX.ApiClient.TwoFactorStatus?> GetTwoFactorStatusAsync(CancellationToken cancellationToken = default)
+        => TwoFactorThrows is not null ? Task.FromException<BitosX.ApiClient.TwoFactorStatus?>(TwoFactorThrows) : Task.FromResult(TwoFactor);
+
+    public Task ChangePasswordAsync(string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default)
+    {
+        LastPasswordChange = (currentPassword, newPassword, code);
+        return ChangePasswordThrows is not null ? Task.FromException(ChangePasswordThrows) : Task.CompletedTask;
+    }
+
+    public Task DeleteAccountAsync(string password, string? code, CancellationToken cancellationToken = default)
+    {
+        LastDeleteAccount = (password, code);
+        if (DeleteAccountThrows is not null)
+        {
+            return Task.FromException(DeleteAccountThrows);
+        }
+
+        Set(false);
+        return Task.CompletedTask;
     }
 
     public Task<BitosX.ApiClient.SyncStatus?> GetSyncStatusAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -584,7 +682,38 @@ internal sealed class FakeAccountSession : BitosX.ApiClient.IAccountSession
     public Task SignOutEverywhereAsync(CancellationToken cancellationToken = default)
     {
         SignOutEverywhereCount++;
+        if (SignOutEverywhereThrows is not null)
+        {
+            if (SignOutEverywhereEndsSession)
+            {
+                Set(false);
+            }
+
+            return Task.FromException(SignOutEverywhereThrows);
+        }
+
         Set(false);
         return Task.CompletedTask;
+    }
+}
+
+/// <summary>Runs view-model updates where they are raised: for tests that drive a view model without a window.</summary>
+internal sealed class InlineUiDispatcher : BitosX.App.Services.IUiDispatcher
+{
+    public static readonly InlineUiDispatcher Instance = new();
+
+    public void Run(Action action) => action();
+}
+
+/// <summary>Records the pages it was asked to open.</summary>
+internal sealed class FakeLinkOpener : BitosX.App.Services.ILinkOpener
+{
+    public List<Uri> Opened { get; } = [];
+    public bool Succeeds { get; set; } = true;
+
+    public Task<bool> OpenAsync(Uri address)
+    {
+        Opened.Add(address);
+        return Task.FromResult(Succeeds);
     }
 }

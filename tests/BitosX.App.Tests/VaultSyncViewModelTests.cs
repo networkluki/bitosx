@@ -19,7 +19,7 @@ public sealed class VaultSyncViewModelTests
         var sync = new FakeVaultSyncService();
         var session = new FakeAccountSession();
         session.Set(signedIn);
-        return (new VaultSyncViewModel(sync, session), sync, session);
+        return (new VaultSyncViewModel(sync, session, InlineUiDispatcher.Instance), sync, session);
     }
 
     [Fact]
@@ -212,7 +212,7 @@ public sealed class VaultSyncViewModelTests
     [InlineData(ApiFailure.Unauthenticated, "session has ended")]
     [InlineData(ApiFailure.Unavailable, "temporarily unavailable")]
     [InlineData(ApiFailure.Conflict, "Nothing was changed")]
-    [InlineData(ApiFailure.Unexpected, "Nothing was changed")]
+    [InlineData(ApiFailure.Unexpected, "unexpected way")]
     public async Task AServerFailure_IsOneFixedSentence(ApiFailure failure, string expected)
     {
         var (card, sync, _) = New();
@@ -247,6 +247,45 @@ public sealed class VaultSyncViewModelTests
             Assert.False(card.ServerChangeAcknowledged);
             Assert.Null(card.Summary);
             Assert.False(card.SyncNowCommand.CanExecute(null));
+        }
+    }
+
+    [Fact]
+    public async Task AnUnexpectedAnswerOrAFileError_NeverClaimsNothingChanged()
+    {
+        // Either can follow an upload the server accepted, or a replace that happened.
+        var (card, sync, _) = New();
+        using (card)
+        {
+            sync.Throws = new ApiException(ApiFailure.Unexpected, 200);
+            await card.SyncNowCommand.ExecuteAsync(null);
+            Assert.DoesNotContain("Nothing was changed", card.Status, StringComparison.Ordinal);
+
+            sync.Throws = new IOException("disk");
+            await card.SyncNowCommand.ExecuteAsync(null);
+            Assert.DoesNotContain("Nothing was changed", card.Status, StringComparison.Ordinal);
+            Assert.Contains("Sync now again", card.Status, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task SigningInAgain_CarriesNothingOverFromTheSessionBefore()
+    {
+        var (card, sync, session) = New();
+        using (card)
+        {
+            sync.NextResult = new SyncResult(SyncOutcome.ServerAhead, Server, null);
+            await card.SyncNowCommand.ExecuteAsync(null);
+            card.DownloadMasterPassword = "pw";
+            await card.PrepareDownloadCommand.ExecuteAsync(null);
+            Assert.True(card.IsDownloadPending);
+
+            session.Set(false);
+            session.Set(true);
+
+            Assert.False(card.IsDownloadPending);
+            Assert.False(card.IsServerAhead);
+            Assert.False(card.ConfirmDownloadCommand.CanExecute(null));
         }
     }
 }

@@ -12,10 +12,17 @@ public interface IAccountSession
     /// <summary>The server's name for the user interface, or <see langword="null"/> when none is configured.</summary>
     string? ServerName { get; }
 
+    /// <summary>The server itself, or <see langword="null"/> when none is configured.</summary>
+    ApiServer? Server { get; }
+
     /// <summary>Whether an account is signed in: a refresh token is held and has not expired.</summary>
     bool IsSignedIn { get; }
 
-    /// <summary>Raised after <see cref="IsSignedIn"/> changes — on signing in, and on every way of signing out.</summary>
+    /// <summary>
+    /// Raised after <see cref="IsSignedIn"/> changes — on signing in, and on every way of signing out.
+    /// May be raised on any thread (a server call completes on the thread pool); a user interface
+    /// moves to its own thread before it touches anything bound.
+    /// </summary>
     event EventHandler? Changed;
 
     /// <summary>
@@ -40,17 +47,44 @@ public interface IAccountSession
     /// <summary>The signed-in account's own profile.</summary>
     Task<AccountProfile> GetProfileAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>The signed-in account's id, as the profile states it; asked of the server once per session.</summary>
+    Task<Guid> GetAccountIdAsync(CancellationToken cancellationToken = default);
+
     /// <summary>The account's current sessions, this one marked.</summary>
     Task<IReadOnlyList<AccountSessionInfo>> GetSessionsAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Ends one session. Ending this one signs out.</summary>
+    /// <summary>Ends one session. Ending this one (the one marked current in the last list) signs out here as well.</summary>
     Task RevokeSessionAsync(Guid sessionId, CancellationToken cancellationToken = default);
 
-    /// <summary>Ends this session on the server and forgets the tokens. The tokens are forgotten even if the server cannot be told.</summary>
-    Task SignOutAsync(CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Ends this session on the server and forgets the tokens. The tokens are forgotten even if the
+    /// server cannot be told. Returns whether the server confirmed it (or already considered the session ended).
+    /// </summary>
+    Task<bool> SignOutAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Ends every session of the account on the server and forgets the tokens. The tokens are forgotten even if the server cannot be told.</summary>
+    /// <summary>
+    /// Ends every session of the account on the server, then forgets the tokens. Throws
+    /// <see cref="ApiException"/> when the server could not be told: then no session was ended, and
+    /// this one is kept so the user can try again — unless the failure itself ended it (a refused refresh or a 401).
+    /// </summary>
     Task SignOutEverywhereAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Forgets the tokens at once and then tells the server, best effort, refreshing first when the
+    /// access token has expired. Never throws. For closing BitosX; the vault locking does the same by itself.
+    /// </summary>
+    Task EndSessionAsync(CancellationToken cancellationToken = default);
+
+    // ---- the account itself (password-confirmed; a refusal is ApiFailure.Forbidden and keeps the session) ----
+
+    /// <summary>The account's two-factor state, or <see langword="null"/> when the server does not offer it.</summary>
+    Task<TwoFactorStatus?> GetTwoFactorStatusAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>Replaces the account password. Every other session ends; this one stays signed in. The vault master password is not touched.</summary>
+    Task ChangePasswordAsync(string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default);
+
+    /// <summary>Deletes the account on the server and signs out here. The vault file on this device is not touched.</summary>
+    Task DeleteAccountAsync(string password, string? code, CancellationToken cancellationToken = default);
 
     // ---- encrypted sync, with this session's token (docs/SYNC.md) ----
 

@@ -6,7 +6,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace BitosX.App.ViewModels;
 
 /// <summary>Main application shell shown when the vault is unlocked. Hosts navigation and pages.</summary>
-public sealed partial class UnlockedShellViewModel : ViewModelBase
+/// <remarks>
+/// Disposed when the vault locks (the main window disposes the content it replaces); it disposes the
+/// pages it created, so none of them keeps listening to the account session, which outlives them.
+/// </remarks>
+public sealed partial class UnlockedShellViewModel : ViewModelBase, IDisposable
 {
     private readonly IServiceProvider _services;
     private readonly IVaultService _vaultService;
@@ -16,6 +20,7 @@ public sealed partial class UnlockedShellViewModel : ViewModelBase
     private SecurityPageViewModel? _securityPage;
     private SettingsPageViewModel? _settingsPage;
     private AccountPageViewModel? _accountPage;
+    private bool _disposed;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsVaultSelected))]
@@ -78,4 +83,18 @@ public sealed partial class UnlockedShellViewModel : ViewModelBase
 
     [RelayCommand]
     private void Lock() => _vaultService.Lock();
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        foreach (object? page in new object?[] { _vaultPage, _generatorPage, _securityPage, _settingsPage, _accountPage })
+        {
+            (page as IDisposable)?.Dispose();
+        }
+    }
 }

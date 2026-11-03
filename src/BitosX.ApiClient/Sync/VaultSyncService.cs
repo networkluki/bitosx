@@ -40,22 +40,29 @@ public sealed class VaultSyncService : IVaultSyncService, IDisposable
         {
             Require();
             (byte[] local, string localFingerprint) = await ReadLocalAsync(ct).ConfigureAwait(false);
-            SyncState? recorded = await _state.LoadAsync(ct).ConfigureAwait(false);
+            Binding binding = await BindAsync(ct).ConfigureAwait(false);
+            SyncState? recorded = await LoadRecordAsync(binding, ct).ConfigureAwait(false);
             SyncStatus? server = await _account.GetSyncStatusAsync(ct).ConfigureAwait(false);
 
             if (server is null)
             {
-                // Nothing on the server yet (or it was removed): this device's vault becomes revision 1.
-                return await UploadAsync(local, localFingerprint, baseRevision: 0, ct).ConfigureAwait(false);
+                // Nothing on the server (yet, or any more): this device's vault is uploaded against
+                // "nothing stored", which the server accepts only while that is still true.
+                return await UploadAsync(binding, local, localFingerprint, baseRevision: 0, ct).ConfigureAwait(false);
             }
 
             bool sameAsServer = string.Equals(server.Fingerprint, localFingerprint, StringComparison.Ordinal);
             bool localUnchanged = recorded is not null && string.Equals(recorded.LocalFingerprint, localFingerprint, StringComparison.Ordinal);
-            bool serverUnchanged = recorded is not null && recorded.Revision == server.Revision;
+
+            // The server is what this device last saw only if both the revision and the bytes match: a
+            // revision number alone could have been handed out again after the vault was removed.
+            bool serverUnchanged = recorded is not null
+                && recorded.Revision == server.Revision
+                && string.Equals(recorded.ServerFingerprint, server.Fingerprint, StringComparison.Ordinal);
 
             if (sameAsServer || (localUnchanged && serverUnchanged))
             {
-                SyncState state = await RecordAsync(server.Revision, localFingerprint, ct).ConfigureAwait(false);
+                SyncState state = await RecordAsync(binding, server, localFingerprint, ct).ConfigureAwait(false);
                 ApiLog.SyncChecked(_logger, nameof(SyncOutcome.UpToDate), server.Revision);
                 return new SyncResult(SyncOutcome.UpToDate, server, state.SyncedAt);
             }
@@ -70,7 +77,7 @@ public sealed class VaultSyncService : IVaultSyncService, IDisposable
             if (serverUnchanged)
             {
                 // Only this device moved on: the server takes it, provided nobody got there meanwhile.
-                return await UploadAsync(local, localFingerprint, server.Revision, ct).ConfigureAwait(false);
+                return await UploadAsync(binding, local, localFingerprint, server.Revision, ct).ConfigureAwait(false);
             }
 
             if (localUnchanged)
@@ -110,6 +117,7 @@ public sealed class VaultSyncService : IVaultSyncService, IDisposable
         return OneAtATimeAsync<object?>(async ct =>
         {
             Require();
+            Binding binding = await BindAsync(ct).ConfigureAwait(false); // before the replace: nothing on the network between the two writes
 
             // Replace first, record second. A crash between the two leaves a vault on disk whose
             // fingerprint matches the server's, which the next sync recognises as up to date; the other
@@ -117,7 +125,7 @@ public sealed class VaultSyncService : IVaultSyncService, IDisposable
             // the next sync would then offer to upload the old vault over the new one.
             await _backup.CommitRestoreAsync(download.Preview, ct).ConfigureAwait(false); // recovery copy, atomic replace, lock
             string fingerprint = HttpBitosXApiClient.Fingerprint(EncryptedVaultSerializer.SerializeToUtf8Bytes(download.Preview.Envelope));
-            await RecordAsync(download.Server.Revision, fingerprint, ct).ConfigureAwait(false);
+            await RecordAsync(binding, download.Server, fingerprint, ct).ConfigureAwait(false);
             ApiLog.SyncRestored(_logger, download.Server.Revision);
             return null;
         }, cancellationToken);
@@ -128,8 +136,9 @@ public sealed class VaultSyncService : IVaultSyncService, IDisposable
         {
             Require();
             (byte[] local, string localFingerprint) = await ReadLocalAsync(ct).ConfigureAwait(false);
+            Binding binding = await BindAsync(ct).ConfigureAwait(false);
             SyncStatus? server = await _account.GetSyncStatusAsync(ct).ConfigureAwait(false);
-            return await UploadAsync(local, localFingerprint, server?.Revision ?? 0, ct).ConfigureAwait(false);
+            return await UploadAsync(binding, local, localFingerprint, server?.Revision ?? 0, ct).ConfigureAwait(false);
         }, cancellationToken);
 
     public Task DeleteFromServerAsync(CancellationToken cancellationToken = default)
@@ -143,7 +152,7 @@ public sealed class VaultSyncService : IVaultSyncService, IDisposable
         }, cancellationToken);
 
     /// <summary>Uploads against <paramref name="baseRevision"/>; a refusal is reported as a conflict and changes nothing.</summary>
-    private async Task<SyncResult> UploadAsync(byte[] local, string localFingerprint, long baseRevision, CancellationToken cancellationToken)
+    private async Task<SyncResult> UploadAsync(Binding binding, byte[] local, string localFingerprint, long baseRevision, CancellationToken cancellationToken)
     {
         SyncStatus stored;
         try
@@ -157,7 +166,7 @@ public sealed class VaultSyncService : IVaultSyncService, IDisposable
             return new SyncResult(SyncOutcome.Conflict, now, null);
         }
 
-        SyncState state = await RecordAsync(stored.Revision, localFingerprint, cancellationToken).ConfigureAwait(false);
+        SyncState state = await RecordAsync(binding, stored, localFingerprint, cancellationToken).ConfigureAwait(false);
         ApiLog.SyncUploaded(_logger, stored.Revision, stored.SizeBytes);
         return new SyncResult(SyncOutcome.Uploaded, stored, state.SyncedAt);
     }
@@ -175,11 +184,29 @@ public sealed class VaultSyncService : IVaultSyncService, IDisposable
         return (bytes, HttpBitosXApiClient.Fingerprint(bytes));
     }
 
-    private async Task<SyncState> RecordAsync(long revision, string localFingerprint, CancellationToken cancellationToken)
+    private async Task<SyncState> RecordAsync(Binding binding, SyncStatus server, string localFingerprint, CancellationToken cancellationToken)
     {
-        var state = new SyncState(revision, localFingerprint, _clock.GetUtcNow());
+        var state = new SyncState(binding.Server, binding.AccountId, server.Revision, server.Fingerprint, localFingerprint, _clock.GetUtcNow());
         await _state.SaveAsync(state, cancellationToken).ConfigureAwait(false);
         return state;
+    }
+
+    /// <summary>Which server and account this sync is with: a record is only ever read for, and written for, that pair.</summary>
+    private readonly record struct Binding(string Server, Guid AccountId);
+
+    private async Task<Binding> BindAsync(CancellationToken cancellationToken)
+    {
+        string server = _account.Server?.BaseAddress.ToString()
+            ?? throw new InvalidOperationException("Server integration is disabled in this run of BitosX.");
+        Guid accountId = await _account.GetAccountIdAsync(cancellationToken).ConfigureAwait(false);
+        return new Binding(server, accountId);
+    }
+
+    /// <summary>The record, if it is about this server and account; a record about another one says nothing here (and is replaced by the next sync that completes).</summary>
+    private async Task<SyncState?> LoadRecordAsync(Binding binding, CancellationToken cancellationToken)
+    {
+        SyncState? recorded = await _state.LoadAsync(cancellationToken).ConfigureAwait(false);
+        return recorded is not null && recorded.IsFor(binding.Server, binding.AccountId) ? recorded : null;
     }
 
     private void Require()

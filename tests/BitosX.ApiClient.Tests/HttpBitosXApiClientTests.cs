@@ -132,7 +132,7 @@ public sealed class HttpBitosXApiClientTests
     [InlineData(HttpStatusCode.BadGateway, ApiFailure.Unavailable)]
     [InlineData(HttpStatusCode.InternalServerError, ApiFailure.Unexpected)]
     [InlineData(HttpStatusCode.Found, ApiFailure.Unexpected)]
-    [InlineData(HttpStatusCode.Forbidden, ApiFailure.Unexpected)]
+    [InlineData(HttpStatusCode.Forbidden, ApiFailure.Forbidden)]
     public async Task Status_DecidesTheFailure_AndTheBodyIsNeverQuoted(HttpStatusCode status, ApiFailure expected)
     {
         using var server = new FakeServer();
