@@ -88,6 +88,51 @@ public sealed class AccountLiveTests
     }
 
     [LiveFact]
+    public async Task WithAPasskey_TheServerOffersIt_AndThisAppStillSignsInWithTheCode()
+    {
+        (string email, string password) = await LiveStack.NewAccountAsync();
+        (Totp authenticator, IReadOnlyList<string> recovery) = await LiveStack.EnableTwoFactorAsync(email, password);
+        using var device = new Device();
+        await device.CreateVaultAsync(LiveStack.NewPassword());
+
+        // Two-factor, no passkey yet: the step offers codes only, and the list is there and empty.
+        Assert.Equal(SignInOutcome.SecondFactorRequired, await device.Account.SignInAsync(email, password));
+        Assert.Equal(SecondFactorMethods.Totp | SecondFactorMethods.Recovery, device.Account.SecondFactorMethods);
+        await device.Account.CompleteSignInAsync(recovery[0]);
+        PasskeyList? none = await device.Account.GetPasskeysAsync();
+        Assert.NotNull(none);
+        Assert.Empty(none.Passkeys);
+        Assert.Equal(10, none.Max);
+        Assert.True(await device.Account.SignOutAsync());
+
+        // A passkey, registered as the web vault does it in a browser.
+        using var passkey = new SoftwareAuthenticator();
+        await LiveStack.RegisterPasskeyAsync(email, password, await authenticator.NextCodeAsync(), recovery[1], passkey, "Live test passkey");
+
+        // Now the server offers the passkey in the second step; this app ignores it and takes the code.
+        Assert.Equal(SignInOutcome.SecondFactorRequired, await device.Account.SignInAsync(email, password));
+        SecondFactorMethods offered = device.Account.SecondFactorMethods;
+        Assert.True(offered.HasFlag(SecondFactorMethods.Passkey), $"the server did not offer the passkey: {offered}");
+        Assert.True(offered.HasFlag(SecondFactorMethods.Totp), $"the server did not offer TOTP: {offered}");
+        await device.Account.CompleteSignInAsync(await authenticator.NextCodeAsync());
+        Assert.True(device.Account.IsSignedIn);
+
+        PasskeyList? list = await device.Account.GetPasskeysAsync();
+        PasskeyInfo registered = Assert.Single(list!.Passkeys);
+        Assert.Equal("Live test passkey", registered.Name);
+        AssertUtc(registered.CreatedAt, "createdAt");
+        Assert.InRange(registered.CreatedAt, DateTimeOffset.UtcNow.AddMinutes(-10), DateTimeOffset.UtcNow.AddMinutes(1));
+        if (registered.LastUsedAt is { } used) // never used to sign in; the contract leaves it optional
+        {
+            AssertUtc(used, "lastUsedAt");
+            Assert.True(used >= registered.CreatedAt, "lastUsedAt is before createdAt");
+        }
+
+        Assert.False(registered.BackedUp); // this authenticator does not claim to be synced
+        Assert.True(await device.Account.SignOutAsync());
+    }
+
+    [LiveFact]
     public async Task TheSessionList_HoldsAtMostTheServersCap_NewestFirst_WithThisSessionMarked()
     {
         (string email, string password) = await LiveStack.NewAccountAsync();
