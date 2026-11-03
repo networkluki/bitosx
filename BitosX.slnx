@@ -17,6 +17,7 @@
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/BitosX.ClipboardCheck/BitosX.ClipboardCheck.csproj" />
+    <Project Path="tools/BitosX.IconGen/BitosX.IconGen.csproj" />
     <Project Path="tools/BitosX.KdfBenchmark/BitosX.KdfBenchmark.csproj" />
   </Folder>
 </Solution>

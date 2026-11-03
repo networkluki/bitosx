@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Layout;
+using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.Themes.Fluent;
 
@@ -14,6 +15,9 @@ namespace BitosX.App.Services;
 /// </summary>
 public static class StartupNotice
 {
+    /// <summary>The application's icon (the main window names the same file in its XAML).</summary>
+    internal static readonly Uri IconUri = new("avares://BitosX.App/Assets/bitosx.ico");
+
     /// <summary>The window, for showing it — and for the tests, which look at it without a display.</summary>
     public static Window CreateWindow(string title, string message)
     {
@@ -39,6 +43,7 @@ public static class StartupNotice
             SizeToContent = SizeToContent.Height,
             CanResize = false,
             WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            Icon = new WindowIcon(AssetLoader.Open(IconUri)),
             Content = new StackPanel { Margin = new Thickness(20), Spacing = 16, Children = { text, ok } },
         };
         ok.Click += (_, _) => window.Close();

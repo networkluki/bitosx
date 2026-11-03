@@ -1,5 +1,7 @@
 # BitosX
 
+<img src="assets/icon/bitosx-128.png" alt="The BitosX icon: a padlock on a blue-green square" width="64" height="64">
+
 BitosX is a security-focused password manager. This repository contains the cross-platform
 Avalonia desktop application: an **encrypted local vault**, the **account sign-in** to the BitosX
 server (0.8.0, with a second-factor step since 0.10.0, and the account password change and account
@@ -96,6 +98,8 @@ tools/
   BitosX.ClipboardProbe   Diagnostic-only check against the real Windows clipboard (not shipped, not in the solution)
   BitosX.ClipboardCheck   Diagnostic-only check against the real clipboard of Linux and macOS (not shipped)
   BitosX.GuiCheck         Diagnostic-only: the manual checklists, on the real application (not shipped, not in the solution)
+  BitosX.IconGen          Draws the icon from its geometry: the .ico of the application, the PNG and SVG files (not shipped)
+assets/icon/              The icon as PNG (16 to 512 pixels) and SVG, drawn by tools/BitosX.IconGen
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
   VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md  KEY_ROTATION.md

@@ -143,7 +143,7 @@ machines of the build service:
 
 | Job | Where | What |
 |---|---|---|
-| Build and test | Ubuntu 24.04, macOS 15, Windows Server 2025 | Build with warnings as errors, all tests, the dependency audit, the clipboard check (Linux, macOS), and what the key derivation costs on that machine |
+| Build and test | Ubuntu 24.04, macOS 15, Windows Server 2025 | Build with warnings as errors, all tests, the dependency audit, the icon files against their generator (Linux), the clipboard check (Linux, macOS), and what the key derivation costs on that machine |
 | Clipboard managers | Ubuntu 24.04 | Asks CopyQ and Klipper what they make of a copied secret |
 | The real application | Windows Server 2025 | The manual checklists, on the real application in a real window |
 
@@ -195,6 +195,21 @@ None of them is shipped.
 
   `tools/ci/clipboard-managers.sh` uses it to ask clipboard managers whether they honor the
   marker.
+
+## The icon
+
+The icon (a padlock with a keyhole on a rounded square in the two accent colours of
+`App.axaml`) is drawn by `tools/BitosX.IconGen` from its geometry alone: rounded rectangles, a
+ring and line segments, with no image library, font or artwork from anywhere else. It writes
+`src/BitosX.App/Assets/bitosx.ico` (16 to 256 pixels; the window icon and, through
+`ApplicationIcon`, the icon of the program file on Windows), `assets/icon/bitosx-<size>.png`
+(16 to 512 pixels) and `assets/icon/bitosx.svg`. To change the icon, change the geometry in the
+tool and draw the files again; CI fails if a file differs from what the tool draws.
+
+```bash
+dotnet run --project tools/BitosX.IconGen              # draws the files
+dotnet run --project tools/BitosX.IconGen -- --check   # compares them, pixel for pixel
+```
 
 ## Where data lives during development
 
