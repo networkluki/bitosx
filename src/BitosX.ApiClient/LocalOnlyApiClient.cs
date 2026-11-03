@@ -51,6 +51,9 @@ public sealed class LocalOnlyApiClient : IBitosXApiClient
     public Task<TwoFactorStatus?> GetTwoFactorStatusAsync(string accessToken, CancellationToken cancellationToken = default)
         => throw new InvalidOperationException(Disabled);
 
+    public Task<PasskeyList?> GetPasskeysAsync(string accessToken, CancellationToken cancellationToken = default)
+        => throw new InvalidOperationException(Disabled);
+
     public Task<SyncStatus?> GetSyncStatusAsync(string accessToken, CancellationToken cancellationToken = default)
         => throw new InvalidOperationException(Disabled);
 

@@ -33,6 +33,13 @@ public interface IAccountSession
     bool IsAwaitingSecondFactor { get; }
 
     /// <summary>
+    /// The methods the pending second-factor challenge offers (<see cref="SecondFactorMethods.None"/> when
+    /// none is pending). The sign-in here is completed with a code whatever this says;
+    /// <see cref="SecondFactorMethods.Passkey"/> lets the page tell the user that their passkeys are used on the web vault.
+    /// </summary>
+    SecondFactorMethods SecondFactorMethods { get; }
+
+    /// <summary>
     /// Signs in. <see cref="SignInOutcome.SignedIn"/>: the tokens are held until sign-out, lock, or exit.
     /// <see cref="SignInOutcome.SecondFactorRequired"/>: no session yet; call <see cref="CompleteSignInAsync"/> with a code.
     /// </summary>
@@ -79,6 +86,9 @@ public interface IAccountSession
 
     /// <summary>The account's two-factor state, or <see langword="null"/> when the server does not offer it.</summary>
     Task<TwoFactorStatus?> GetTwoFactorStatusAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>The account's passkeys, or <see langword="null"/> when the server does not offer passkeys. Read-only here.</summary>
+    Task<PasskeyList?> GetPasskeysAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Replaces the account password. Every other session ends; this one stays signed in. The vault master password is not touched.</summary>
     Task ChangePasswordAsync(string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default);

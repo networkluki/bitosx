@@ -28,9 +28,38 @@ public sealed record AccountSessionInfo(Guid Id, DateTimeOffset CreatedAt, DateT
 /// token to present with a code from the authenticator app (or a recovery code). No session exists
 /// yet. The token is a secret for that one step: held in memory, never logged, never shown.
 /// </summary>
-public sealed record SecondFactorChallenge(string MfaToken, DateTimeOffset ExpiresAt)
+/// <param name="Methods">
+/// The ways the server says this step can be completed (its <c>methods</c>). This client completes it
+/// with a code only — <see cref="SecondFactorMethods.Totp"/> or <see cref="SecondFactorMethods.Recovery"/>;
+/// <see cref="SecondFactorMethods.Passkey"/> only tells the user that the account has passkeys, which
+/// are used on the web vault.
+/// </param>
+public sealed record SecondFactorChallenge(string MfaToken, DateTimeOffset ExpiresAt, SecondFactorMethods Methods = SecondFactorMethods.Code)
 {
-    public override string ToString() => $"SecondFactorChallenge {{ MfaToken = <redacted>, ExpiresAt = {ExpiresAt:O} }}";
+    public override string ToString() => $"SecondFactorChallenge {{ MfaToken = <redacted>, ExpiresAt = {ExpiresAt:O}, Methods = {Methods} }}";
+}
+
+/// <summary>
+/// The second-factor methods a sign-in challenge offers, as the server lists them in <c>methods</c>
+/// (<c>"totp"</c>, <c>"recovery"</c>, <c>"passkey"</c>). Values this client does not know are ignored;
+/// a server that sends no list (before passkeys) offers the code step, TOTP or a recovery code.
+/// </summary>
+[Flags]
+public enum SecondFactorMethods
+{
+    None = 0,
+
+    /// <summary>A code from the authenticator app.</summary>
+    Totp = 1,
+
+    /// <summary>One of the account's recovery codes, entered where the authenticator code goes.</summary>
+    Recovery = 2,
+
+    /// <summary>A passkey. Used on the web vault only: this application has no WebAuthn.</summary>
+    Passkey = 4,
+
+    /// <summary>What a server without a <c>methods</c> list offers, and what this client can complete.</summary>
+    Code = Totp | Recovery,
 }
 
 /// <summary>What <c>POST /v1/auth/login</c> answered: tokens (signed in), or a second-factor challenge.</summary>
@@ -55,3 +84,14 @@ public sealed record SignInResult(AccountTokens? Tokens, SecondFactorChallenge? 
 /// setting it up and turning it off is done on vault.bitosx.se.
 /// </summary>
 public sealed record TwoFactorStatus(bool Enabled, DateTimeOffset? ConfirmedAt, int RecoveryCodesRemaining, bool PendingEnrollment);
+
+/// <summary>
+/// One of the account's passkeys, as <c>GET /v1/account/passkeys</c> lists it. Carries no key material
+/// and no credential id: a name for people, when it was added and last used, and whether the
+/// authenticator says it is backed up (synced). Read-only on the desktop; passkeys are added, renamed
+/// and removed on vault.bitosx.se.
+/// </summary>
+public sealed record PasskeyInfo(string Id, string Name, DateTimeOffset CreatedAt, DateTimeOffset? LastUsedAt, bool BackedUp);
+
+/// <summary>The account's passkeys and how many it may have (<c>max</c>).</summary>
+public sealed record PasskeyList(IReadOnlyList<PasskeyInfo> Passkeys, int Max);

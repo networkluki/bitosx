@@ -108,6 +108,124 @@ public sealed class HttpBitosXApiClientAccountTests
         Assert.Equal(ApiFailure.Unexpected, ex.Failure);
     }
 
+    // ---- passkeys (read-only) ----
+
+    [Fact]
+    public async Task Passkeys_AreListed_WithoutAnyKeyMaterial()
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.OK,
+            "{\"passkeys\":[{\"id\":\"6f1c2e4a-1b2c-4d3e-8f90-123456789abc\",\"name\":\"Laptop\",\"createdAt\":\"2026-10-30T09:00:00Z\",\"lastUsedAt\":\"2026-11-01T18:15:00Z\",\"backedUp\":true},"
+            + "{\"id\":\"0e9d8c7b-6a5f-4e3d-9c2b-1a0f9e8d7c6b\",\"name\":\"Security key\",\"createdAt\":\"2026-10-31T09:00:00Z\",\"backedUp\":false,\"somethingNew\":1}],\"max\":10}");
+        using HttpBitosXApiClient client = server.NewClient();
+
+        PasskeyList? list = await client.GetPasskeysAsync(Access, default);
+
+        RecordedRequest request = Assert.Single(server.Requests);
+        Assert.Equal(HttpMethod.Get, request.Method);
+        Assert.Equal(new Uri("https://api.example.test/v1/account/passkeys"), request.Uri);
+        Assert.Equal(Access, request.Authorization!.Parameter);
+        Assert.NotNull(list);
+        Assert.Equal(10, list.Max);
+        Assert.Equal(2, list.Passkeys.Count);
+        Assert.Equal(
+            new PasskeyInfo("6f1c2e4a-1b2c-4d3e-8f90-123456789abc", "Laptop", new DateTimeOffset(2026, 10, 30, 9, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 11, 1, 18, 15, 0, TimeSpan.Zero), true),
+            list.Passkeys[0]);
+        Assert.Null(list.Passkeys[1].LastUsedAt); // never used yet
+        Assert.False(list.Passkeys[1].BackedUp);
+    }
+
+    [Fact]
+    public async Task NoPasskeys_IsAnEmptyList()
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.OK, "{\"passkeys\":[],\"max\":10}");
+        using HttpBitosXApiClient client = server.NewClient();
+
+        PasskeyList? list = await client.GetPasskeysAsync(Access, default);
+
+        Assert.NotNull(list);
+        Assert.Empty(list.Passkeys);
+    }
+
+    [Fact]
+    public async Task Passkeys_AreNull_WhenTheServerDoesNotOfferThem()
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.NotFound);
+        using HttpBitosXApiClient client = server.NewClient();
+
+        Assert.Null(await client.GetPasskeysAsync(Access, default));
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.ServiceUnavailable, ApiFailure.Unavailable)] // a server that has passkeys but cannot answer now: not "none"
+    [InlineData(HttpStatusCode.Unauthorized, ApiFailure.Unauthenticated)]
+    [InlineData(HttpStatusCode.Forbidden, ApiFailure.Forbidden)]
+    public async Task OtherFailuresOfThePasskeyList_AreFailures(HttpStatusCode status, ApiFailure expected)
+    {
+        using var server = new FakeServer();
+        server.Reply(status);
+        using HttpBitosXApiClient client = server.NewClient();
+
+        ApiException ex = await Assert.ThrowsAsync<ApiException>(() => client.GetPasskeysAsync(Access, default));
+        Assert.Equal(expected, ex.Failure);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"passkeys\":[]}")]                                                                                                   // no max
+    [InlineData("{\"max\":10}")]                                                                                                        // no list
+    [InlineData("{\"passkeys\":[],\"max\":-1}")]
+    [InlineData("{\"passkeys\":[null],\"max\":10}")]
+    [InlineData("{\"passkeys\":[{\"id\":\"a\",\"createdAt\":\"2026-10-30T09:00:00Z\",\"backedUp\":true}],\"max\":10}")]               // no name
+    [InlineData("{\"passkeys\":[{\"id\":\"a\",\"name\":\"\",\"createdAt\":\"2026-10-30T09:00:00Z\",\"backedUp\":true}],\"max\":10}")]   // empty name
+    [InlineData("{\"passkeys\":[{\"name\":\"Laptop\",\"createdAt\":\"2026-10-30T09:00:00Z\",\"backedUp\":true}],\"max\":10}")]          // no id
+    [InlineData("{\"passkeys\":[{\"id\":\"a\",\"name\":\"Laptop\",\"backedUp\":true}],\"max\":10}")]                                  // no createdAt
+    [InlineData("{\"passkeys\":[{\"id\":\"a\",\"name\":\"Laptop\",\"createdAt\":\"2026-10-30T09:00:00Z\"}],\"max\":10}")]            // no backedUp
+    [InlineData("{\"passkeys\":[{\"id\":\"a\",\"name\":\"Laptop\",\"createdAt\":\"2026-10-30T09:00:00Z\",\"backedUp\":\"yes\"}],\"max\":10}")]
+    [InlineData("[]")]
+    public async Task AMalformedPasskeyList_IsUnexpected(string json)
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.OK, json);
+        using HttpBitosXApiClient client = server.NewClient();
+
+        ApiException ex = await Assert.ThrowsAsync<ApiException>(() => client.GetPasskeysAsync(Access, default));
+        Assert.Equal(ApiFailure.Unexpected, ex.Failure);
+    }
+
+    [Fact]
+    public async Task ThePasskeyList_HasTheOrdinaryCap_AndALimitOnItsLength()
+    {
+        string one = "{\"id\":\"a\",\"name\":\"Laptop\",\"createdAt\":\"2026-10-30T09:00:00Z\",\"backedUp\":true}";
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.OK, "{\"passkeys\":[],\"max\":10,\"padding\":\"" + new string('p', HttpBitosXApiClient.MaxResponseBytes) + "\"}");
+        server.Reply(HttpStatusCode.OK, "{\"passkeys\":[" + string.Join(",", Enumerable.Repeat(one, 101)) + "],\"max\":10}");
+        server.Reply(HttpStatusCode.OK, "{\"passkeys\":[{\"id\":\"a\",\"name\":\"" + new string('n', 129) + "\",\"createdAt\":\"2026-10-30T09:00:00Z\",\"backedUp\":true}],\"max\":10}");
+        using HttpBitosXApiClient client = server.NewClient();
+
+        for (int i = 0; i < 3; i++)
+        {
+            ApiException ex = await Assert.ThrowsAsync<ApiException>(() => client.GetPasskeysAsync(Access, default));
+            Assert.Equal(ApiFailure.Unexpected, ex.Failure);
+        }
+    }
+
+    [Fact]
+    public async Task ThePasskeyList_HasTheOrdinaryDeadline()
+    {
+        using var server = new FakeServer();
+        server.ReplyWithABodyThatNeverArrives();
+        using HttpBitosXApiClient client = server.NewClient(callTimeout: TimeSpan.FromMilliseconds(300));
+
+        var watch = Stopwatch.StartNew();
+        ApiException ex = await Assert.ThrowsAsync<ApiException>(() => client.GetPasskeysAsync(Access, default));
+
+        Assert.Equal(ApiFailure.Network, ex.Failure);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(10), "the deadline covers the body");
+    }
+
     // ---- timestamps ----
 
     [Fact]

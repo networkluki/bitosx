@@ -285,6 +285,9 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
 
     /// <summary>When set, the password step answers with a challenge and this code completes it.</summary>
     public string? SecondFactorCode { get; set; }
+
+    /// <summary>The methods the challenge lists (the server's <c>methods</c>).</summary>
+    public BitosX.ApiClient.SecondFactorMethods SecondFactorMethods { get; set; } = BitosX.ApiClient.SecondFactorMethods.Code;
     public int SecondFactorCount { get; private set; }
 
     public Task<BitosX.ApiClient.SignInResult> LoginAsync(string email, string password, CancellationToken cancellationToken = default)
@@ -298,7 +301,7 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
 
         if (SecondFactorCode is not null)
         {
-            return Answer(BitosX.ApiClient.SignInResult.SecondFactor(new BitosX.ApiClient.SecondFactorChallenge(new string('M', 43), DateTimeOffset.UtcNow.AddMinutes(5))));
+            return Answer(BitosX.ApiClient.SignInResult.SecondFactor(new BitosX.ApiClient.SecondFactorChallenge(new string('M', 43), DateTimeOffset.UtcNow.AddMinutes(5), SecondFactorMethods)));
         }
 
         return Answer(BitosX.ApiClient.SignInResult.SignedIn(Tokens()));
@@ -403,6 +406,19 @@ internal sealed class ScriptedServer : BitosX.ApiClient.IBitosXApiClient
     {
         MaybeThrow();
         return Answer(TwoFactorEnabled is { } on ? new BitosX.ApiClient.TwoFactorStatus(on, on ? Created : null, on ? 8 : 0, false) : null);
+    }
+
+    /// <summary>How many passkeys the account has; <see langword="null"/>: the server does not offer passkeys (404).</summary>
+    public int? PasskeyCount { get; set; }
+
+    public Task<BitosX.ApiClient.PasskeyList?> GetPasskeysAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        MaybeThrow();
+        return Answer(PasskeyCount is { } count
+            ? new BitosX.ApiClient.PasskeyList(
+                [.. Enumerable.Range(1, count).Select(i => new BitosX.ApiClient.PasskeyInfo(Guid.NewGuid().ToString("D"), "Passkey " + i, Created, null, true))],
+                10)
+            : null);
     }
 
     // ---- sync: one stored envelope, compare-and-set on its revision, as the real server does: ----
@@ -568,6 +584,16 @@ internal sealed class FakeAccountSession : BitosX.ApiClient.IAccountSession
     public string AcceptedCode { get; set; } = "123456";
     public bool IsAwaitingSecondFactor { get; private set; }
 
+    /// <summary>The methods a challenge offers while <see cref="IsAwaitingSecondFactor"/>.</summary>
+    public BitosX.ApiClient.SecondFactorMethods ChallengeMethods { get; set; } = BitosX.ApiClient.SecondFactorMethods.Code;
+
+    public BitosX.ApiClient.SecondFactorMethods SecondFactorMethods
+        => IsAwaitingSecondFactor ? ChallengeMethods : BitosX.ApiClient.SecondFactorMethods.None;
+
+    /// <summary>What the passkey list answers; <see langword="null"/>: the server does not offer passkeys.</summary>
+    public BitosX.ApiClient.PasskeyList? Passkeys { get; set; } = new([], 10);
+    public BitosX.ApiClient.ApiException? PasskeysThrows { get; set; }
+
     public BitosX.ApiClient.ApiException? SignInThrows { get; set; }
     public BitosX.ApiClient.ApiException? ProfileThrows { get; set; }
     public BitosX.ApiClient.ApiException? SignOutThrows { get; set; }
@@ -661,6 +687,9 @@ internal sealed class FakeAccountSession : BitosX.ApiClient.IAccountSession
 
     public Task<BitosX.ApiClient.TwoFactorStatus?> GetTwoFactorStatusAsync(CancellationToken cancellationToken = default)
         => TwoFactorThrows is not null ? Task.FromException<BitosX.ApiClient.TwoFactorStatus?>(TwoFactorThrows) : Task.FromResult(TwoFactor);
+
+    public Task<BitosX.ApiClient.PasskeyList?> GetPasskeysAsync(CancellationToken cancellationToken = default)
+        => PasskeysThrows is not null ? Task.FromException<BitosX.ApiClient.PasskeyList?>(PasskeysThrows) : Task.FromResult(Passkeys);
 
     public Task ChangePasswordAsync(string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default)
     {

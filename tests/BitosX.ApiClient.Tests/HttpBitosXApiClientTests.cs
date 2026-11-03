@@ -272,6 +272,65 @@ public sealed class HttpBitosXApiClientTests
         Assert.DoesNotContain("AAAA", result.Challenge.ToString(), StringComparison.Ordinal);
     }
 
+    private static string ChallengeWithMethods(string methodsJson)
+        => Challenge().Replace("}", ",\"methods\":" + methodsJson + "}", StringComparison.Ordinal);
+
+    [Fact]
+    public async Task A202WithoutMethods_OffersTheCodeStep_AsServersBeforePasskeysDo()
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.Accepted, Challenge());
+        using HttpBitosXApiClient client = server.NewClient();
+
+        SignInResult result = await client.LoginAsync("alice@example.com", "correct horse battery", default);
+
+        Assert.Equal(SecondFactorMethods.Totp | SecondFactorMethods.Recovery, result.Challenge!.Methods);
+        Assert.False(result.Challenge.Methods.HasFlag(SecondFactorMethods.Passkey));
+    }
+
+    [Theory]
+    [InlineData("[\"totp\",\"recovery\"]", SecondFactorMethods.Totp | SecondFactorMethods.Recovery)]
+    [InlineData("[\"totp\",\"recovery\",\"passkey\"]", SecondFactorMethods.Totp | SecondFactorMethods.Recovery | SecondFactorMethods.Passkey)]
+    [InlineData("[\"passkey\",\"totp\"]", SecondFactorMethods.Totp | SecondFactorMethods.Passkey)]
+    [InlineData("[\"totp\",\"something-new\",\"recovery\",null,\"\",\"PASSKEY\"]", SecondFactorMethods.Totp | SecondFactorMethods.Recovery)] // unknown ones ignored
+    [InlineData("[\"recovery\"]", SecondFactorMethods.Recovery)]
+    public async Task TheMethodsOfA202_AreReadTolerantly(string methods, SecondFactorMethods expected)
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.Accepted, ChallengeWithMethods(methods));
+        using HttpBitosXApiClient client = server.NewClient();
+
+        SignInResult result = await client.LoginAsync("alice@example.com", "correct horse battery", default);
+
+        Assert.Equal(expected, result.Challenge!.Methods);
+        Assert.Equal(new string('A', 43), result.Challenge.MfaToken);
+    }
+
+    [Theory]
+    [InlineData("[\"passkey\"]")]          // nothing this client can complete: no code step
+    [InlineData("[]")]
+    [InlineData("[\"something-new\"]")]
+    [InlineData("\"totp\"")]               // not a list
+    [InlineData("[1,2]")]                  // not names
+    public async Task A202ThatOffersNoCodeStep_OrWhoseMethodsAreNotAList_IsUnexpected(string methods)
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.Accepted, ChallengeWithMethods(methods));
+        using HttpBitosXApiClient client = server.NewClient();
+
+        Assert.Equal(ApiFailure.Unexpected, (await FailsAsync(() => client.LoginAsync("a@b.c", "x", default))).Failure);
+    }
+
+    [Fact]
+    public async Task A202WithAnAbsurdlyLongListOfMethods_IsUnexpected()
+    {
+        using var server = new FakeServer();
+        server.Reply(HttpStatusCode.Accepted, ChallengeWithMethods("[" + string.Join(",", Enumerable.Repeat("\"totp\"", 33)) + "]"));
+        using HttpBitosXApiClient client = server.NewClient();
+
+        Assert.Equal(ApiFailure.Unexpected, (await FailsAsync(() => client.LoginAsync("a@b.c", "x", default))).Failure);
+    }
+
     [Fact]
     public async Task CompleteSecondFactor_PostsTokenAndCode_WithNoAuthorization_AndAdoptsTokens()
     {

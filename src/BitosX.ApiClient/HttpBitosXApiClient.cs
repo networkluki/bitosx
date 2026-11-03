@@ -44,6 +44,15 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
     private const int MaxRefreshTokenLength = 256;
     private const int MaxEmailLength = 320;
     private const int MaxSessions = 1000;
+    private const int MaxSecondFactorMethods = 32;
+
+    /// <summary>The most passkeys a list may hold to be believed (the server allows 10 per account).</summary>
+    private const int MaxPasskeys = 100;
+
+    /// <summary>The longest passkey name taken: the server allows 64 characters, which may be twice as many UTF-16 units.</summary>
+    private const int MaxPasskeyNameLength = 128;
+
+    private const int MaxPasskeyIdLength = 128;
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -183,12 +192,15 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
                 || dto.RefreshToken is not null
                 || !IsMfaToken(dto.MfaToken)
                 || dto.MfaTokenExpiresAt is not { } expires
-                || (dto.Method is not null && !string.Equals(dto.Method, "totp", StringComparison.Ordinal)))
+                || (dto.Method is not null && !string.Equals(dto.Method, "totp", StringComparison.Ordinal))
+                || ToMethods(dto.Methods) is not { } methods
+                || (methods & SecondFactorMethods.Code) == SecondFactorMethods.None)
             {
+                // A challenge this client cannot complete with a code is one it does not understand.
                 throw Unexpected(path);
             }
 
-            return SignInResult.SecondFactor(new SecondFactorChallenge(dto.MfaToken, expires));
+            return SignInResult.SecondFactor(new SecondFactorChallenge(dto.MfaToken, expires, methods));
         }
 
         if (dto?.MfaToken is not null)
@@ -207,6 +219,38 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         TokenDto? tokens = await SendAsync<TokenDto>(
             HttpMethod.Post, "v1/auth/login/totp", new { mfaToken, code }, null, cancellationToken).ConfigureAwait(false);
         return ToTokens(tokens);
+    }
+
+    /// <summary>
+    /// The second-factor methods of a challenge, read tolerantly: no list is what a server before passkeys
+    /// sends and means the code step (TOTP or a recovery code); names this client does not know, and
+    /// empty entries, are ignored. <see langword="null"/> only for a list too long to be one.
+    /// </summary>
+    private static SecondFactorMethods? ToMethods(string?[]? names)
+    {
+        if (names is null)
+        {
+            return SecondFactorMethods.Code;
+        }
+
+        if (names.Length > MaxSecondFactorMethods)
+        {
+            return null;
+        }
+
+        SecondFactorMethods methods = SecondFactorMethods.None;
+        foreach (string? name in names)
+        {
+            methods |= name switch
+            {
+                "totp" => SecondFactorMethods.Totp,
+                "recovery" => SecondFactorMethods.Recovery,
+                "passkey" => SecondFactorMethods.Passkey,
+                _ => SecondFactorMethods.None,
+            };
+        }
+
+        return methods;
     }
 
     /// <summary>The second-step token is 43 unpadded Base64URL characters (256 bits), as the refresh token is.</summary>
@@ -349,6 +393,48 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         }
 
         return new TwoFactorStatus(enabled, dto.ConfirmedAt, remaining, pending);
+    }
+
+    public async Task<PasskeyList?> GetPasskeysAsync(string accessToken, CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(accessToken);
+
+        const string path = "v1/account/passkeys";
+        PasskeyListDto? dto;
+        try
+        {
+            dto = await SendAsync<PasskeyListDto>(HttpMethod.Get, path, null, accessToken, cancellationToken).ConfigureAwait(false);
+        }
+        catch (ApiException ex) when (ex.Failure is ApiFailure.NotFound)
+        {
+            return null; // the server does not offer passkeys (not configured, or a server before them)
+        }
+
+        if (dto is null
+            || dto.Passkeys is not { } passkeys
+            || passkeys.Length > MaxPasskeys
+            || dto.Max is not { } max
+            || max is < 0 or > MaxPasskeys)
+        {
+            throw Unexpected(path);
+        }
+
+        var result = new List<PasskeyInfo>(passkeys.Length);
+        foreach (PasskeyDto p in passkeys)
+        {
+            if (p is null
+                || !IsText(p.Id, MaxPasskeyIdLength)
+                || !IsText(p.Name, MaxPasskeyNameLength)
+                || p.CreatedAt is not { } created
+                || p.BackedUp is not { } backedUp)
+            {
+                throw Unexpected(path);
+            }
+
+            result.Add(new PasskeyInfo(p.Id, p.Name, created, p.LastUsedAt, backedUp));
+        }
+
+        return new PasskeyList(result, max);
     }
 
     private static string? NullIfEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
@@ -739,6 +825,8 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         public DateTimeOffset? MfaTokenExpiresAt { get; init; }
 
         public string? Method { get; init; }
+
+        public string?[]? Methods { get; init; }
     }
 
     private sealed class ProfileDto
@@ -777,6 +865,26 @@ public sealed class HttpBitosXApiClient : IBitosXApiClient, IDisposable
         public int? RecoveryCodesRemaining { get; init; }
 
         public bool? PendingEnrollment { get; init; }
+    }
+
+    private sealed class PasskeyListDto
+    {
+        public PasskeyDto[]? Passkeys { get; init; }
+
+        public int? Max { get; init; }
+    }
+
+    private sealed class PasskeyDto
+    {
+        public string? Id { get; init; }
+
+        public string? Name { get; init; }
+
+        public DateTimeOffset? CreatedAt { get; init; }
+
+        public DateTimeOffset? LastUsedAt { get; init; }
+
+        public bool? BackedUp { get; init; }
     }
 
     private sealed class SessionDto

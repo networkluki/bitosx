@@ -545,6 +545,7 @@ public sealed class VaultSyncServiceTests : IDisposable
         }
 
         public bool IsAwaitingSecondFactor => false;
+        public SecondFactorMethods SecondFactorMethods => SecondFactorMethods.None;
         public Task<SignInOutcome> SignInAsync(string email, string password, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task CompleteSignInAsync(string code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public void CancelSignIn() => throw new NotSupportedException();
@@ -562,6 +563,7 @@ public sealed class VaultSyncServiceTests : IDisposable
         public Task SignOutEverywhereAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task EndSessionAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<TwoFactorStatus?> GetTwoFactorStatusAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PasskeyList?> GetPasskeysAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task ChangePasswordAsync(string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task DeleteAccountAsync(string password, string? code, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }

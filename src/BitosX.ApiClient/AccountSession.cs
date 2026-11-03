@@ -94,6 +94,17 @@ public sealed class AccountSession : IAccountSession, IDisposable
         }
     }
 
+    public SecondFactorMethods SecondFactorMethods
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return _challenge is not null && _challenge.ExpiresAt > _clock.GetUtcNow() ? _challenge.Methods : SecondFactorMethods.None;
+            }
+        }
+    }
+
     public async Task<SignInOutcome> SignInAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(email);
@@ -265,6 +276,9 @@ public sealed class AccountSession : IAccountSession, IDisposable
 
     public async Task<TwoFactorStatus?> GetTwoFactorStatusAsync(CancellationToken cancellationToken = default)
         => (await AuthenticatedAsync((token, ct) => _api.GetTwoFactorStatusAsync(token, ct), cancellationToken).ConfigureAwait(false)).Result;
+
+    public async Task<PasskeyList?> GetPasskeysAsync(CancellationToken cancellationToken = default)
+        => (await AuthenticatedAsync((token, ct) => _api.GetPasskeysAsync(token, ct), cancellationToken).ConfigureAwait(false)).Result;
 
     public async Task ChangePasswordAsync(string currentPassword, string newPassword, string? code, CancellationToken cancellationToken = default)
     {
