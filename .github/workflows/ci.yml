@@ -78,6 +78,13 @@ jobs:
           dotnet list BitosX.slnx package --vulnerable --include-transitive | tee audit.txt
           if grep -q "has the following vulnerable packages" audit.txt; then exit 1; fi
 
+      # The icon files are what tools/BitosX.IconGen draws from its geometry: nobody edited one by
+      # hand, and nobody changed the geometry without drawing them again. Compared on Linux, where
+      # they were drawn.
+      - name: The icon
+        if: runner.os == 'Linux'
+        run: dotnet run -c Release --no-build --project tools/BitosX.IconGen -- --check
+
       # What a copied secret looks like on the real clipboard of the system, read back with the
       # tools of the system. (For Windows there is tools/BitosX.ClipboardProbe, which asks the
       # clipboard history of a desktop and is run on one.)

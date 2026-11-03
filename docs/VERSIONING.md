@@ -38,7 +38,23 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.11.0`** — fine-tuning and the account itself. New on the Account page: change the account
+**`0.12.0`** — ready for the real server. BitosX has an icon of its own (a padlock on a
+rounded square in its two accent colours), for its windows and for the program file on Windows,
+drawn from its geometry by `tools/BitosX.IconGen` instead of the template's placeholder. The search
+no longer builds the list again on every keystroke: it shows and hides the cards that are there
+(with 5,000 logins, eight keystrokes took 109 s in the headless test before and take under 1 s
+now). Failure texts say only what is known: the sync card no longer says "Nothing was changed"
+after a permission error or any other failure that can follow an upload, a removal or a
+replacement; a 403 on a call that sends no password no longer blames the password; and where no
+answer came, "Sign out everywhere", the password change and the account deletion say that the
+server did not confirm them instead of claiming either way. And the client has, for the first
+time, run against a real API and database: `tests/BitosX.LiveTests` drives the account and the
+sync of two devices through the application's own services against the local stack of bitosx-api
+(opt-in; see [DEVELOPMENT.md](DEVELOPMENT.md)). The on-disk vault format is unchanged (still v1).
+**Not verified:** the icon on a real Windows desktop (Explorer, the taskbar); `api.bitosx.se`
+itself, which is not publicly reachable yet.
+
+Builds on `0.11.0` — fine-tuning and the account itself. New on the Account page: change the account
 password (every other device is signed out, this one stays; the master password is untouched),
 delete the account (the vault file on the device is untouched), the two-factor state (read-only),
 and "Forgot your password?" for the production server. Fixed: the account session ends on the

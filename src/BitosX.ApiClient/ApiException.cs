@@ -28,8 +28,9 @@ public enum ApiFailure
     Conflict = 7,
 
     /// <summary>
-    /// The server refused a password-confirmed operation (403): the account password, or the
-    /// second-factor code, was not accepted. The session is still valid — this is not a sign-out.
+    /// The server refused the request (403). On a password-confirmed operation that means the account
+    /// password, or the second-factor code, was not accepted; anywhere else it comes from something in
+    /// front of the server. Never a sign-out: the session is still valid.
     /// </summary>
     Forbidden = 8,
 }
@@ -83,7 +84,8 @@ public sealed class ApiException : Exception
         ApiFailure.RateLimited => "Too many attempts. Try again later.",
         ApiFailure.Unavailable => "The BitosX server is temporarily unavailable. Try again shortly.",
         ApiFailure.Conflict => "Another device changed the vault on the server first. Nothing was changed.",
-        ApiFailure.Forbidden => "The server did not accept the account password or the code. You are still signed in.",
+        // What a 403 means depends on the call; the account page says it for the password-confirmed ones.
+        ApiFailure.Forbidden => "The server refused the request.",
 
         // Not "nothing was changed": an unexpected answer can follow a request the server carried out.
         _ => "The BitosX server answered in an unexpected way.",

@@ -157,7 +157,31 @@ internal static class StorageFiles
         }
     }
 
+    /// <summary>
+    /// How long, in total, a swap on Windows is retried while another process holds the file open.
+    /// Windows refuses to replace a file that is open without delete sharing; virus scanners, search
+    /// indexers and backup tools open freshly written files that way for a moment. Without the retry a
+    /// save fails whenever one of them happens to be looking (found by the Windows CI run of the
+    /// settings checklist, where the test itself reads the file while it is being replaced).
+    /// </summary>
+    internal static readonly TimeSpan WindowsReplaceRetryBudget = TimeSpan.FromMilliseconds(1500);
+
     private static void MoveIntoPlace(string tempPath, string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            SwapRetryingWhileHeld(tempPath, path);
+        }
+        else
+        {
+            Swap(tempPath, path);
+        }
+
+        // On Unix the rename is a change to the directory, which is flushed on its own.
+        UnixDirectory.TryFlush(Path.GetDirectoryName(path));
+    }
+
+    private static void Swap(string tempPath, string path)
     {
         if (File.Exists(path))
         {
@@ -168,9 +192,32 @@ internal static class StorageFiles
         {
             File.Move(tempPath, path);
         }
+    }
 
-        // On Unix the rename is a change to the directory, which is flushed on its own.
-        UnixDirectory.TryFlush(Path.GetDirectoryName(path));
+    /// <summary>
+    /// <see cref="Swap"/>, tried again with a growing pause while the failure is the kind another
+    /// process's open handle causes, until <see cref="WindowsReplaceRetryBudget"/> is spent. Each failed
+    /// attempt leaves the original file untouched, so retrying cannot lose it; the last failure is thrown.
+    /// </summary>
+    private static void SwapRetryingWhileHeld(string tempPath, string path)
+    {
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        int pauseMilliseconds = 10;
+        while (true)
+        {
+            try
+            {
+                Swap(tempPath, path);
+                return;
+            }
+            catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException)
+                                       && File.Exists(tempPath)
+                                       && elapsed.Elapsed + TimeSpan.FromMilliseconds(pauseMilliseconds) < WindowsReplaceRetryBudget)
+            {
+                Thread.Sleep(pauseMilliseconds);
+                pauseMilliseconds = Math.Min(pauseMilliseconds * 2, 200);
+            }
+        }
     }
 
     private static string NewTempPath(string path) => $"{path}.{Guid.NewGuid():N}{TempSuffix}";

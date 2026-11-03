@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The desktop client against a real BitosX API and database (docs/DEVELOPMENT.md, "Live tests").
+    Opt-in: without BITOSX_LIVE_API_URL and BITOSX_LIVE_MAIL_CMD every test is reported as skipped
+    ("not run"), never as passed. Run with:
+      dotnet test tests/BitosX.LiveTests -c Release
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The application's own composition root, so the services under test are wired as in the app. -->
+    <ProjectReference Include="..\..\src\BitosX.App\BitosX.App.csproj" />
+  </ItemGroup>
+
+</Project>

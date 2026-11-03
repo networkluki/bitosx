@@ -148,7 +148,7 @@ public sealed partial class VaultSyncViewModel : ViewModelBase, IDisposable
                 OnPropertyChanged(nameof(DownloadAcknowledged));
                 ConfirmDownloadCommand.NotifyCanExecuteChanged();
                 return "The server's vault opens with that master password. Confirm below to replace the vault on this device.";
-            }).ConfigureAwait(true);
+            }, changesNothing: true).ConfigureAwait(true);
         }
         finally
         {
@@ -233,11 +233,21 @@ public sealed partial class VaultSyncViewModel : ViewModelBase, IDisposable
         };
     }
 
+    /// <summary>What the card says after a failure that may have come after a change on the server or on this device.</summary>
+    private const string LookAgain = " Run Sync now again to see where things stand.";
+
     /// <summary>
     /// Runs one operation with the card marked busy, and turns what goes wrong into a sentence that
     /// never contains anything the server said and never claims more than happened.
     /// </summary>
-    private async Task RunAsync(Func<CancellationToken, Task<string?>> operation)
+    /// <param name="operation">What to run.</param>
+    /// <param name="changesNothing">
+    /// The operation writes nothing, here or on the server (preparing a download only reads and
+    /// checks), so any failure of it can say that nothing was changed. Every other operation can fail
+    /// after an upload, a removal or a replacement went through — the sync record is written last — so
+    /// its failures never say so.
+    /// </param>
+    private async Task RunAsync(Func<CancellationToken, Task<string?>> operation, bool changesNothing = false)
     {
         if (IsBusy)
         {
@@ -252,7 +262,17 @@ public sealed partial class VaultSyncViewModel : ViewModelBase, IDisposable
         }
         catch (ApiException ex)
         {
-            Status = AccountPageViewModel.Describe(ex, "sync");
+            // Without an answer, or with one that makes no sense, the server may have done what was
+            // asked; the next sync finds out.
+            Status = AccountPageViewModel.Describe(ex, "sync")
+                + (!changesNothing && AccountPageViewModel.OutcomeUnknown(ex) ? LookAgain : string.Empty);
+        }
+        catch (Exception ex) when (!changesNothing && ex is BitosXCryptographicException or VaultValidationException)
+        {
+            // Opening and checking a vault is what preparing a download does. Anywhere else this is the
+            // vault file on this device, which the operation reads before it sends anything — but that
+            // is not something this sentence can know.
+            Status = "The vault file on this device could not be read." + LookAgain;
         }
         catch (VaultAuthenticationException)
         {
@@ -276,21 +296,25 @@ public sealed partial class VaultSyncViewModel : ViewModelBase, IDisposable
         }
         catch (InvalidOperationException ex)
         {
+            // Each of these is said before anything is sent or written (not signed in, already
+            // syncing, no vault on the server, a vault too large to send).
             Status = ex.Message;
         }
         catch (UnauthorizedAccessException)
         {
-            Status = "BitosX does not have permission to write its files. Nothing was changed.";
+            // Not "nothing was changed": the file that could not be written may be the sync record,
+            // written after an upload, a removal or a replacement went through.
+            Status = "BitosX does not have permission to read or write one of its files." + (changesNothing ? " Nothing was changed." : LookAgain);
         }
         catch (IOException)
         {
-            // Not "nothing was changed": the write that failed may come after an upload or a replace
-            // that succeeded. The next sync compares both sides again and says where things stand.
-            Status = "A file could not be read or written. Run Sync now again to see where things stand.";
+            // As above: the write that failed may come after an upload or a replace that succeeded.
+            // The next sync compares both sides again and says where things stand.
+            Status = "A file could not be read or written." + (changesNothing ? " Nothing was changed." : LookAgain);
         }
         catch (OperationCanceledException)
         {
-            Status = "The operation was cancelled.";
+            Status = "The operation was cancelled." + (changesNothing ? " Nothing was changed." : LookAgain);
         }
         finally
         {

@@ -109,7 +109,11 @@ The acknowledgement cannot be ticked before a download has been validated, and c
   (0.11.0). A transfer that stops part-way ends as a network failure instead of holding the sync.
 - A failure after the server or the disk may already have changed — an unexpected answer, a file
   that could not be written after an upload — never says "nothing was changed"; it says to sync
-  again to see where things stand (0.11.0).
+  again to see where things stand (0.11.0). Since 0.12.0 that holds for every failure of an
+  operation that writes: a permission error, no answer at all, a cancelled operation, a vault file
+  that could not be read. Only preparing a download, which writes nothing anywhere, says that
+  nothing was changed. A 403 on a sync call (no password is sent there, so it comes from something
+  in front of the server) is "The server refused the request.", not a word about passwords.
 - One operation at a time; a second is refused, never queued.
 - Logging: the outcome and the revision numbers (`ApiLog`); never a fingerprint of the vault,
   a password, or the server's text.

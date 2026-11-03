@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.Globalization;
 using BitosX.App.Services;
 using BitosX.Core.Domain;
@@ -19,11 +18,16 @@ public sealed partial class VaultPageViewModel : ViewModelBase
     private readonly GeneratorSettings _generatorSettings;
     private readonly List<LoginItemViewModel> _all = [];
 
+    /// <summary>
+    /// Every login of the vault, in the order of the list: what the list builds its cards from. It
+    /// changes only when the vault does; a search shows and hides the cards
+    /// (<see cref="LoginItemViewModel.IsMatch"/>) instead of building the list again.
+    /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsEmpty))]
-    [NotifyPropertyChangedFor(nameof(IsVaultEmpty))]
-    [NotifyPropertyChangedFor(nameof(HasNoMatches))]
-    public partial ObservableCollection<LoginItemViewModel> Items { get; set; } = [];
+    public partial IReadOnlyList<LoginItemViewModel> AllItems { get; private set; } = [];
+
+    /// <summary>The logins the search matches, in the order of the list.</summary>
+    public IReadOnlyList<LoginItemViewModel> Items { get; private set; } = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(NoMatchesText))]
@@ -69,24 +73,36 @@ public sealed partial class VaultPageViewModel : ViewModelBase
         }
 
         ApplyFilter();
+        AllItems = [.. _all];
         return Task.CompletedTask;
     }
 
     partial void OnSearchTextChanged(string value) => ApplyFilter();
 
+    /// <summary>
+    /// Marks each login as matching the search or not, in place. A card whose answer does not change
+    /// is not touched, so a keystroke costs a pass over the logins and the cards that appear or
+    /// disappear, not a new card for every match (which took seconds with a few thousand logins).
+    /// </summary>
     private void ApplyFilter()
     {
-        IEnumerable<LoginItemViewModel> filtered = _all;
-        if (!string.IsNullOrWhiteSpace(SearchText))
+        string term = SearchText.Trim();
+        var matches = new List<LoginItemViewModel>(_all.Count);
+        foreach (LoginItemViewModel item in _all)
         {
-            string term = SearchText.Trim();
-            filtered = _all.Where(i =>
-                i.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
-                || (i.Username?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
-                || i.Model.Urls.Any(u => u.Contains(term, StringComparison.OrdinalIgnoreCase)));
+            bool match = term.Length == 0
+                || item.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (item.Username?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+                || item.Model.Urls.Any(u => u.Contains(term, StringComparison.OrdinalIgnoreCase));
+            item.IsMatch = match;
+            if (match)
+            {
+                matches.Add(item);
+            }
         }
 
-        Items = [.. filtered];
+        Items = matches;
+        OnPropertyChanged(nameof(Items));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(IsVaultEmpty));
         OnPropertyChanged(nameof(HasNoMatches));

@@ -7,7 +7,7 @@
   <PropertyGroup>
     <!-- Single source of truth for the product version (MAJOR.MINOR.PATCH). See docs/VERSIONING.md.
          MAJOR = big/breaking changes, MINOR = medium/new features, PATCH = small fixes. -->
-    <Version>0.11.0</Version>
+    <Version>0.12.0</Version>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <ImplicitUsings>enable</ImplicitUsings>

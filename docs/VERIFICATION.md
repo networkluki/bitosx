@@ -650,7 +650,8 @@ On these figures new vaults are created with 256 MiB since this release; see
 | The whole application: the first sync uploads the vault file byte for byte; a conflict shows both ways out and uploads nothing | AUTOMATED TESTED | `ViewAppearanceTests.Account`. |
 | Every control of the card has a name; the card is drawn at both sizes, synced and in conflict | AUTOMATED TESTED | `AccessibilityTests`, `ViewAppearanceTests.Account`. |
 | No method of `IBitosXApiClient` can carry decrypted vault content | VERIFIED | The sync methods take and return the encrypted envelope as bytes; nothing else of the vault. |
-| **Against the real server; between two real devices** | **NOT VERIFIED** | `api.bitosx.se` is not publicly reachable yet; see `bitosx-api/docs/DEPLOYMENT.md`. |
+| Against a real API and MariaDB database, between two devices (data directories) of one account: a real vault up and down byte for byte, the sync record bound to server and account, 409 conflicts and both ways out, revisions that never restart after a removal | AUTOMATED TESTED (0.12.0) | `tests/BitosX.LiveTests` (`SyncLiveTests`) against bitosx-api's `tools/devstack`; opt-in, see DEVELOPMENT.md "Live tests". |
+| **Against `api.bitosx.se`; between two real machines** | **NOT VERIFIED** | The production server is not publicly reachable yet; see `bitosx-api/docs/DEPLOYMENT.md`. |
 
 ## Account sign-in (0.8.0) — automated tested
 
@@ -667,7 +668,8 @@ On these figures new vaults are created with 256 MiB since this release; see
 | The Account page: validation, the password cleared after every attempt, failure messages, sign-outs | AUTOMATED TESTED | `AccountPageViewModelTests`. |
 | Every input on the Account page has a name; the page is drawn at both sizes, signed out and in | AUTOMATED TESTED | `AccessibilityTests`, `ViewAppearanceTests.Account`. |
 | No method of `IBitosXApiClient` can carry vault content | VERIFIED | The interface takes an email, a password, tokens and a session id; nothing else. |
-| **Against the real server** | **NOT VERIFIED** | `api.bitosx.se` is not publicly reachable yet; see `bitosx-api/docs/DEPLOYMENT.md`. |
+| Against a real API and MariaDB database: sign-in with password, TOTP code and recovery code; the session list at the cap of 200; refresh and a replayed refresh token; the password change and the other sessions' 401; 403 on a wrong password or code; deleting the account; timestamps as UTC | AUTOMATED TESTED (0.12.0) | `tests/BitosX.LiveTests` (`AccountLiveTests`) against bitosx-api's `tools/devstack`; opt-in, see DEVELOPMENT.md "Live tests". |
+| **Against `api.bitosx.se`** | **NOT VERIFIED** | The production server is not publicly reachable yet; see `bitosx-api/docs/DEPLOYMENT.md`. |
 
 ## Version display fix (2026-09-13)
 
