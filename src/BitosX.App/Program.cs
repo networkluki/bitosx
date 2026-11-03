@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using Avalonia;
 using BitosX.ApiClient;
+using BitosX.App.Services;
 using BitosX.Platform.Instance;
 
 namespace BitosX.App;
@@ -32,14 +33,12 @@ sealed class Program
         catch (AppLocationException ex)
         {
             // Never the default vault instead of the one that was asked for.
-            Console.Error.WriteLine(ex.Message);
-            return UsageErrorExitCode;
+            return UsageError(ex.Message, args);
         }
         catch (ApiServerSelectionException ex)
         {
             // Never the production server instead of the one that was asked for.
-            Console.Error.WriteLine(ex.Message);
-            return UsageErrorExitCode;
+            return UsageError(ex.Message, args);
         }
 
         // One instance per vault: a second one would hold its own copy of the contents and could
@@ -47,15 +46,27 @@ sealed class Program
         using SingleInstanceGuard? instance = SingleInstanceGuard.TryAcquire(location.VaultFilePath);
         if (instance is null)
         {
-            if (OperatingSystem.IsWindows())
+            // On Windows the running window comes to the front. Elsewhere it cannot be reached from
+            // here, so the user is told rather than seeing nothing happen.
+            if (!(OperatingSystem.IsWindows() && ShowRunningInstance(location.WindowTitle)))
             {
-                ShowRunningInstance(location.WindowTitle);
+                const string AlreadyRunning = "BitosX is already running on this vault. Switch to its window: it may be minimized or on another workspace.";
+                Console.Error.WriteLine(AlreadyRunning);
+                StartupNotice.Show(location.WindowTitle, AlreadyRunning, args);
             }
 
             return AlreadyRunningExitCode;
         }
 
         return BuildAvaloniaApp(location, server).StartWithClassicDesktopLifetime(args);
+    }
+
+    /// <summary>A command line that cannot be used: said on the standard error stream and in a window, since a shortcut has no console.</summary>
+    private static int UsageError(string message, string[] args)
+    {
+        Console.Error.WriteLine(message);
+        StartupNotice.Show("BitosX did not start", message + Environment.NewLine + Environment.NewLine + "Nothing was opened or changed.", args);
+        return UsageErrorExitCode;
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.
@@ -74,8 +85,9 @@ sealed class Program
     /// Brings the window of the instance that is already running to the front. Instances on other
     /// vaults are told apart by their window title.
     /// </summary>
+    /// <returns>Whether a window was found and brought to the front.</returns>
     [SupportedOSPlatform("windows")]
-    private static void ShowRunningInstance(string windowTitle)
+    private static bool ShowRunningInstance(string windowTitle)
     {
         try
         {
@@ -100,7 +112,7 @@ sealed class Program
                         }
 
                         NativeMethods.SetForegroundWindow(window);
-                        return;
+                        return true;
                     }
                 }
             }
@@ -109,6 +121,8 @@ sealed class Program
         {
             // Only a courtesy; the second instance exits either way.
         }
+
+        return false;
     }
 
     private static class NativeMethods

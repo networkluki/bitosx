@@ -15,7 +15,7 @@
             <!-- Header -->
             <Grid DockPanel.Dock="Top" ColumnDefinitions="*,Auto" Margin="0,0,0,16">
                 <TextBlock Grid.Column="0" Text="Vault" Classes="h1" VerticalAlignment="Center" />
-                <Button Name="AddLoginButton" Grid.Column="1" Content="+ Add Login" Classes="accent"
+                <Button Name="AddLoginButton" Grid.Column="1" Content="+ Add login" Classes="accent"
                         Command="{Binding AddLoginCommand}" />
             </Grid>
 
@@ -23,11 +23,16 @@
                      Margin="0,0,0,12" />
 
             <TextBlock Name="StatusMessage" DockPanel.Dock="Top" Text="{Binding StatusMessage}" Classes="muted" Margin="0,0,0,8"
+                       AutomationProperties.LiveSetting="Polite"
                        IsVisible="{Binding StatusMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
             <TextBlock Name="EmptyVaultNote" DockPanel.Dock="Top" Classes="muted" Margin="0,20,0,0"
-                       Text="No logins yet. Click “Add Login” to create your first entry."
-                       IsVisible="{Binding IsEmpty}" />
+                       Text="No logins yet. Click “Add login” to create your first entry."
+                       IsVisible="{Binding IsVaultEmpty}" />
+
+            <TextBlock Name="NoMatchesNote" DockPanel.Dock="Top" Classes="muted" Margin="0,20,0,0" TextWrapping="Wrap"
+                       Text="{Binding NoMatchesText}" AutomationProperties.LiveSetting="Polite"
+                       IsVisible="{Binding HasNoMatches}" />
 
             <ScrollViewer>
                 <ItemsControl ItemsSource="{Binding Items}">
@@ -39,7 +44,7 @@
                                 <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">
                                     <!-- Favorite -->
                                     <Button Name="FavoriteButton" Classes="star" Grid.Row="0" Grid.Column="0" Content="{Binding FavoriteGlyph}" Background="Transparent"
-                                            AutomationProperties.Name="{Binding FavoriteLabel}"
+                                            AutomationProperties.Name="{Binding FavoriteDescription}"
                                             Foreground="{StaticResource BitosXWarningBrush}" FontSize="18" Padding="6"
                                             VerticalAlignment="Top"
                                             Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).ToggleFavoriteCommand}"
@@ -55,8 +60,11 @@
                                         <TextBlock Name="ItemUrl" Text="{Binding PrimaryUrl}" Classes="muted" FontSize="12"
                                                    TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding PrimaryUrl}"
                                                    IsVisible="{Binding PrimaryUrl, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
-                                        <SelectableTextBlock Name="ItemPassword" Text="{Binding DisplayedPassword}" FontFamily="Cascadia Code,Consolas,monospace"
-                                                             FontSize="13" Margin="0,3,0,0" TextWrapping="Wrap" />
+                                        <!-- Not selectable: a password leaves only through Copy, which marks it as
+                                             sensitive and clears it again (docs/SECURITY_MODEL.md). -->
+                                        <TextBlock Name="ItemPassword" Text="{Binding DisplayedPassword}" FontFamily="Cascadia Code,Consolas,monospace"
+                                                   FontSize="13" Margin="0,3,0,0" TextWrapping="Wrap"
+                                                   IsVisible="{Binding HasPassword}" />
                                     </StackPanel>
 
                                     <!-- Deleting cannot be undone, so it is asked for twice. -->
@@ -65,9 +73,11 @@
                                         <TextBlock Name="DeleteQuestion" Grid.Column="0" TextWrapping="Wrap" VerticalAlignment="Center"
                                                    Text="Delete this login? This cannot be undone." />
                                         <Button Name="KeepButton" Grid.Column="1" Content="Keep" Margin="8,0,0,0"
+                                                AutomationProperties.Name="{Binding KeepLabel}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CancelDeleteCommand}"
                                                 CommandParameter="{Binding}" />
                                         <Button Name="ConfirmDeleteButton" Grid.Column="2" Content="Delete" Margin="8,0,0,0"
+                                                AutomationProperties.Name="{Binding ConfirmDeleteLabel}"
                                                 Foreground="{StaticResource BitosXDangerBrush}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).DeleteLoginCommand}"
                                                 CommandParameter="{Binding}" />
@@ -77,21 +87,27 @@
                                     <WrapPanel Name="ItemActions" Grid.Row="1" Grid.Column="1" Margin="4,8,0,0"
                                                IsVisible="{Binding !IsDeletePending}">
                                         <Button Name="ShowPasswordButton" Content="{Binding PasswordToggleGlyph}" Margin="4,2"
+                                                AutomationProperties.Name="{Binding PasswordToggleLabel}"
                                                 IsVisible="{Binding HasPassword}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).TogglePasswordVisibilityCommand}"
                                                 CommandParameter="{Binding}" />
-                                        <Button Name="CopyUsernameButton" Content="Copy user" Margin="4,2"
+                                        <Button Name="CopyUsernameButton" Content="Copy username" Margin="4,2"
+                                                AutomationProperties.Name="{Binding CopyUsernameLabel}"
                                                 IsVisible="{Binding Username, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CopyUsernameCommand}"
                                                 CommandParameter="{Binding}" />
-                                        <Button Name="CopyPasswordButton" Content="Copy pass" Margin="4,2"
+                                        <Button Name="CopyPasswordButton" Content="Copy password" Margin="4,2"
+                                                AutomationProperties.Name="{Binding CopyPasswordLabel}"
                                                 IsVisible="{Binding HasPassword}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CopyPasswordCommand}"
                                                 CommandParameter="{Binding}" />
                                         <Button Name="EditButton" Content="Edit" Margin="4,2"
+                                                AutomationProperties.Name="{Binding EditLabel}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).EditLoginCommand}"
                                                 CommandParameter="{Binding}" />
                                         <Button Name="DeleteButton" Content="Delete" Margin="4,2" Foreground="{StaticResource BitosXDangerBrush}"
+                                                Click="OnDeleteRequested"
+                                                AutomationProperties.Name="{Binding DeleteLabel}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).RequestDeleteCommand}"
                                                 CommandParameter="{Binding}" />
                                     </WrapPanel>

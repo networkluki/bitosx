@@ -15,7 +15,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace BitosX.App.ViewModels;
 
 /// <summary>The Settings page: environment/security information plus auto-lock preferences.</summary>
-public sealed partial class SettingsPageViewModel : ViewModelBase
+public sealed partial class SettingsPageViewModel : ViewModelBase, IDisposable
 {
     private readonly IVaultService _vaultService;
     private readonly IAppSettingsStore _settingsStore;
@@ -92,6 +92,18 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial string? AutoLockStatus { get; set; }
+
+    /// <summary>The master password is being changed (one or more Argon2id derivations).</summary>
+    [ObservableProperty]
+    public partial bool IsChangingMasterPassword { get; private set; }
+
+    /// <summary>The vault key is being rotated (two derivations and a re-encryption).</summary>
+    [ObservableProperty]
+    public partial bool IsRotating { get; private set; }
+
+    /// <summary>A backup is being checked with its master password (up to four derivations for an old one).</summary>
+    [ObservableProperty]
+    public partial bool IsValidatingRestore { get; private set; }
 
     [ObservableProperty]
     public partial string CurrentPassword { get; set; } = string.Empty;
@@ -202,8 +214,9 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         AlgorithmDescription = "AES-256-GCM (authenticated encryption)";
         ClipboardClearDescription = $"Copied secrets are cleared after {clipboard.ClearDelay.TotalSeconds:0} seconds.";
         ServerIntegrationDescription = apiClient.Server is { } server
-            ? $"Account sign-in via {server.DisplayName}. Only your account email and account password are sent, to sign in; "
-              + "your master password and your vault never leave this device."
+            ? $"Account sign-in and Sync via {server.DisplayName}. Signing in sends the account email, the account password and, "
+              + "with two-factor authentication, a code. Sync, when you use it, sends the vault only as the encrypted file it is on disk. "
+              + "The master password, the vault key and anything decrypted never leave this device."
             : "Disabled for this run (--api-server none). Nothing is sent to any server.";
         AppVersion = AppVersionInfo.Display;
 
@@ -285,14 +298,48 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         // Apply first: the running session must honor the choice even if it cannot be saved.
         _autoLock.UpdateSettings(updated);
 
+        // Saved off the UI thread (the write is flushed to disk), and only the latest of a burst of
+        // changes — holding the arrow of the minutes box — is written once the one before is done.
+        _settingsToSave = updated;
+        if (_saving.IsCompleted)
+        {
+            _saving = SaveQueuedSettingsAsync();
+        }
+    }
+
+    private AppSettings? _settingsToSave;
+    private Task _saving = Task.CompletedTask;
+
+    /// <summary>Completes when every change made so far has been written (or has failed to be). For closing, and for tests.</summary>
+    public Task PendingSave => _saving;
+
+    private async Task SaveQueuedSettingsAsync()
+    {
+        while (_settingsToSave is { } next)
+        {
+            _settingsToSave = null;
+            try
+            {
+                await Task.Run(() => _settingsStore.Save(next)).ConfigureAwait(true);
+                AutoLockStatus = null;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                AutoLockStatus = "These settings apply now but could not be saved, so they will be lost when BitosX closes.";
+            }
+        }
+    }
+
+    /// <summary>Waits briefly for a save still in flight, so that closing the page or BitosX does not lose the last change.</summary>
+    public void Dispose()
+    {
         try
         {
-            _settingsStore.Save(updated);
-            AutoLockStatus = null;
+            _saving.Wait(TimeSpan.FromSeconds(2));
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (AggregateException)
         {
-            AutoLockStatus = "These settings apply now but could not be saved, so they will be lost when BitosX closes.";
+            // SaveQueuedSettingsAsync reports its own failures; nothing more to do here.
         }
     }
 
@@ -304,12 +351,19 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
     {
         ChangePasswordStatus = null;
 
+        if (CurrentPassword.Length == 0)
+        {
+            ChangePasswordStatus = "Enter your current master password.";
+            return;
+        }
+
         if (!string.Equals(NewPassword, ConfirmPassword, StringComparison.Ordinal))
         {
             ChangePasswordStatus = "The new password and its confirmation do not match.";
             return;
         }
 
+        IsChangingMasterPassword = true;
         try
         {
             await _vaultService.ChangeMasterPasswordAsync(CurrentPassword, NewPassword).ConfigureAwait(true);
@@ -359,6 +413,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         {
             ChangePasswordStatus = "Could not save the vault. The master password was not changed.";
         }
+        finally
+        {
+            IsChangingMasterPassword = false;
+        }
     }
 
     [RelayCommand]
@@ -366,6 +424,13 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
     {
         RotateStatus = null;
 
+        if (RotatePassword.Length == 0)
+        {
+            RotateStatus = "Enter your current master password to rotate the vault key.";
+            return;
+        }
+
+        IsRotating = true;
         try
         {
             await _vaultService.RotateVaultKeyAsync(RotatePassword).ConfigureAwait(true);
@@ -404,6 +469,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         catch (IOException)
         {
             RotateStatus = "Could not save the vault. The vault key was not rotated.";
+        }
+        finally
+        {
+            IsRotating = false;
         }
     }
 
@@ -527,12 +596,24 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
 
     // ---- Backup & Restore ----
 
+    private const string NotLocalLocation = "That location cannot be used: it is not a folder on this computer. Choose a folder on this computer.";
+
     [RelayCommand]
     private async Task ExportBackupAsync()
     {
         BackupStatus = null;
         string suggested = $"BitosX-backup-{DateTime.Now:yyyy-MM-dd}.bitosx-backup";
-        string? path = await _filePicker.PickBackupSaveAsync(suggested).ConfigureAwait(true);
+        string? path;
+        try
+        {
+            path = await _filePicker.PickBackupSaveAsync(suggested).ConfigureAwait(true);
+        }
+        catch (FileLocationNotLocalException)
+        {
+            BackupStatus = NotLocalLocation;
+            return;
+        }
+
         if (string.IsNullOrEmpty(path))
         {
             return; // user cancelled
@@ -573,7 +654,17 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         _pendingRestore = null;
         _restore.Reset();
         SyncRestoreConfirmation();
-        string? path = await _filePicker.PickBackupOpenAsync().ConfigureAwait(true);
+        string? path;
+        try
+        {
+            path = await _filePicker.PickBackupOpenAsync().ConfigureAwait(true);
+        }
+        catch (FileLocationNotLocalException)
+        {
+            RestoreStatus = NotLocalLocation;
+            return;
+        }
+
         if (string.IsNullOrEmpty(path))
         {
             return; // cancelled
@@ -599,6 +690,13 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
             return;
         }
 
+        if (RestoreBackupPassword.Length == 0)
+        {
+            RestoreStatus = "Enter the master password of the backup.";
+            return;
+        }
+
+        IsValidatingRestore = true;
         try
         {
             BackupPreview preview = await _backupService
@@ -641,6 +739,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase
         catch (IOException)
         {
             RestoreStatus = "Could not read the backup file.";
+        }
+        finally
+        {
+            IsValidatingRestore = false;
         }
     }
 

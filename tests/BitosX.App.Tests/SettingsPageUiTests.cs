@@ -327,7 +327,7 @@ public sealed class SettingsPageUiTests : IDisposable
     // ---- Settings that cannot be saved ----
 
     [Fact]
-    public Task ASettingThatCannotBeSaved_IsReported_OnThePage() => HeadlessUi.RunAsync(() =>
+    public Task ASettingThatCannotBeSaved_IsReported_OnThePage() => HeadlessUi.RunAsync(async () =>
     {
         var store = new FakeAppSettingsStore { SaveThrow = new IOException("disk full") };
         var vault = new FakeVaultService { KdfParameters = Argon2Parameters.Default };
@@ -339,9 +339,8 @@ public sealed class SettingsPageUiTests : IDisposable
         HeadlessUi.Toggle(window, lockOnMinimize);
 
         Assert.True(lockOnMinimize.IsChecked);
-        Assert.True(Shown(view, "AutoLockStatus"));
+        await HeadlessUi.WaitUntilAsync(() => Shown(view, "AutoLockStatus"), "the failed write is reported");
         Assert.Contains("could not be saved", Text(view, "AutoLockStatus"), StringComparison.Ordinal);
-        return Task.CompletedTask;
     });
 
     public void Dispose()

@@ -164,8 +164,14 @@ internal sealed class FakeFilePicker : IFilePicker
     public string? OpenPath { get; set; }
     public string? SavePath { get; set; }
 
-    public Task<string?> PickBackupSaveAsync(string suggestedFileName, CancellationToken cancellationToken = default) => Task.FromResult(SavePath);
-    public Task<string?> PickBackupOpenAsync(CancellationToken cancellationToken = default) => Task.FromResult(OpenPath);
+    /// <summary>When set, the dialog "chose" something that is not a local file.</summary>
+    public bool ChoosesANonLocalLocation { get; set; }
+
+    public Task<string?> PickBackupSaveAsync(string suggestedFileName, CancellationToken cancellationToken = default)
+        => ChoosesANonLocalLocation ? Task.FromException<string?>(new FileLocationNotLocalException()) : Task.FromResult(SavePath);
+
+    public Task<string?> PickBackupOpenAsync(CancellationToken cancellationToken = default)
+        => ChoosesANonLocalLocation ? Task.FromException<string?>(new FileLocationNotLocalException()) : Task.FromResult(OpenPath);
 }
 
 /// <summary>Records copies and clears; can simulate a clipboard that is busy.</summary>

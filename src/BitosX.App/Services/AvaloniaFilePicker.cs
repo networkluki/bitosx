@@ -7,7 +7,8 @@ namespace BitosX.App.Services;
 /// <summary>
 /// Avalonia-backed <see cref="IFilePicker"/> over <see cref="TopLevel.StorageProvider"/>. Returns a
 /// local path via <see cref="IStorageItem.TryGetLocalPath"/>; a non-local location (no filesystem
-/// path) yields <see langword="null"/> so the caller fails safe rather than guessing.
+/// path) throws <see cref="FileLocationNotLocalException"/>, so the caller fails safe and says why
+/// rather than guessing — or doing nothing, as if the dialog had been cancelled.
 /// </summary>
 public sealed class AvaloniaFilePicker : IFilePicker
 {
@@ -37,7 +38,7 @@ public sealed class AvaloniaFilePicker : IFilePicker
             FileTypeChoices = [BackupFileType()],
         }).ConfigureAwait(true);
 
-        return file?.TryGetLocalPath();
+        return file is null ? null : LocalPath(file);
     }
 
     public async Task<string?> PickBackupOpenAsync(CancellationToken cancellationToken = default)
@@ -55,8 +56,11 @@ public sealed class AvaloniaFilePicker : IFilePicker
             FileTypeFilter = [BackupFileType(), FilePickerFileTypes.All],
         }).ConfigureAwait(true);
 
-        return files.Count > 0 ? files[0].TryGetLocalPath() : null;
+        return files.Count > 0 ? LocalPath(files[0]) : null;
     }
+
+    private static string LocalPath(IStorageItem item)
+        => item.TryGetLocalPath() is { Length: > 0 } path ? path : throw new FileLocationNotLocalException();
 
     private static FilePickerFileType BackupFileType() => new("BitosX backup")
     {

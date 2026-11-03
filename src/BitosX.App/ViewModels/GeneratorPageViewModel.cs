@@ -1,3 +1,4 @@
+using BitosX.App.Services;
 using BitosX.Core.Generation;
 using BitosX.Core.Security;
 using BitosX.Platform.Clipboard;
@@ -11,6 +12,8 @@ public sealed partial class GeneratorPageViewModel : ViewModelBase
 {
     private readonly IPasswordGenerator _generator;
     private readonly IClipboardService _clipboard;
+    private readonly GeneratorSettings _settings;
+    private readonly bool _initialized;
 
     [ObservableProperty]
     public partial int Length { get; set; } = 20;
@@ -42,10 +45,20 @@ public sealed partial class GeneratorPageViewModel : ViewModelBase
     [ObservableProperty]
     public partial string? StatusMessage { get; set; }
 
-    public GeneratorPageViewModel(IPasswordGenerator generator, IClipboardService clipboard)
+    public GeneratorPageViewModel(IPasswordGenerator generator, IClipboardService clipboard, GeneratorSettings? settings = null)
     {
         _generator = generator;
         _clipboard = clipboard;
+        _settings = settings ?? new GeneratorSettings();
+
+        PasswordGenerationOptions current = _settings.Current;
+        Length = current.Length;
+        IncludeLowercase = current.IncludeLowercase;
+        IncludeUppercase = current.IncludeUppercase;
+        IncludeDigits = current.IncludeDigits;
+        IncludeSymbols = current.IncludeSymbols;
+        ExcludeAmbiguous = current.ExcludeAmbiguous;
+        _initialized = true;
         Generate();
     }
 
@@ -65,6 +78,11 @@ public sealed partial class GeneratorPageViewModel : ViewModelBase
     [RelayCommand]
     private void Generate()
     {
+        if (!_initialized)
+        {
+            return; // the constructor is still taking over the shared settings
+        }
+
         ErrorMessage = null;
         StatusMessage = null;
         try
@@ -80,6 +98,7 @@ public sealed partial class GeneratorPageViewModel : ViewModelBase
             };
 
             GeneratedPassword = _generator.Generate(options);
+            _settings.Current = options; // what the login editor's Generate button uses too
             StrengthText = StrengthDisplay.Rating(GeneratedPassword);
         }
         catch (Exception ex)

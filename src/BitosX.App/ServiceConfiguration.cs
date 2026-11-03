@@ -67,6 +67,7 @@ public static class ServiceConfiguration
             sp.GetRequiredService<ILogger<VaultService>>()));
         services.AddSingleton<IVaultBackupService, VaultBackupService>();
         services.AddSingleton<IPasswordGenerator, PasswordGenerator>();
+        services.AddSingleton<GeneratorSettings>();
         services.AddSingleton<ISecurityAnalyzer, SecurityAnalyzer>();
         services.AddSingleton<IKeyDerivationBenchmark>(_ => new KeyDerivationBenchmark(new Argon2idKeyDerivation()));
 

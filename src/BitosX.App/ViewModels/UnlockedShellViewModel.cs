@@ -28,6 +28,11 @@ public sealed partial class UnlockedShellViewModel : ViewModelBase, IDisposable
     [NotifyPropertyChangedFor(nameof(IsSecuritySelected))]
     [NotifyPropertyChangedFor(nameof(IsSettingsSelected))]
     [NotifyPropertyChangedFor(nameof(IsAccountSelected))]
+    [NotifyPropertyChangedFor(nameof(VaultNavName))]
+    [NotifyPropertyChangedFor(nameof(GeneratorNavName))]
+    [NotifyPropertyChangedFor(nameof(SecurityNavName))]
+    [NotifyPropertyChangedFor(nameof(SettingsNavName))]
+    [NotifyPropertyChangedFor(nameof(AccountNavName))]
     public partial ViewModelBase? CurrentPage { get; set; }
 
     public bool IsVaultSelected => CurrentPage is VaultPageViewModel;
@@ -35,6 +40,16 @@ public sealed partial class UnlockedShellViewModel : ViewModelBase, IDisposable
     public bool IsSecuritySelected => CurrentPage is SecurityPageViewModel;
     public bool IsSettingsSelected => CurrentPage is SettingsPageViewModel;
     public bool IsAccountSelected => CurrentPage is AccountPageViewModel;
+
+    // What a screen reader says for each navigation button: the page, and which one is shown — the
+    // highlight alone is something only the eye sees.
+    public string VaultNavName => NavName("Vault", IsVaultSelected);
+    public string GeneratorNavName => NavName("Generator", IsGeneratorSelected);
+    public string SecurityNavName => NavName("Security Center", IsSecuritySelected);
+    public string SettingsNavName => NavName("Settings", IsSettingsSelected);
+    public string AccountNavName => NavName("Account", IsAccountSelected);
+
+    private static string NavName(string page, bool selected) => selected ? page + ", current page" : page;
 
     public UnlockedShellViewModel(IServiceProvider services, IVaultService vaultService)
     {

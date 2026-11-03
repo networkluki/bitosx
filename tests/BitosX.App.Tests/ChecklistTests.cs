@@ -477,6 +477,9 @@ public sealed class ChecklistTests
         app.Find<NumericUpDown>("InactivityMinutesBox").Value = 7;
         HeadlessUi.Toggle(app.Window, app.Find<CheckBox>("LockOnMinimizeCheckBox"));
         Assert.False(app.Shows("AutoLockStatus"));
+        await HeadlessUi.WaitUntilAsync(
+            () => File.Exists(app.Location.SettingsFilePath) && File.ReadAllText(app.Location.SettingsFilePath).Contains("\"lockOnMinimize\": true", StringComparison.Ordinal),
+            "the settings are written (off the UI thread)");
         Assert.Contains("\"inactivityTimeoutSeconds\": 420", File.ReadAllText(app.Location.SettingsFilePath), StringComparison.Ordinal);
 
         await app.RestartAsync();
@@ -512,6 +515,9 @@ public sealed class ChecklistTests
         // Changing one of them leaves the other as it is, on the page and in the file.
         app.Find<NumericUpDown>("InactivityMinutesBox").Value = 9;
         HeadlessUi.Settle();
+        await HeadlessUi.WaitUntilAsync(
+            () => File.ReadAllText(app.Location.SettingsFilePath).Contains("\"inactivityTimeoutSeconds\": 540", StringComparison.Ordinal),
+            "the change is written (off the UI thread)");
         string saved = File.ReadAllText(app.Location.SettingsFilePath);
         Assert.Contains("\"inactivityTimeoutSeconds\": 540", saved, StringComparison.Ordinal);
         Assert.Contains("\"lockOnMinimize\": true", saved, StringComparison.Ordinal);
@@ -855,7 +861,7 @@ public sealed class ChecklistTests
     // ---- What an empty password field does ----
 
     [Fact]
-    public Task AnEmptyPasswordField_IsAWrongPassword_NotACrash() => HeadlessUi.RunAsync(async () =>
+    public Task AnEmptyPasswordField_AsksForThePassword_AndIsNotACrash() => HeadlessUi.RunAsync(async () =>
     {
         (WholeApplication app, string backup, byte[] live) = await AtTheRestorePreviewAsync();
         await using (app)
@@ -863,18 +869,18 @@ public sealed class ChecklistTests
             app.Press("RestoreCancelButton");
 
             app.Press("RotateVaultKeyButton");
-            await app.WaitForTextAsync("RotateStatus", "The current password is incorrect. The vault key was not rotated.");
+            await app.WaitForTextAsync("RotateStatus", "Enter your current master password to rotate the vault key.");
 
             app.Type("NewPasswordBox", "a new and different master password");
             app.Type("ConfirmPasswordBox", "a new and different master password");
             app.Press("ChangePasswordButton");
-            await app.WaitForTextAsync("ChangePasswordStatus", "The current password is incorrect.");
+            await app.WaitForTextAsync("ChangePasswordStatus", "Enter your current master password.");
 
             app.Files.OpenPath = backup;
             app.Press("ChooseBackupButton");
             await HeadlessUi.WaitUntilAsync(() => app.Shows("RestorePasswordBox"), "the backup is chosen");
             app.Press("ValidateBackupButton");
-            await app.WaitForTextAsync("RestoreStatus", "The backup password is incorrect, or the backup is corrupted.");
+            await app.WaitForTextAsync("RestoreStatus", "Enter the master password of the backup.");
 
             Assert.False(app.Find<Button>("StrengthenKeyDerivationButton").IsEffectivelyEnabled);
             Assert.Equal(VaultState.Unlocked, app.Vault.State);

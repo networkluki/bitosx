@@ -24,10 +24,18 @@
             </StackPanel>
 
             <TextBlock Name="ErrorMessage" Text="{Binding ErrorMessage}" Classes="error"
+                       AutomationProperties.LiveSetting="Assertive"
                        IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
             <Button Name="UnlockButton" Content="Unlock" Classes="accent" HorizontalAlignment="Stretch"
                     Command="{Binding UnlockCommand}" IsEnabled="{Binding !IsBusy}" />
+
+            <StackPanel Name="MissingVaultPanel" Spacing="8" IsVisible="{Binding IsVaultMissing}">
+                <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                           Text="If the vault is gone for good, check again: BitosX then offers to create a new vault. A backup can be restored into it from Settings." />
+                <Button Name="CheckVaultAgainButton" Content="Check again" HorizontalAlignment="Stretch"
+                        Command="{Binding CheckAgainCommand}" />
+            </StackPanel>
         </StackPanel>
     </Border>
 </UserControl>
