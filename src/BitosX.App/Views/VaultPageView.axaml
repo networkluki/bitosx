@@ -34,11 +34,13 @@
                        Text="{Binding NoMatchesText}" AutomationProperties.LiveSetting="Polite"
                        IsVisible="{Binding HasNoMatches}" />
 
+            <!-- A card for every login, built when the vault changes; the search only shows and hides
+                 them, so typing does not build the list again. -->
             <ScrollViewer>
-                <ItemsControl ItemsSource="{Binding Items}">
+                <ItemsControl ItemsSource="{Binding AllItems}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:LoginItemViewModel">
-                            <Border Classes="card" Margin="0,0,0,10" Padding="16,12">
+                            <Border Classes="card" Margin="0,0,0,10" Padding="16,12" IsVisible="{Binding IsMatch}">
                                 <!-- The details have the full width of the card and the actions their own row,
                                      so neither squeezes the other in a narrow window. -->
                                 <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto">

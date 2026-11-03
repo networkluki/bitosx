@@ -54,6 +54,10 @@ public sealed partial class LoginItemViewModel : ViewModelBase
 
     public string PasswordToggleGlyph => IsPasswordVisible ? "Hide" : "Show";
 
+    /// <summary>Whether the search matches this item: its card is shown only then.</summary>
+    [ObservableProperty]
+    public partial bool IsMatch { get; internal set; } = true;
+
     /// <summary>Whether deleting this item has been asked for and is waiting to be confirmed.</summary>
     [ObservableProperty]
     public partial bool IsDeletePending { get; set; }
