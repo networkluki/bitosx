@@ -35,6 +35,7 @@ internal static class LiveStack
 {
     public const string ApiUrlVariable = "BITOSX_LIVE_API_URL";
     public const string MailCommandVariable = "BITOSX_LIVE_MAIL_CMD";
+    public const string WebOriginVariable = "BITOSX_LIVE_WEB_ORIGIN";
     public const string NotRunReason = "not run: set BITOSX_LIVE_API_URL and BITOSX_LIVE_MAIL_CMD";
 
     /// <summary>The account passwords of the tests: long enough for the server's policy (12 to 128).</summary>
@@ -70,6 +71,32 @@ internal static class LiveStack
             if (!uri.IsLoopback)
             {
                 throw new InvalidOperationException($"{ApiUrlVariable} must be an API on this machine (loopback), not {uri.Host}.");
+            }
+
+            return uri;
+        }
+    }
+
+    /// <summary>
+    /// The web vault's origin as the stack configures it (<see cref="WebOriginVariable"/>, which the stack's
+    /// client variables include): the origin a passkey is registered from, as a browser there would.
+    /// Needed only by the passkey test; fails, and says so, when it is not set.
+    /// </summary>
+    public static Uri WebOrigin
+    {
+        get
+        {
+            string? value = Environment.GetEnvironmentVariable(WebOriginVariable);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                throw new InvalidOperationException(
+                    $"The passkey test needs {WebOriginVariable}, the web vault origin of the stack (tools/devstack/.state/env has it).");
+            }
+
+            var uri = new Uri(value.Trim(), UriKind.Absolute);
+            if (!uri.IsLoopback)
+            {
+                throw new InvalidOperationException($"{WebOriginVariable} must be an origin on this machine (loopback), not {uri.Host}.");
             }
 
             return uri;
@@ -163,6 +190,47 @@ internal static class LiveStack
         logout.Headers.Authorization = new("Bearer", access);
         await http.SendAsync(logout).ConfigureAwait(false);
         return (totp, recovery);
+    }
+
+    /// <summary>
+    /// Registers a passkey for an account that has two-factor on, as the web vault does in a browser
+    /// (the desktop only shows how many there are): sign in with <paramref name="signInCode"/>, ask for
+    /// creation options with the password and <paramref name="confirmCode"/>, answer them with
+    /// <paramref name="authenticator"/> from <see cref="WebOrigin"/>, and register the result as
+    /// <paramref name="name"/>. Either code may be a TOTP or a recovery code.
+    /// </summary>
+    public static async Task RegisterPasskeyAsync(
+        string email, string password, string signInCode, string confirmCode, SoftwareAuthenticator authenticator, string name)
+    {
+        ArgumentNullException.ThrowIfNull(authenticator);
+        Uri origin = WebOrigin;
+        using HttpClient http = RawClient();
+        JsonObject challenge = await ExpectAsync(http.PostAsJsonAsync("v1/auth/login", new { email, password }), HttpStatusCode.Accepted, "login").ConfigureAwait(false);
+        JsonObject login = await ExpectAsync(
+            http.PostAsJsonAsync("v1/auth/login/totp", new { mfaToken = (string)challenge["mfaToken"]!, code = signInCode }), HttpStatusCode.OK, "login/totp").ConfigureAwait(false);
+        string access = (string)login["accessToken"]!;
+
+        using var begin = new HttpRequestMessage(HttpMethod.Post, "v1/account/passkeys/registration/options") { Content = JsonContent.Create(new { password, code = confirmCode }) };
+        begin.Headers.Authorization = new("Bearer", access);
+        JsonObject ceremony = await ExpectAsync(http.SendAsync(begin), HttpStatusCode.OK, "passkey registration options").ConfigureAwait(false);
+        JsonObject options = ceremony["options"]?.AsObject() ?? throw new InvalidOperationException("The registration options carry no options.");
+
+        JsonObject credential = authenticator.Create(options, origin);
+        using var finish = new HttpRequestMessage(HttpMethod.Post, "v1/account/passkeys/registration")
+        {
+            Content = JsonContent.Create(new JsonObject
+            {
+                ["registrationId"] = (string)ceremony["registrationId"]!,
+                ["name"] = name,
+                ["credential"] = credential,
+            }),
+        };
+        finish.Headers.Authorization = new("Bearer", access);
+        await ExpectAsync(http.SendAsync(finish), HttpStatusCode.Created, "passkey registration").ConfigureAwait(false);
+
+        using var logout = new HttpRequestMessage(HttpMethod.Post, "v1/auth/logout");
+        logout.Headers.Authorization = new("Bearer", access);
+        await http.SendAsync(logout).ConfigureAwait(false);
     }
 
     private static async Task<JsonObject> ExpectAsync(Task<HttpResponseMessage> call, HttpStatusCode expected, string what)

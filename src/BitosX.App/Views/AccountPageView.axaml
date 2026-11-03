@@ -44,6 +44,9 @@
                     <StackPanel Name="SecondFactorPanel" Spacing="10" IsVisible="{Binding IsAwaitingCode}">
                         <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
                                    Text="This account has two-factor authentication. Enter the code from your authenticator app (6 to 8 digits), or one of your recovery codes. The code is sent only to the BitosX server, together with the one-time token it issued for this sign-in." />
+                        <!-- Shown when the server says the account has passkeys: they are for the web vault; this app takes a code -->
+                        <TextBlock Name="SecondStepPasskeyNote" Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                   Text="{Binding SecondStepPasskeyNote}" IsVisible="{Binding SecondStepOffersPasskey}" />
                         <TextBox Name="AccountCodeBox" AutomationProperties.Name="Sign-in code" PlaceholderText="123456 or xxxxx-xxxxx" Text="{Binding Code}" MaxLength="11" />
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <Button Name="SubmitCodeButton" Content="Continue" Classes="accent" Command="{Binding SubmitCodeCommand}" />
@@ -118,6 +121,8 @@
                 <StackPanel Spacing="8">
                     <TextBlock Text="Two-factor authentication" Classes="h2" />
                     <TextBlock Name="TwoFactorSummary" Text="{Binding TwoFactorSummary}" TextWrapping="Wrap" />
+                    <!-- Passkeys: a count only; added, renamed and removed on the web vault. Hidden when the server has none. -->
+                    <TextBlock Name="PasskeySummary" Text="{Binding PasskeySummary}" TextWrapping="Wrap" IsVisible="{Binding ShowsPasskeys}" />
                     <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap" Text="{Binding TwoFactorNote}" />
                 </StackPanel>
             </Border>

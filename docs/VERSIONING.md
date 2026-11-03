@@ -38,7 +38,19 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.12.0`** — ready for the real server. BitosX has an icon of its own (a padlock on a
+**`0.13.0`** — passkeys, as far as the desktop goes. Passkeys (WebAuthn) are added, renamed,
+removed and used on vault.bitosx.se, on top of the authenticator code, never instead of it; this
+application has no WebAuthn and keeps signing in with the authenticator code or a recovery code.
+The Account page shows how many passkeys the account has, read-only (`GET /v1/account/passkeys`;
+the line is hidden on a server without passkeys), and the second sign-in step says, when the server
+lists `passkey` among its `methods`, that passkeys are used on the web vault and that here the
+code is needed. The `methods` of the sign-in challenge are read tolerantly: no list means the code
+step, as before; names this client does not know are ignored; a challenge that offers no code step
+is refused as unexpected. The vault, its master password and the on-disk format (still v1) are
+untouched. **Not verified:** the live passkey test (`tests/BitosX.LiveTests`) against the stack of
+bitosx-api with passkeys; `api.bitosx.se` itself, which is not publicly reachable yet.
+
+Builds on `0.12.0` — ready for the real server. BitosX has an icon of its own (a padlock on a
 rounded square in its two accent colours), for its windows and for the program file on Windows,
 drawn from its geometry by `tools/BitosX.IconGen` instead of the template's placeholder. The search
 no longer builds the list again on every keystroke: it shows and hides the cards that are there

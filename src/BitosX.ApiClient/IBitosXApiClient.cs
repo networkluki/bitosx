@@ -33,7 +33,8 @@ public interface IBitosXApiClient
 
     /// <summary>
     /// Signs in with the account email and password. Returns the session's tokens, or — when the account has
-    /// a second factor — a challenge to complete with <see cref="CompleteSecondFactorAsync"/>.
+    /// a second factor — a challenge to complete with <see cref="CompleteSecondFactorAsync"/>. The challenge
+    /// says which methods the server offers; this client completes it with a code (TOTP or recovery) only.
     /// </summary>
     Task<SignInResult> LoginAsync(string email, string password, CancellationToken cancellationToken = default);
 
@@ -77,6 +78,12 @@ public interface IBitosXApiClient
 
     /// <summary>The account's two-factor state, or <see langword="null"/> when the server does not offer two-factor authentication (503 or 404).</summary>
     Task<TwoFactorStatus?> GetTwoFactorStatusAsync(string accessToken, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// The account's passkeys (<c>GET /v1/account/passkeys</c>), or <see langword="null"/> when the server
+    /// does not offer passkeys (404). Read-only: passkeys are managed on the web vault.
+    /// </summary>
+    Task<PasskeyList?> GetPasskeysAsync(string accessToken, CancellationToken cancellationToken = default);
 
     // ---- encrypted sync (docs/SYNC.md) ----
 

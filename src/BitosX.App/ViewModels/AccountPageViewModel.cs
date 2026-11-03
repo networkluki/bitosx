@@ -54,6 +54,8 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
         TwoFactorNote = IsProductionServer
             ? "Two-factor authentication is set up, and turned off, at vault.bitosx.se. It protects the account sign-in only; your vault master password is not affected."
             : "Two-factor authentication is set up, and turned off, in the web vault of this server. It protects the account sign-in only; your vault master password is not affected.";
+        WebVaultName = IsProductionServer ? "vault.bitosx.se" : "the web vault of this server";
+        SecondStepPasskeyNote = $"This account also has passkeys. They are used on {WebVaultName}; here, enter the code from your authenticator app or a recovery code.";
     }
 
     /// <summary>Whether a server is configured at all.</summary>
@@ -70,6 +72,12 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
     public string UnavailableNote { get; }
 
     public string TwoFactorNote { get; }
+
+    /// <summary>Where passkeys and two-factor authentication are managed, for the page's sentences.</summary>
+    private string WebVaultName { get; }
+
+    /// <summary>Shown in the second sign-in step when the server says the account has passkeys: this application signs in with a code.</summary>
+    public string SecondStepPasskeyNote { get; }
 
     /// <summary>The encrypted sync with the server; see <see cref="VaultSyncViewModel"/>.</summary>
     public VaultSyncViewModel Sync { get; }
@@ -97,6 +105,10 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
     [NotifyCanExecuteChangedFor(nameof(SubmitCodeCommand))]
     [NotifyCanExecuteChangedFor(nameof(CancelCodeCommand))]
     public partial bool IsAwaitingCode { get; private set; }
+
+    /// <summary>The pending sign-in step offers passkeys as well (the account has some). They are not used here; the page says so.</summary>
+    [ObservableProperty]
+    public partial bool SecondStepOffersPasskey { get; private set; }
 
     /// <summary>The email and password boxes: shown while signed out and not waiting for a code.</summary>
     public bool IsEnteringCredentials => !IsAwaitingCode;
@@ -161,6 +173,31 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
 
     /// <summary>The password-confirmed forms ask for a code when the account has two-factor on — and, to be safe, when that could not be read.</summary>
     public bool AsksForCode => TwoFactor is TwoFactorState.On or TwoFactorState.Unknown;
+
+    // ---- passkeys (read-only here; managed on the web vault) ----
+
+    /// <summary>What the page knows about the account's passkeys; <see cref="PasskeyState.Unknown"/> until read.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PasskeySummary))]
+    [NotifyPropertyChangedFor(nameof(ShowsPasskeys))]
+    public partial PasskeyState Passkeys { get; private set; }
+
+    /// <summary>How many passkeys the account has, when <see cref="Passkeys"/> is <see cref="PasskeyState.Known"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PasskeySummary))]
+    public partial int PasskeyCount { get; private set; }
+
+    /// <summary>The passkey line is shown unless the server does not offer passkeys at all.</summary>
+    public bool ShowsPasskeys => Passkeys != PasskeyState.NotAvailable;
+
+    public string PasskeySummary => Passkeys switch
+    {
+        PasskeyState.Known when PasskeyCount > 0 => string.Create(
+            CultureInfo.CurrentCulture,
+            $"Passkeys: {PasskeyCount} registered — use them on {WebVaultName}; this app signs in with your authenticator code."),
+        PasskeyState.Known => $"Passkeys: none registered. Passkeys are added and used on {WebVaultName}; this app signs in without them.",
+        _ => "Passkeys: could not be read right now.",
+    };
 
     public string CodeHint => TwoFactor == TwoFactorState.On
         ? "Code from your authenticator app, or a recovery code"
@@ -256,6 +293,7 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
             if (outcome == SignInOutcome.SecondFactorRequired)
             {
                 IsAwaitingCode = true;
+                SecondStepOffersPasskey = _session.SecondFactorMethods.HasFlag(SecondFactorMethods.Passkey);
                 Code = string.Empty;
                 return "Enter the code from your authenticator app, or one of your recovery codes.";
             }
@@ -282,6 +320,7 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
         {
             await _session.CompleteSignInAsync(code, ct).ConfigureAwait(true);
             IsAwaitingCode = false;
+            SecondStepOffersPasskey = false;
             await LoadAsync(ct).ConfigureAwait(true);
             return "Signed in.";
         }, context: "code").ConfigureAwait(true);
@@ -292,6 +331,7 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
         {
             // The challenge is gone (expired, used up, or the vault locked): back to the password, and say so.
             IsAwaitingCode = false;
+            SecondStepOffersPasskey = false;
             Status = "The sign-in step has expired. Sign in again with your email and account password.";
         }
     }
@@ -302,6 +342,7 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
         _session.CancelSignIn();
         Code = string.Empty;
         IsAwaitingCode = false;
+        SecondStepOffersPasskey = false;
         Status = null;
     }
 
@@ -541,6 +582,7 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
         ProfileCreated = When(profile.CreatedAt);
         await LoadSessionsAsync(cancellationToken).ConfigureAwait(true);
         await LoadTwoFactorAsync(cancellationToken).ConfigureAwait(true);
+        await LoadPasskeysAsync(cancellationToken).ConfigureAwait(true);
     }
 
     private async Task LoadSessionsAsync(CancellationToken cancellationToken)
@@ -566,6 +608,22 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
         {
             TwoFactorDetails = null;
             TwoFactor = TwoFactorState.Unknown;
+        }
+    }
+
+    /// <summary>The passkey line is informative too: failing to read it does not fail the page.</summary>
+    private async Task LoadPasskeysAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            PasskeyList? list = await _session.GetPasskeysAsync(cancellationToken).ConfigureAwait(true);
+            PasskeyCount = list?.Passkeys.Count ?? 0;
+            Passkeys = list is null ? PasskeyState.NotAvailable : PasskeyState.Known;
+        }
+        catch (ApiException ex) when (ex.Failure is not ApiFailure.Unauthenticated)
+        {
+            PasskeyCount = 0;
+            Passkeys = PasskeyState.Unknown;
         }
     }
 
@@ -649,6 +707,8 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
         Sessions.Clear();
         TwoFactor = TwoFactorState.Unknown;
         TwoFactorDetails = null;
+        Passkeys = PasskeyState.Unknown;
+        PasskeyCount = 0;
         ChangePasswordStatus = null;
         CurrentAccountPassword = string.Empty;
         NewAccountPassword = string.Empty;
@@ -686,6 +746,7 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
         if (signedIn)
         {
             IsAwaitingCode = false;
+            SecondStepOffersPasskey = false;
             Code = string.Empty;
         }
     }
@@ -715,6 +776,19 @@ public enum TwoFactorState
     Off,
 
     On,
+}
+
+/// <summary>What the page knows about the account's passkeys.</summary>
+public enum PasskeyState
+{
+    /// <summary>Not read yet, or the server could not be asked.</summary>
+    Unknown,
+
+    /// <summary>The server does not offer passkeys (404): the line is not shown.</summary>
+    NotAvailable,
+
+    /// <summary>Read: <see cref="AccountPageViewModel.PasskeyCount"/> holds how many.</summary>
+    Known,
 }
 
 /// <summary>One of the account's sessions, as listed on the Account page.</summary>

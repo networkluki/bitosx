@@ -57,7 +57,9 @@ ever sent. There is intentionally **no subscription, browser extension, or mobil
   Tokens are held in memory only; locking the vault or closing BitosX ends the session on the
   server as well. Change the account password (other devices are signed out, the master password
   is untouched), delete the account (the vault file on the device is untouched), see whether
-  two-factor authentication is on, and open the reset page for a forgotten account password.
+  two-factor authentication is on and how many passkeys the account has (passkeys are used on
+  vault.bitosx.se; this application keeps signing in with the authenticator code), and open the
+  reset page for a forgotten account password.
   `--api-server none` makes a run local-only; `--api-server https://host` points it at a server of
   your own. See [docs/ACCOUNT.md](docs/ACCOUNT.md).
 

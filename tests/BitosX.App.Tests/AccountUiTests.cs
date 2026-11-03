@@ -138,6 +138,45 @@ public sealed class AccountUiTests
     });
 
     [Fact]
+    public Task ThePasskeyCount_IsShown_AndHiddenWhenTheServerHasNoPasskeys() => HeadlessUi.RunAsync(async () =>
+    {
+        await using WholeApplication app = await UnlockedAsync();
+        app.Server.PasskeyCount = 2;
+        await SignInAsync(app);
+
+        await app.WaitForTextAsync("PasskeySummary", "Passkeys: 2 registered");
+        Assert.True(app.Shows("PasskeySummary"));
+
+        app.Server.PasskeyCount = null; // 404: the server does not offer passkeys
+        app.Press("RefreshSessionsButton");
+        await HeadlessUi.WaitUntilAsync(() => !app.Shows("PasskeySummary"), "the passkey line is hidden");
+        Assert.True(app.Shows("TwoFactorSummary"));
+    });
+
+    [Fact]
+    public Task TheSecondStep_SaysPasskeysAreForTheWebVault_AndTakesTheCode() => HeadlessUi.RunAsync(async () =>
+    {
+        await using WholeApplication app = await UnlockedAsync();
+        app.Server.SecondFactorCode = "123456";
+        app.Server.SecondFactorMethods = SecondFactorMethods.Code | SecondFactorMethods.Passkey;
+        app.Press("AccountNavButton");
+        await app.WaitForAsync<AccountPageView>();
+        app.Type("AccountEmailBox", ScriptedServer.Email);
+        app.Type("AccountPasswordBox", ScriptedServer.Password);
+        app.Press("SignInButton");
+
+        await HeadlessUi.WaitUntilAsync(() => app.Shows("AccountCodeBox"), "the code step is shown");
+        Assert.True(app.Shows("SecondStepPasskeyNote"));
+        Assert.Contains("here, enter the code from your authenticator app or a recovery code", app.Find<TextBlock>("SecondStepPasskeyNote").Text, StringComparison.Ordinal);
+
+        app.Type("AccountCodeBox", "123456");
+        app.Press("SubmitCodeButton");
+        await app.WaitForTextAsync("AccountStatus", "Signed in.");
+        Assert.Equal(1, app.Server.SecondFactorCount);
+        Assert.False(app.Shows("SecondStepPasskeyNote"));
+    });
+
+    [Fact]
     public Task ChangingTheAccountPassword_KeepsThisDeviceSignedIn() => HeadlessUi.RunAsync(async () =>
     {
         await using WholeApplication app = await UnlockedAsync();

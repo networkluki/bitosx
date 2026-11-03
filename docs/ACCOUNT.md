@@ -1,4 +1,4 @@
-# Account sign-in (0.8.0), and the account itself (0.11.0)
+# Account sign-in (0.8.0), the account itself (0.11.0), and passkeys on the web (0.13.0)
 
 Since 0.8.0 the desktop application can sign in to a **BitosX account** on the BitosX server
 (`api.bitosx.se`). This document says what that is, what it is not, what leaves the device, and
@@ -16,7 +16,8 @@ That was all it did in 0.8.0. Since 0.9.0 the account also carries the **encrypt
 vault file, as encrypted on the device, goes to the server and comes back as opaque bytes. What
 that means, and what it does not, is in [SYNC.md](SYNC.md). Since 0.11.0 the page can also change
 the account password, delete the account, show whether two-factor authentication is on, and open
-the page that resets a forgotten account password.
+the page that resets a forgotten account password. Since 0.13.0 it also shows how many passkeys
+the account has; passkeys themselves are used on the web vault, not here.
 
 ## What it is not
 
@@ -73,6 +74,38 @@ Since 0.11.0 the Account page shows the state read-only (`GET /v1/account/totp`:
 many recovery codes are left); a server that does not offer two-factor (503 or 404) is shown as
 "not available". Setting it up and turning it off stays on vault.bitosx.se. A sign-in step whose
 challenge has expired says so and returns to the password, instead of asking for "the next code".
+
+## Passkeys (0.13.0)
+
+An account that has two-factor authentication can also have **passkeys** (WebAuthn), added on
+vault.bitosx.se. They come on top of the authenticator code and never replace it: there, a
+passkey can be the second step after the password, or sign in without email and password at all.
+**This application does not use them.** It has no WebAuthn, never asks the operating system for
+a passkey, and keeps signing in with the account password and the code from the authenticator
+app or a recovery code. A passkey authenticates the account only; the vault master password has
+nothing to do with it.
+
+What the application does with passkeys:
+
+- **The second step says so.** Since 0.13.0 the 202 of `POST /v1/auth/login` carries `methods`, the
+  ways the step can be completed (`"totp"`, `"recovery"`, and `"passkey"` when the account has
+  passkeys). It is read tolerantly: no `methods` (a server before passkeys) means the code step, as
+  before; names this client does not know, and empty entries, are ignored; a list of more than 32
+  entries, a `methods` that is not a list of names, or one that offers neither `"totp"` nor
+  `"recovery"` — a step this application could not complete — is refused as an unexpected answer.
+  When `"passkey"` is listed, the page adds: *"This account also has passkeys. They are used on
+  vault.bitosx.se; here, enter the code from your authenticator app or a recovery code."* (for
+  another server, "the web vault of this server"). Nothing else changes: the code goes to
+  `POST /v1/auth/login/totp` as before.
+- **The Account page shows how many.** `GET /v1/account/passkeys` (ordinary deadline and 64 KiB
+  cap; the server lists at most 10) gives the list; only its length is shown, in the two-factor
+  card: *"Passkeys: 2 registered — use them on vault.bitosx.se; this app signs in with your
+  authenticator code."*, or *"Passkeys: none registered. …"*. The list carries a name, when the
+  passkey was added and last used, and whether it is backed up — never key material or a
+  credential id — and is validated like every other answer (at most 100 entries, names of at most
+  128 characters, every field present). A server without passkeys answers 404: the line is not
+  shown. Any other failure does not fail the page; the line then says the count could not be read.
+  Adding, renaming and removing passkeys stays on the web vault.
 
 ## Changing the account password (0.11.0)
 
@@ -188,6 +221,11 @@ Automated (`tests/BitosX.ApiClient.Tests`, `tests/BitosX.App.Tests`), for every 
   password in the log; the token records print no secret;
 - changing the account password and deleting the account: what is sent, the code only when given,
   a refusal that keeps the session, the page's validation and its wording;
+- passkeys (0.13.0): the challenge's `methods` with and without `"passkey"`, absent, with unknown
+  names, and refused when no code step is offered or it is not a list; the passkey list read,
+  empty, hidden on 404, a failure on 503, malformed, oversized and stalled answers refused; the
+  page's count line, its wording for the production server and another, its absence on 404, and
+  the second-step note shown only when `"passkey"` is offered, with the code still signing in;
 - the Account page: validation before a round trip, the password cleared after every attempt,
   what each failure says, the signed-in state, the sessions list, and both sign-outs;
 - every input on the page has a name for a screen reader; the page is drawn at both window
@@ -199,4 +237,8 @@ Automated (`tests/BitosX.ApiClient.Tests`, `tests/BitosX.App.Tests`), for every 
 deletion, the two-factor state and revisions that never restart need the server of phase 8
 (`bitosx-api`) deployed. `api.bitosx.se` is not publicly reachable yet
 (`bitosx-api/docs/DEPLOYMENT.md`), so the application has only been run against the scripted
-server of the tests. The contract it implements is `bitosx-api/docs/API.md`.
+server of the tests. The contract it implements is `bitosx-api/docs/API.md`. The passkey part
+(0.13.0) has not run against the stack of bitosx-api with passkeys yet: the live test that
+registers a passkey and signs in with a code (`tests/BitosX.LiveTests`) is written, and its
+software authenticator was checked against the WebAuthn library the server uses, but it has not
+run against the server.

@@ -664,6 +664,43 @@ public sealed class AccountSessionTests
     }
 
     [Fact]
+    public async Task TheChallengesMethods_AreKnownWhileItIsPending_AndNoneAfterwards()
+    {
+        using var s = new Setup();
+        Assert.Equal(SecondFactorMethods.None, s.Session.SecondFactorMethods);
+        s.Api.LoginChallenge = new SecondFactorChallenge(new string('A', 43), s.Clock.Now.AddMinutes(5), SecondFactorMethods.Code | SecondFactorMethods.Passkey);
+        s.Api.SecondFactorResult = s.Tokens();
+
+        await s.Session.SignInAsync("alice@example.com", "correct horse battery");
+        Assert.Equal(SecondFactorMethods.Code | SecondFactorMethods.Passkey, s.Session.SecondFactorMethods);
+
+        // Passkeys or not, this client completes the step with a code.
+        await s.Session.CompleteSignInAsync("123456");
+        Assert.True(s.Session.IsSignedIn);
+        Assert.Equal(SecondFactorMethods.None, s.Session.SecondFactorMethods);
+
+        await s.Session.SignInAsync("alice@example.com", "correct horse battery");
+        s.Clock.Now = s.Clock.Now.AddMinutes(6);
+        Assert.Equal(SecondFactorMethods.None, s.Session.SecondFactorMethods); // an expired challenge offers nothing
+    }
+
+    [Fact]
+    public async Task ThePasskeyList_IsAskedWithThisSessionsToken()
+    {
+        using var s = new Setup();
+        await s.SignedInAsync();
+        s.Api.Passkeys = new PasskeyList([new PasskeyInfo("pk-1", "Laptop", Start, null, true)], 10);
+
+        PasskeyList? list = await s.Session.GetPasskeysAsync();
+
+        Assert.Equal("Laptop", Assert.Single(list!.Passkeys).Name);
+        Assert.Equal(["jwt.1"], s.Api.AccessTokensSeen);
+
+        s.Api.Passkeys = null; // a server without passkeys
+        Assert.Null(await s.Session.GetPasskeysAsync());
+    }
+
+    [Fact]
     public async Task LockingTheVault_DropsAPendingChallengeToo()
     {
         using var s = new Setup();
@@ -846,6 +883,15 @@ public sealed class AccountSessionTests
         {
             AccessTokensSeen.Add(accessToken);
             return Task.FromResult<TwoFactorStatus?>(new TwoFactorStatus(false, null, 0, false));
+        }
+
+        /// <summary>What the passkey list answers; <see langword="null"/>: the server does not offer passkeys.</summary>
+        public PasskeyList? Passkeys { get; set; }
+
+        public Task<PasskeyList?> GetPasskeysAsync(string accessToken, CancellationToken cancellationToken = default)
+        {
+            AccessTokensSeen.Add(accessToken);
+            return Task.FromResult(Passkeys);
         }
 
         public async Task WaitForRefreshStartedAsync()

@@ -526,6 +526,135 @@ public sealed class AccountPageViewModelTests
         Assert.True(page.AsksForCode);
     }
 
+    // ---- passkeys (read-only) ----
+
+    private static PasskeyList PasskeysOf(int count)
+        => new([.. Enumerable.Range(1, count).Select(i => new PasskeyInfo("pk-" + i, "Passkey " + i, DateTimeOffset.UtcNow.AddDays(-i), null, true))], 10);
+
+    [Theory]
+    [InlineData(1, "Passkeys: 1 registered")]
+    [InlineData(3, "Passkeys: 3 registered")]
+    public async Task ThePasskeyCount_IsShown_WithWhereTheyAreUsed(int count, string expected)
+    {
+        FakeAccountSession session = NewSession();
+        session.Passkeys = PasskeysOf(count);
+        using AccountPageViewModel page = await SignedInAsync(session);
+
+        Assert.Equal(PasskeyState.Known, page.Passkeys);
+        Assert.Equal(count, page.PasskeyCount);
+        Assert.True(page.ShowsPasskeys);
+        Assert.StartsWith(expected, page.PasskeySummary, StringComparison.Ordinal);
+        Assert.Contains("the web vault of this server", page.PasskeySummary, StringComparison.Ordinal); // not the production server
+        Assert.Contains("this app signs in with your authenticator code", page.PasskeySummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OnTheProductionServer_ThePasskeyLine_NamesVaultBitosxSe()
+    {
+        FakeAccountSession session = NewSession();
+        session.Server = ApiServer.Production;
+        session.Passkeys = PasskeysOf(2);
+        using AccountPageViewModel page = await SignedInAsync(session);
+
+        Assert.Equal("Passkeys: 2 registered — use them on vault.bitosx.se; this app signs in with your authenticator code.", page.PasskeySummary);
+    }
+
+    [Fact]
+    public async Task NoPasskeys_IsSaidSo()
+    {
+        FakeAccountSession session = NewSession();
+        session.Passkeys = PasskeysOf(0);
+        using AccountPageViewModel page = await SignedInAsync(session);
+
+        Assert.True(page.ShowsPasskeys);
+        Assert.StartsWith("Passkeys: none registered.", page.PasskeySummary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PasskeysNotOfferedByTheServer_HideTheLine()
+    {
+        FakeAccountSession session = NewSession();
+        session.Passkeys = null; // 404: a server without passkeys
+        using AccountPageViewModel page = await SignedInAsync(session);
+
+        Assert.Equal(PasskeyState.NotAvailable, page.Passkeys);
+        Assert.False(page.ShowsPasskeys);
+        Assert.Equal("Signed in.", page.Status);
+    }
+
+    [Fact]
+    public async Task APasskeyListThatCannotBeRead_DoesNotFailThePage()
+    {
+        FakeAccountSession session = NewSession();
+        session.PasskeysThrows = new ApiException(ApiFailure.Unavailable, 503);
+        using AccountPageViewModel page = await SignedInAsync(session);
+
+        Assert.Equal("Signed in.", page.Status);
+        Assert.True(page.IsSignedIn);
+        Assert.Equal(PasskeyState.Unknown, page.Passkeys);
+        Assert.True(page.ShowsPasskeys);
+        Assert.Equal("Passkeys: could not be read right now.", page.PasskeySummary);
+    }
+
+    [Fact]
+    public async Task SigningOut_ForgetsThePasskeyCount()
+    {
+        FakeAccountSession session = NewSession();
+        session.Passkeys = PasskeysOf(2);
+        using AccountPageViewModel page = await SignedInAsync(session);
+
+        session.Set(false);
+
+        Assert.Equal(PasskeyState.Unknown, page.Passkeys);
+        Assert.Equal(0, page.PasskeyCount);
+    }
+
+    [Fact]
+    public async Task WhenTheServerOffersPasskeysInTheSecondStep_ThePageSaysTheyAreForTheWebVault_AndTheCodeStillSignsIn()
+    {
+        FakeAccountSession session = NewSession();
+        session.Server = ApiServer.Production;
+        session.RequiresSecondFactor = true;
+        session.ChallengeMethods = SecondFactorMethods.Code | SecondFactorMethods.Passkey;
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService(), InlineUiDispatcher.Instance, new FakeLinkOpener()) { Email = "alice@example.com", Password = "correct horse battery" };
+
+        await page.SignInCommand.ExecuteAsync(null);
+
+        Assert.True(page.IsAwaitingCode);
+        Assert.True(page.SecondStepOffersPasskey);
+        Assert.Equal(
+            "This account also has passkeys. They are used on vault.bitosx.se; here, enter the code from your authenticator app or a recovery code.",
+            page.SecondStepPasskeyNote);
+
+        page.Code = "123456";
+        await page.SubmitCodeCommand.ExecuteAsync(null);
+
+        Assert.True(page.IsSignedIn);
+        Assert.False(page.SecondStepOffersPasskey);
+    }
+
+    [Fact]
+    public async Task WithoutPasskeysInTheSecondStep_ThePasskeyNoteIsNotShown_AndStartingOverClearsIt()
+    {
+        FakeAccountSession session = NewSession();
+        session.RequiresSecondFactor = true;
+        using var page = new AccountPageViewModel(session, new FakeVaultSyncService(), InlineUiDispatcher.Instance, new FakeLinkOpener()) { Email = "alice@example.com", Password = "correct horse battery" };
+
+        await page.SignInCommand.ExecuteAsync(null);
+        Assert.True(page.IsAwaitingCode);
+        Assert.False(page.SecondStepOffersPasskey);
+        Assert.Contains("the web vault of this server", page.SecondStepPasskeyNote, StringComparison.Ordinal);
+
+        session.ChallengeMethods = SecondFactorMethods.Code | SecondFactorMethods.Passkey;
+        page.CancelCodeCommand.Execute(null);
+        page.Password = "correct horse battery";
+        await page.SignInCommand.ExecuteAsync(null);
+        Assert.True(page.SecondStepOffersPasskey);
+
+        page.CancelCodeCommand.Execute(null);
+        Assert.False(page.SecondStepOffersPasskey);
+    }
+
     // ---- change the account password ----
 
     private static async Task<AccountPageViewModel> ReadyToChangeAsync(FakeAccountSession session, string next = "a brand new account pw", string? repeat = null)
