@@ -136,6 +136,40 @@ taken out.
 `VaultService.HoldsKeyMaterial`, a read-only flag used to assert that no vault key is left in
 memory.
 
+### Live tests: the client against a real API
+
+`tests/BitosX.LiveTests` runs the desktop client — `HttpBitosXApiClient`, `AccountSession` and
+`VaultSyncService`, wired by the application's own `ServiceConfiguration`, with real vaults made by
+`BitosX.Core` in data directories of their own — against a real BitosX API and its MariaDB
+database: the local stack of bitosx-api (`tools/devstack/up.sh`). Registration, email verification
+and turning on two-factor authentication, which the desktop does not do, go over plain HTTP.
+Every test makes its own accounts (`e2e-<random>@example.test`) and never assumes an empty
+database.
+
+```bash
+set -a; . ../bitosx-api/tools/devstack/.state/env; set +a   # BITOSX_LIVE_API_URL, BITOSX_LIVE_MAIL_CMD
+dotnet test tests/BitosX.LiveTests -c Release
+```
+
+They are opt-in. With neither `BITOSX_LIVE_API_URL` nor `BITOSX_LIVE_MAIL_CMD` set, every test is
+reported as skipped with the reason "not run: set BITOSX_LIVE_API_URL and BITOSX_LIVE_MAIL_CMD"
+(`dotnet test` then prints `Skipped!` and exits with 0), which is how they run inside
+`dotnet test BitosX.slnx` and in CI's build-and-test job. With only one of the two set they fail
+and say so, and they refuse an API that is not on this machine (loopback): they create and delete
+accounts. They run one at a time, because the stack may be shared with the web vault's live suite
+and the server answers 503 when its queue of password hashes is full. bitosx-api's `e2e.yml` runs
+them against the stack for every change to its `main` and every night.
+
+What they cover: sign-in with the password, with a TOTP code and with a recovery code (a refused
+code keeps the challenge; a used recovery code is refused); the session list at the server's cap
+of 200, newest first, this session marked, one ended; refresh, and the whole session ended when a
+spent refresh token is presented again; the session refreshing before its access token runs out;
+the account password change (this session kept, the others signed out, the old password refused);
+403 (`Forbidden`) for a wrong password or code with the session kept; deleting the account with a
+code; two devices syncing a real vault byte for byte, with the sync record (format 2) bound to the
+server and the account; compare-and-set conflicts (409) and both ways out; a removed vault whose
+revisions never restart; every timestamp read as UTC.
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs for every pull request and for every change to `main`, on the

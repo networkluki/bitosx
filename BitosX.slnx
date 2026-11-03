@@ -12,6 +12,7 @@
     <Project Path="tests/BitosX.App.Tests/BitosX.App.Tests.csproj" />
     <Project Path="tests/BitosX.Core.Tests/BitosX.Core.Tests.csproj" />
     <Project Path="tests/BitosX.Crypto.Tests/BitosX.Crypto.Tests.csproj" />
+    <Project Path="tests/BitosX.LiveTests/BitosX.LiveTests.csproj" />
     <Project Path="tests/BitosX.Platform.Tests/BitosX.Platform.Tests.csproj" />
     <Project Path="tests/BitosX.Storage.Tests/BitosX.Storage.Tests.csproj" />
   </Folder>

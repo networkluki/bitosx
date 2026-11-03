@@ -91,6 +91,7 @@ tests/
   BitosX.App.Tests        View models; the real views and the whole application, run without a display
   BitosX.Core.Tests
   BitosX.Crypto.Tests
+  BitosX.LiveTests        The client against a real API and database (opt-in; skipped as "not run" without one)
   BitosX.Platform.Tests   Clipboard policy and single-instance tests
   BitosX.Storage.Tests
 tools/
