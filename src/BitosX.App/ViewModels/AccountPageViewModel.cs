@@ -374,7 +374,7 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
             bool told = await _session.SignOutAsync(ct).ConfigureAwait(true);
             return told
                 ? "Signed out."
-                : "Signed out on this device. The server could not be reached, so it still lists this session until it expires; you can end it from another device.";
+                : "Signed out on this device. The server did not confirm that this session ended, so it may still list it until it expires; you can end it from another device.";
         }, context: "sign out");
 
     [RelayCommand(CanExecute = nameof(CanAct))]
@@ -387,10 +387,16 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
             }
             catch (ApiException ex)
             {
-                // Never claim more than happened: the server was not told, so nobody else was signed out.
-                return _session.IsSignedIn
-                    ? Describe(ex, "sign out everywhere") + " No session was ended, and you are still signed in. Try again."
-                    : "This device is signed out, but the server did not confirm that the other sessions ended. Sign in again and use “Sign out everywhere” once more.";
+                // Never claim more than happened. A refusal ended no session; without an answer the
+                // server may or may not have ended them.
+                if (!_session.IsSignedIn)
+                {
+                    return "This device is signed out, but the server did not confirm that the other sessions ended. Sign in again and use “Sign out everywhere” once more.";
+                }
+
+                return Describe(ex, "sign out everywhere") + (OutcomeUnknown(ex)
+                    ? " The server did not confirm that the other sessions ended; this device is still signed in. Try again."
+                    : " No session was ended, and you are still signed in. Try again.");
             }
 
             return "Signed out everywhere. Every device has to sign in again.";
@@ -433,7 +439,9 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
                 }
                 catch (ApiException ex) when (ex.Failure is not ApiFailure.Unauthenticated)
                 {
-                    result = Describe(ex, "change password");
+                    result = Describe(ex, "change password") + (OutcomeUnknown(ex)
+                        ? " The server did not confirm the change, so the account password may or may not have been changed. Your vault master password is unchanged."
+                        : string.Empty);
                     return null;
                 }
 
@@ -482,7 +490,9 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
                 }
                 catch (ApiException ex) when (ex.Failure is not ApiFailure.Unauthenticated)
                 {
-                    refused = Describe(ex, "delete account");
+                    refused = Describe(ex, "delete account") + (OutcomeUnknown(ex)
+                        ? " The server did not confirm the deletion, so the account may or may not have been deleted. The vault on this device was not touched."
+                        : string.Empty);
                     return null;
                 }
 
@@ -598,6 +608,13 @@ public sealed partial class AccountPageViewModel : ViewModelBase, IDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Whether the server may have carried the request out although it failed: no answer arrived
+    /// (it may have been lost after the request was sent), or an answer this client does not
+    /// understand (which can follow work the server did). Every other failure is a refusal.
+    /// </summary>
+    public static bool OutcomeUnknown(ApiException ex) => ex.Failure is ApiFailure.Network or ApiFailure.Unexpected;
 
     public static string Describe(ApiException ex, string? context) => ex.Failure switch
     {

@@ -83,8 +83,9 @@ that could not be read — a code from the authenticator app or a recovery code.
 (every other device and browser has to sign in again) and keeps this one signed in; open
 password-reset links stop working. A wrong current password or code is one generic refusal
 (403, `ApiFailure.Forbidden`): nothing changed, and the session is still valid. The vault master
-password is not touched — the server does not know it — and the page says so. The fields are
-emptied after every attempt.
+password is not touched — the server does not know it — and the page says so. When no answer
+comes, or one that makes no sense, the change may or may not have gone through, and since 0.12.0
+the page says exactly that. The fields are emptied after every attempt.
 
 ## Deleting the account (0.11.0)
 
@@ -92,7 +93,8 @@ emptied after every attempt.
 explicit acknowledgement. The server (`POST /v1/account/delete`) deletes the account with its
 sessions and the **encrypted vault stored on the server**; the application then signs out here.
 **The vault file on this device is not touched**: it stays, and it opens with the master password
-as before. A wrong password or code is the same generic refusal; nothing is deleted.
+as before. A wrong password or code is the same generic refusal; nothing is deleted. Without an
+answer the page says that the account may or may not have been deleted (0.12.0).
 
 ## A forgotten account password
 
@@ -106,10 +108,12 @@ master password still cannot be recovered.
 In memory, in `AccountSession`, and nowhere else. They are dropped:
 
 - when you sign out (the server is told; the tokens are dropped even if it cannot be reached, and
-  the page then says that the server could not be told);
+  the page then says that the server did not confirm it, so it may still list the session);
 - when you sign out everywhere — **after** the server confirmed that every session of the account
-  ended. If it cannot be told (unreachable, rate-limited, unavailable), nothing is claimed: no
-  session was ended, this one is kept, and the page says to try again (0.11.0);
+  ended. If the server refused (rate-limited, unavailable), no session was ended, this one is kept,
+  and the page says to try again (0.11.0). If no answer came, or one that makes no sense, the
+  request may have gone through: since 0.12.0 the page says that the server did not confirm it,
+  rather than that no session was ended;
 - when you end this device's session from the list, or delete the account;
 - **when the vault locks**, by hand, by inactivity, when the workstation locks or the system
   sleeps, or because a fault locked it — the tokens are gone at once, and then the server is told,
@@ -155,7 +159,7 @@ short-lived and dropped as early as possible; that is what can be done.
   it is `application/json` of the expected shape; the server's own text is never shown or logged.
   Every failure is one of a fixed set (`ApiFailure`) with a fixed message. A 403 on a
   password-confirmed call is `Forbidden` — "the password or code was not accepted", never a
-  sign-out; a 503 is "temporarily unavailable", and is blamed on two-factor only on the code step.
+  sign-out; on any other call it is "The server refused the request." (0.12.0); a 503 is "temporarily unavailable", and is blamed on two-factor only on the code step.
 - **Refresh:** an access token with less than 30 seconds left is refreshed before use. The server
   ends a session whose refresh token is presented twice, so at most one refresh is in flight at a
   time; other callers wait for it.

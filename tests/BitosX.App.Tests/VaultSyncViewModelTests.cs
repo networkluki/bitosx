@@ -1,6 +1,7 @@
 using BitosX.ApiClient;
 using BitosX.ApiClient.Sync;
 using BitosX.App.ViewModels;
+using BitosX.Core.Domain;
 using BitosX.Crypto;
 
 namespace BitosX.App.Tests;
@@ -265,6 +266,82 @@ public sealed class VaultSyncViewModelTests
             await card.SyncNowCommand.ExecuteAsync(null);
             Assert.DoesNotContain("Nothing was changed", card.Status, StringComparison.Ordinal);
             Assert.Contains("Sync now again", card.Status, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task APermissionError_NeverClaimsNothingChanged()
+    {
+        // The file that could not be written may be the sync record, written after the upload went through.
+        var (card, sync, _) = New();
+        using (card)
+        {
+            sync.Throws = new UnauthorizedAccessException("denied");
+
+            await card.SyncNowCommand.ExecuteAsync(null);
+
+            Assert.Contains("permission", card.Status, StringComparison.Ordinal);
+            Assert.DoesNotContain("Nothing was changed", card.Status, StringComparison.Ordinal);
+            Assert.Contains("Sync now again", card.Status, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task AFailedReplacement_NeverClaimsNothingChanged()
+    {
+        // The vault on this device may have been replaced before the sync record could be written.
+        var (card, sync, _) = New();
+        using (card)
+        {
+            sync.NextResult = new SyncResult(SyncOutcome.ServerAhead, Server, null);
+            await card.SyncNowCommand.ExecuteAsync(null);
+            card.DownloadMasterPassword = "pw";
+            await card.PrepareDownloadCommand.ExecuteAsync(null);
+            card.DownloadAcknowledged = true;
+
+            foreach (Exception failure in new Exception[] { new UnauthorizedAccessException("denied"), new IOException("disk"), new VaultValidationException("bad") })
+            {
+                sync.CommitThrows = failure;
+                await card.ConfirmDownloadCommand.ExecuteAsync(null);
+                Assert.DoesNotContain("Nothing was changed", card.Status, StringComparison.Ordinal);
+                Assert.Contains("Sync now again", card.Status, StringComparison.Ordinal);
+
+                card.DownloadMasterPassword = "pw";
+                await card.PrepareDownloadCommand.ExecuteAsync(null);
+                card.DownloadAcknowledged = true;
+            }
+        }
+    }
+
+    [Fact]
+    public async Task ARefusedSync_BlamesNoPassword()
+    {
+        // Syncing sends no password, so a 403 there is not about one (it comes from something in front of the server).
+        var (card, sync, _) = New();
+        using (card)
+        {
+            sync.Throws = new ApiException(ApiFailure.Forbidden, 403);
+
+            await card.SyncNowCommand.ExecuteAsync(null);
+
+            Assert.Equal("The server refused the request.", card.Status);
+        }
+    }
+
+    [Theory]
+    [InlineData(ApiFailure.Network)]
+    [InlineData(ApiFailure.Unexpected)]
+    public async Task AnUploadWithoutAnAnswer_SaysToLookAgain(ApiFailure failure)
+    {
+        var (card, sync, _) = New();
+        using (card)
+        {
+            sync.Throws = new ApiException(failure);
+
+            await card.SyncNowCommand.ExecuteAsync(null);
+
+            Assert.Contains("Sync now again", card.Status, StringComparison.Ordinal);
+            Assert.DoesNotContain("Nothing was changed", card.Status, StringComparison.Ordinal);
         }
     }
 

@@ -352,20 +352,45 @@ public sealed class AccountPageViewModelTests
 
         Assert.False(page.IsSignedIn);
         Assert.Contains("Signed out on this device", page.Status, StringComparison.Ordinal);
-        Assert.Contains("could not be reached", page.Status, StringComparison.Ordinal);
+        Assert.Contains("did not confirm", page.Status, StringComparison.Ordinal);
+        Assert.Contains("may still list it", page.Status, StringComparison.Ordinal);
+
+        // It was not necessarily out of reach: a server that answers 503 or 429 was not told either.
+        Assert.DoesNotContain("could not be reached", page.Status, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public async Task SignOutEverywhere_ThatTheServerDidNotHear_ClaimsNothing_AndStaysSignedIn()
+    [Theory]
+    [InlineData(ApiFailure.Unavailable)]
+    [InlineData(ApiFailure.RateLimited)]
+    [InlineData(ApiFailure.Forbidden)]
+    public async Task SignOutEverywhere_ThatTheServerRefused_SaysNoSessionEnded_AndStaysSignedIn(ApiFailure failure)
     {
         FakeAccountSession session = NewSession();
-        session.SignOutEverywhereThrows = new ApiException(ApiFailure.Network);
+        session.SignOutEverywhereThrows = new ApiException(failure);
         using AccountPageViewModel page = await SignedInAsync(session);
 
         await page.SignOutEverywhereCommand.ExecuteAsync(null);
 
         Assert.True(page.IsSignedIn);
         Assert.Contains("No session was ended", page.Status, StringComparison.Ordinal);
+        Assert.DoesNotContain("Every device has to sign in again", page.Status, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ApiFailure.Network)]
+    [InlineData(ApiFailure.Unexpected)]
+    public async Task SignOutEverywhere_WithoutAnAnswer_ClaimsNeitherWay_AndStaysSignedIn(ApiFailure failure)
+    {
+        // The request may have reached the server and ended every session before the answer was lost.
+        FakeAccountSession session = NewSession();
+        session.SignOutEverywhereThrows = new ApiException(failure);
+        using AccountPageViewModel page = await SignedInAsync(session);
+
+        await page.SignOutEverywhereCommand.ExecuteAsync(null);
+
+        Assert.True(page.IsSignedIn);
+        Assert.Contains("did not confirm", page.Status, StringComparison.Ordinal);
+        Assert.DoesNotContain("No session was ended", page.Status, StringComparison.Ordinal);
         Assert.DoesNotContain("Every device has to sign in again", page.Status, StringComparison.Ordinal);
     }
 
@@ -593,6 +618,23 @@ public sealed class AccountPageViewModelTests
         Assert.Contains("still signed in", page.ChangePasswordStatus, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(ApiFailure.Network)]
+    [InlineData(ApiFailure.Unexpected)]
+    public async Task ChangePassword_WithoutAnAnswer_SaysItMayOrMayNotHaveChanged(ApiFailure failure)
+    {
+        FakeAccountSession session = NewSession();
+        session.ChangePasswordThrows = new ApiException(failure);
+        using AccountPageViewModel page = await ReadyToChangeAsync(session);
+
+        await page.ChangePasswordCommand.ExecuteAsync(null);
+
+        Assert.True(page.IsSignedIn);
+        Assert.Contains("may or may not have been changed", page.ChangePasswordStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain("Nothing was changed", page.ChangePasswordStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain("The account password was changed", page.ChangePasswordStatus, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task ChangePassword_ThatTheServersPolicyRefuses_SaysThePolicy()
     {
@@ -653,6 +695,32 @@ public sealed class AccountPageViewModelTests
         Assert.True(page.IsSignedIn);
         Assert.Contains("was not deleted", page.DeleteStatus, StringComparison.Ordinal);
         Assert.Equal(string.Empty, page.DeletePassword);
+    }
+
+    [Theory]
+    [InlineData(ApiFailure.Network)]
+    [InlineData(ApiFailure.Unexpected)]
+    public async Task DeleteAccount_WithoutAnAnswer_SaysItMayOrMayNotHaveBeenDeleted(ApiFailure failure)
+    {
+        FakeAccountSession session = NewSession();
+        session.DeleteAccountThrows = new ApiException(failure);
+        using AccountPageViewModel page = await SignedInAsync(session);
+        page.DeletePassword = "correct horse battery";
+        page.DeleteAcknowledged = true;
+
+        await page.DeleteAccountCommand.ExecuteAsync(null);
+
+        Assert.Contains("may or may not have been deleted", page.DeleteStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain("was not deleted", page.DeleteStatus, StringComparison.Ordinal);
+        Assert.Contains("vault on this device was not touched", page.DeleteStatus, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AForbiddenAnswer_ToACallThatSentNoPassword_DoesNotBlameThePassword()
+    {
+        string said = AccountPageViewModel.Describe(new ApiException(ApiFailure.Forbidden, 403), "sign out");
+
+        Assert.Equal("The server refused the request.", said);
     }
 
     // ---- forgotten password ----

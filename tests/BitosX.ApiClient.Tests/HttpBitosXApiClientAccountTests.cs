@@ -66,7 +66,7 @@ public sealed class HttpBitosXApiClientAccountTests
         Assert.Equal(ApiFailure.Forbidden, ex.Failure);
         Assert.Equal(403, ex.StatusCode);
         Assert.DoesNotContain("SECRET", ex.Message, StringComparison.Ordinal);
-        Assert.Contains("still signed in", ex.Message, StringComparison.Ordinal);
+        Assert.Equal("The server refused the request.", ex.Message); // what was refused is for the caller to say
     }
 
     [Fact]
