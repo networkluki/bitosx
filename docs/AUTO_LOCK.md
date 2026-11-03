@@ -68,7 +68,10 @@ the application is closed. Supported where the OS signals are: currently Windows
   armed only while the vault is `Unlocked` (tracked via `IVaultService.StateChanged`), holds the
   settings and a `TimeProvider`, and exposes `NotifyActivity()`, `CheckInactivity()`,
   `OnSessionLocked()`, `OnSystemSuspending()`, `OnWindowMinimized()`. When it decides to lock, it
-  calls `IVaultService.Lock()`. Locking from a trigger disarms first, so a `Lock()` callback or a
+  calls `IVaultService.Lock()`. Inactivity is measured on two clocks, either of which locks
+  (0.11.0): the monotonic clock (`TimeProvider.GetTimestamp`), which a wall clock set back — by
+  hand or by a time correction — cannot delay, and the wall clock, which counts a sleep that the
+  monotonic clock may not see on systems that do not report one. Locking from a trigger disarms first, so a `Lock()` callback or a
   second concurrent trigger is a no-op.
 - **App (`BitosX.App`, Avalonia glue):** `AutoLockService.Attach(window)` feeds the controller —
   window input → `NotifyActivity()`, a 15-second `DispatcherTimer` → `CheckInactivity()`, window
@@ -79,6 +82,10 @@ the application is closed. Supported where the OS signals are: currently Windows
   `NullSystemSessionEvents` for everything else.
 - **Settings:** non-secret preferences in `%APPDATA%\BitosX\settings.json` via `IAppSettingsStore`
   / `FileAppSettingsStore` (separate from the vault; never contains secrets; fails safe to defaults).
+  A change applies at once and is written off the UI thread (0.11.0); of a burst of changes only the
+  latest is written once the one before has finished, and closing waits briefly for the last write.
+- **The account:** locking the vault also ends the account session on the server (see
+  [ACCOUNT.md](ACCOUNT.md)), refreshing first when the access token has expired.
 
 ## Verification status
 

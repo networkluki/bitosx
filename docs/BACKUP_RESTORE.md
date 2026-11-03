@@ -30,7 +30,8 @@ replacement. Flow:
    size) — **never decrypted item content**.
 6. On explicit confirmation: preserve the current vault as a **recovery copy**
    (`vault.bitosx.pre-restore`), then **atomically replace** the vault, then lock so you re-unlock
-   with the backup's password.
+   with the backup's password. If you use Sync, the restored vault is what the next *Sync now*
+   uploads — the confirmation says so (0.11.0).
 
 A backup is never rejected over a timestamp. Versions before 0.5.1 could store an item whose
 last-modified time was earlier than its creation time (after the system clock had been moved back)
@@ -47,7 +48,11 @@ session must be unlocked** (authorizes the destructive replace) in addition to t
 
 ## Recovery / rollback
 - Any failure in steps 1–5 leaves the live vault **byte-for-byte unchanged** (nothing is written).
-- Before replacement the current vault is copied to `vault.bitosx.pre-restore`.
+- Before replacement the current vault is copied to `vault.bitosx.pre-restore`, with the same
+  flushed, atomic write as the vault itself (0.11.0; before, a plain copy that a power failure
+  right after could leave empty). The copies before it are kept as `vault.bitosx.pre-restore.1`
+  (the one before) to `.3` (the oldest), so a second restore — or a sync download right after a
+  restore — no longer overwrites the only copy of the vault that was there before both.
 - The replacement itself is atomic (`File.Replace`), so a crash leaves **either** the old **or** the
   restored valid vault — never a partial file.
 

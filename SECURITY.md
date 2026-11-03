@@ -26,8 +26,17 @@ milestone and how to report issues. Detailed models live in [`docs/`](docs/):
 ## What is never logged
 
 The master password, item passwords, secure notes, encryption keys, authentication secrets,
-the account password, the account tokens, and decrypted vault contents are never written to logs. Logging is limited to non-sensitive
-lifecycle events (see `BitosX.Core.Diagnostics.VaultLog`).
+the account password, the account tokens, session ids, and decrypted vault contents are never written to logs. Logging is limited to non-sensitive
+lifecycle events (see `BitosX.Core.Diagnostics.VaultLog` and `BitosX.ApiClient.ApiLog`).
+
+## The account session
+
+The account tokens are held in memory only. Since 0.11.0 the session ends on the server — best
+effort, refreshing first when the access token has expired — whenever the vault locks (by hand,
+by inactivity, on workstation lock or sleep) and when BitosX closes; a sign-in or refresh that
+completes after the lock does not bring it back. "Sign out everywhere" reports success only when
+the server confirmed it. Changing the account password ends every other session. None of this
+touches the vault master password, which never leaves the device. See [docs/ACCOUNT.md](docs/ACCOUNT.md).
 
 ## Cryptography summary
 
@@ -40,6 +49,9 @@ lifecycle events (see `BitosX.Core.Diagnostics.VaultLog`).
 
 - Managed .NET memory cannot be guaranteed to be wiped; secrets in `string` objects may persist
   in process memory. BitosX minimizes secret lifetime and wipes byte buffers on a best-effort basis.
+- Revealed and generated passwords are shown as text that cannot be selected, so that they leave
+  the application only through Copy, which marks them as sensitive and clears them again. Anyone
+  who can see the screen can still read a password that is shown.
 - A copied secret is marked so that the operating system and clipboard managers leave it alone.
   The marker is a request. It was verified against the real clipboard of Windows (and its
   clipboard history), Linux and macOS, and the clipboard manager of KDE honors it — but CopyQ

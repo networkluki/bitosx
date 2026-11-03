@@ -2,8 +2,8 @@
 
 BitosX is a security-focused password manager. This repository contains the cross-platform
 Avalonia desktop application: an **encrypted local vault**, the **account sign-in** to the BitosX
-server (0.8.0, with a second-factor step since 0.10.0), and the **encrypted sync** of the vault
-through that server (0.9.0). The server
+server (0.8.0, with a second-factor step since 0.10.0, and the account password change and account
+deletion since 0.11.0), and the **encrypted sync** of the vault through that server (0.9.0). The server
 stores the vault only as the encrypted file it is on disk and cannot open it; nothing decrypted is
 ever sent. There is intentionally **no subscription, browser extension, or mobile app** yet. See
 [docs/ACCOUNT.md](docs/ACCOUNT.md) and [docs/SYNC.md](docs/SYNC.md).
@@ -25,7 +25,8 @@ ever sent. There is intentionally **no subscription, browser extension, or mobil
 - Rotate the vault key (generates a new vault key and re-encrypts all content under it; the master
   password and on-disk format are unchanged). See [docs/KEY_ROTATION.md](docs/KEY_ROTATION.md).
 - Encrypted backup / export and restore (the encrypted envelope copied byte-for-byte; restore is
-  authenticated and validated before it replaces the vault). See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
+  authenticated and validated before it replaces the vault, and the last four vaults it replaced
+  are kept as recovery copies). See [docs/BACKUP_RESTORE.md](docs/BACKUP_RESTORE.md).
 - Encrypted sync through the BitosX account: the encrypted vault file goes up and comes down as
   opaque bytes, revisions are compare-and-set, nothing is merged, and a conflict is shown with both
   ways out rather than resolved. A downloaded vault is opened with its master password and validated
@@ -33,7 +34,8 @@ ever sent. There is intentionally **no subscription, browser extension, or mobil
 - Add, edit, delete, favorite, and search login items; deleting is asked for and then confirmed.
 - Copy username / password to the clipboard with an automatic timed clear.
 - Show/hide passwords (hidden by default).
-- Cryptographically secure password generator.
+- Cryptographically secure password generator (4 to 256 characters); the login editor's Generate
+  button uses the same settings.
 - Security Center with local-only checks (reused / weak passwords, duplicate entries, HTTP URLs).
 - Encrypted, versioned, atomic and durable on-disk vault format that fails closed on tampering.
 - Refuses to overwrite a vault that changed on disk while it was open, and runs only one instance
@@ -50,9 +52,12 @@ ever sent. There is intentionally **no subscription, browser extension, or mobil
   location. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 - Sign in to a BitosX account (created at `vault.bitosx.se`) with the account email and account
   password — a different secret from the master password — and see and end the account's sessions.
-  Tokens are held in memory only and dropped when the vault locks. `--api-server none` makes a run
-  local-only; `--api-server https://host` points it at a server of your own. See
-  [docs/ACCOUNT.md](docs/ACCOUNT.md).
+  Tokens are held in memory only; locking the vault or closing BitosX ends the session on the
+  server as well. Change the account password (other devices are signed out, the master password
+  is untouched), delete the account (the vault file on the device is untouched), see whether
+  two-factor authentication is on, and open the reset page for a forgotten account password.
+  `--api-server none` makes a run local-only; `--api-server https://host` points it at a server of
+  your own. See [docs/ACCOUNT.md](docs/ACCOUNT.md).
 
 ## Requirements
 
@@ -94,7 +99,7 @@ tools/
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
   VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md  KEY_ROTATION.md
-  KEY_DERIVATION.md  MASTER_PASSWORD.md  ACCOUNT.md  SECURITY_REVIEW_0.5.1.md  SECURITY_REVIEW_0.7.0.md
+  KEY_DERIVATION.md  MASTER_PASSWORD.md  ACCOUNT.md  SYNC.md  SECURITY_REVIEW_0.5.1.md  SECURITY_REVIEW_0.7.0.md
 .github/workflows/ci.yml  Builds and tests on Linux, macOS and Windows for every change
 ```
 
