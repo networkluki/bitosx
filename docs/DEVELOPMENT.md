@@ -60,7 +60,9 @@ The format is versioned (`CryptoConstants.FormatVersion`). To introduce version 
 
 - `BitosX.Crypto.Tests` — KDF, AEAD, format, tamper/fail-closed cases.
 - `BitosX.Core.Tests` — vault CRUD/validation, password generator, security analyzer,
-  `VaultService` lifecycle with an in-memory storage double.
+  `VaultService` lifecycle with an in-memory storage double, and import and export
+  (`ImportExport/`): every parser with hostile input, what becomes of an entry, the two exports,
+  and the conformance fixtures (below).
 - `BitosX.Platform.Tests` — clipboard policy (timed clear, retry, workstation lock / suspend) and
   the single-instance guard.
 - `BitosX.App.Tests` — view models, the content handed to the clipboard, the **real views run
@@ -78,6 +80,25 @@ settings the application uses.
 A test of something only one kind of system has is marked `[UnixFact]` or `[WindowsFact]`
 (`tests/BitosX.Storage.Tests/PlatformFacts.cs`). Elsewhere it is reported as **skipped** — never
 as passed, which would say that something was checked.
+
+### The import fixtures
+
+`tests/fixtures/import` holds files as other password managers export them, files that have to be
+refused, and next to each `<name>.expected.json`: what the import library makes of it. The web
+vault copies the directory and has to arrive at the same results, so the expected files are the
+contract between the two ([IMPORT_EXPORT.md](IMPORT_EXPORT.md), section 14).
+
+The expected files are written by `ConformanceFixtures` and by nothing else; a test fails if one
+differs from what the library produces. After a change that is meant to change them:
+
+```bash
+BITOSX_UPDATE_IMPORT_FIXTURES=1 dotnet test tests/BitosX.Core.Tests --filter "FullyQualifiedName~ConformanceFixtureTests"
+git diff tests/fixtures/import
+```
+
+Look at the difference, and describe the change in IMPORT_EXPORT.md: `ImportSpecificationTests`
+holds that document's tables against the library, but only a reader holds its sentences. Git does
+not convert line ends in that directory (`.gitattributes`). Every value in the fixtures is made up.
 
 ### Testing a view
 

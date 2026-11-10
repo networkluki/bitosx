@@ -21,9 +21,14 @@ BitosX.ApiClient ──> Core                                     (the BitosX se
   `VaultService` (create/unlock/lock, CRUD, save, re-wrap), `PasswordGenerator`, `SecurityAnalyzer`,
   `MasterPasswordEncoding`, `KeyDerivationProfile` and `KeyDerivationBenchmark`,
   validation, serialization, logging abstractions, and the `ILocalVaultStorage` interface.
+  `ImportExport` reads what other password managers export and writes the two unencrypted
+  exports — bytes in, a model out, no file and no vault — and `VaultImportService` and
+  `VaultExportService` tie that to the vault; see [IMPORT_EXPORT.md](IMPORT_EXPORT.md).
 - **BitosX.Storage** — `FileLocalVaultStorage`, an atomic file implementation of
   `ILocalVaultStorage`, plus `FileVaultBackup` (`IVaultBackup`) for byte-for-byte encrypted
-  export and recovery-copy-protected atomic restore.
+  export and recovery-copy-protected atomic restore, and `FileImportExportFiles`
+  (`IImportExportFiles`): an import file read within its size limit, an unencrypted export
+  written atomically and for its owner only.
 - **BitosX.Platform** — platform *policy* that does not need the UI framework: the clipboard
   auto-clear policy (`ClipboardService`) over an injected `IClipboardAccessor`,
   `ClipboardSessionGuard` (clears a copied secret on workstation lock / suspend),
@@ -115,6 +120,24 @@ together, and both use it.
 `StateChanged` is raised while the session is held, so notifications arrive in the order the
 transitions happened. Handlers must not block waiting on another thread.
 
+## Import and export
+
+Importing is three steps, and only the last one writes: `VaultImportService.ReadAsync` reads the
+file (at most 16 MiB) and parses it; `PreviewAsync` compares it with the unlocked vault and returns
+an `ImportPlan` — what would be added, what is a duplicate, what is not imported and why;
+`ApplyAsync` adds the items through `IVaultService.AddLoginsAsync`, which is **one** write of the
+vault: all of them are stored, or none is. The comparison is made again at that moment, under the
+gate every change goes through, so what is added is right for the vault as it is then.
+
+Exporting writes the vault out unencrypted, which the unlocked session alone does not authorize:
+`VaultExportService.ExportAsync` has the master password verified first
+(`IVaultService.VerifyMasterPasswordAsync`, the check a master password change makes), writes the
+items that check was for, and writes nothing if the password is wrong or the vault is locked
+meanwhile.
+
+The parsers treat a file as written by an attacker; what they refuse, and every rule the web vault
+has to reproduce, is in [IMPORT_EXPORT.md](IMPORT_EXPORT.md).
+
 ## Persistence
 
 `FileLocalVaultStorage` writes to a uniquely named temporary file that it creates exclusively,
@@ -125,7 +148,9 @@ destroy the existing vault. Until 0.13.1 Windows used `File.Replace` (`ReplaceFi
 several steps in one call and documents failures after which the file being replaced is no longer
 under its name; see [VERSIONING.md](VERSIONING.md). On Windows the rename is tried again for up to
 1.5 s while another program has the file open. Reads enforce a maximum file size on the bytes actually read and delegate parsing
-to the fail-closed `EncryptedVaultSerializer`. Backups and the settings file go through the same
+to the fail-closed `EncryptedVaultSerializer`. A vault that would be larger than that size is not
+written (`VaultTooLargeException`): a file this application refuses to read must never take the
+place of one it can read. Backups and the settings file go through the same
 primitives (`StorageFiles`).
 
 ## Extensibility
