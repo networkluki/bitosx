@@ -82,4 +82,16 @@ public static partial class VaultLog
 
     [LoggerMessage(EventId = 1023, EventName = "master_password_verification_failed", Level = LogLevel.Warning, Message = "Master password verification failed.")]
     public static partial void MasterPasswordVerificationFailed(ILogger logger);
+
+    [LoggerMessage(EventId = 1024, EventName = "import_applied", Level = LogLevel.Information, Message = "Import applied: {Added} item(s) added.")]
+    public static partial void ImportApplied(ILogger logger, int added);
+
+    [LoggerMessage(EventId = 1025, EventName = "import_refused", Level = LogLevel.Warning, Message = "Import refused ({Reason}).")]
+    public static partial void ImportRefused(ILogger logger, string reason);
+
+    [LoggerMessage(EventId = 1026, EventName = "unencrypted_export_written", Level = LogLevel.Warning, Message = "Unencrypted export written ({Format}, {ItemCount} item(s)).")]
+    public static partial void UnencryptedExportWritten(ILogger logger, string format, int itemCount);
+
+    [LoggerMessage(EventId = 1027, EventName = "unencrypted_export_failed", Level = LogLevel.Warning, Message = "Unencrypted export failed; nothing was written.")]
+    public static partial void UnencryptedExportFailed(ILogger logger);
 }

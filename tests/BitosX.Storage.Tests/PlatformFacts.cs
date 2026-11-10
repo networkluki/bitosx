@@ -28,3 +28,16 @@ public sealed class WindowsFactAttribute : FactAttribute
         }
     }
 }
+
+/// <summary>A test of something only Linux has. Elsewhere it is reported as skipped.</summary>
+[AttributeUsage(AttributeTargets.Method)]
+public sealed class LinuxFactAttribute : FactAttribute
+{
+    public LinuxFactAttribute()
+    {
+        if (!OperatingSystem.IsLinux())
+        {
+            Skip = "Applies to Linux only.";
+        }
+    }
+}
