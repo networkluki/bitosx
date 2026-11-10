@@ -1,4 +1,5 @@
 using System.Text;
+using BitosX.Core.Domain;
 using BitosX.Crypto;
 using BitosX.Storage;
 
@@ -241,6 +242,56 @@ public sealed class FileLocalVaultStorageTests : IDisposable
 
         var storage = new FileLocalVaultStorage(_vaultPath);
         await Assert.ThrowsAsync<UnsupportedVaultFormatException>(() => storage.ReadAsync());
+    }
+
+    [Fact]
+    public async Task Write_AVaultTooLargeToReadBack_IsRefused_AndTheExistingVaultIsUntouched()
+    {
+        var storage = new FileLocalVaultStorage(_vaultPath);
+        EncryptedVault original = MakeVault();
+        await storage.WriteAsync(original);
+        byte[] originalBytes = await File.ReadAllBytesAsync(_vaultPath);
+
+        // 13 MiB of content is more than 17 MiB as base64 in the file: over the limit reading enforces.
+        EncryptedVault tooLarge = original with { Ciphertext = new byte[13 * 1024 * 1024] };
+
+        var failure = await Assert.ThrowsAsync<VaultTooLargeException>(() => storage.WriteAsync(tooLarge));
+        Assert.Equal(FileLocalVaultStorage.MaxFileSizeBytes, failure.LimitBytes);
+        Assert.Contains("16 MiB", failure.Message, StringComparison.Ordinal);
+
+        // Nothing was written: the vault that could be read still can be, and nothing is left behind.
+        Assert.Equal(originalBytes, await File.ReadAllBytesAsync(_vaultPath));
+        Assert.Equal(original.Ciphertext, (await storage.ReadAsync()).Ciphertext);
+        Assert.Equal(["vault.bitosx"], FileNames());
+    }
+
+    [Fact]
+    public async Task Write_AVaultTooLarge_WhereThereIsNone_WritesNothing()
+    {
+        var storage = new FileLocalVaultStorage(Path.Combine(_tempDir, "new", "vault.bitosx"));
+        EncryptedVault tooLarge = MakeVault() with { Ciphertext = new byte[13 * 1024 * 1024] };
+
+        await Assert.ThrowsAsync<VaultTooLargeException>(() => storage.WriteAsync(tooLarge));
+
+        Assert.False(await storage.ExistsAsync());
+        Assert.False(Directory.Exists(Path.Combine(_tempDir, "new")));
+    }
+
+    [Fact]
+    public async Task Write_TheLargestVaultThatCanBeReadBack_IsWritten_AndReadBack()
+    {
+        var storage = new FileLocalVaultStorage(_vaultPath);
+
+        // Found by measuring: the file is the envelope's JSON, so its size follows the content's.
+        EncryptedVault probe = MakeVault() with { Ciphertext = new byte[3] };
+        int overhead = EncryptedVaultSerializer.SerializeToUtf8Bytes(probe).Length - 4;
+        int largestBase64 = (int)FileLocalVaultStorage.MaxFileSizeBytes - overhead;
+        EncryptedVault largest = probe with { Ciphertext = new byte[largestBase64 / 4 * 3] };
+        Assert.True(EncryptedVaultSerializer.SerializeToUtf8Bytes(largest).Length <= FileLocalVaultStorage.MaxFileSizeBytes);
+
+        await storage.WriteAsync(largest);
+
+        Assert.Equal(largest.Ciphertext.Length, (await storage.ReadAsync()).Ciphertext.Length);
     }
 
     [Fact]

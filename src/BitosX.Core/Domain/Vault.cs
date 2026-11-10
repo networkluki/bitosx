@@ -92,6 +92,40 @@ public sealed class Vault
     }
 
     /// <summary>
+    /// Adds several new items, or none of them: every item is validated and every id is checked
+    /// before the first one is added, so a failure leaves the vault as it was. Throws if an id
+    /// already exists (in the vault or earlier in <paramref name="items"/>) or validation fails.
+    /// </summary>
+    public void AddRange(IReadOnlyList<VaultItem> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+
+        // One pass over the ids instead of one search of the vault for every new item.
+        var ids = new HashSet<Guid>(_items.Count + items.Count);
+        foreach (VaultItem existing in _items)
+        {
+            ids.Add(existing.Id);
+        }
+
+        foreach (VaultItem item in items)
+        {
+            if (item is null)
+            {
+                throw new ArgumentException("The items to add must not contain an empty entry.", nameof(items));
+            }
+
+            VaultValidation.Validate(item);
+
+            if (!ids.Add(item.Id))
+            {
+                throw new DuplicateItemException(item.Id);
+            }
+        }
+
+        _items.AddRange(items);
+    }
+
+    /// <summary>
     /// Replaces the existing item with the same id, stamping <see cref="VaultItem.UpdatedAt"/>.
     /// Returns the stored (timestamped) item. Throws if the item does not exist or is invalid.
     /// </summary>

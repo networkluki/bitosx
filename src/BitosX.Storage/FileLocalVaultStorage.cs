@@ -1,3 +1,4 @@
+using BitosX.Core.Domain;
 using BitosX.Core.Storage;
 using BitosX.Crypto;
 
@@ -12,7 +13,10 @@ namespace BitosX.Storage;
 /// </summary>
 public sealed class FileLocalVaultStorage : ILocalVaultStorage
 {
-    /// <summary>Maximum accepted vault file size. Guards against oversized/corrupt input.</summary>
+    /// <summary>
+    /// Maximum accepted vault file size. Guards against oversized/corrupt input when reading, and is
+    /// what <see cref="WriteAsync"/> refuses to exceed (<see cref="VaultTooLargeException"/>).
+    /// </summary>
     public const long MaxFileSizeBytes = 16 * 1024 * 1024;
 
     private readonly string _vaultFilePath;
@@ -63,6 +67,14 @@ public sealed class FileLocalVaultStorage : ILocalVaultStorage
         ArgumentNullException.ThrowIfNull(vault);
 
         byte[] bytes = EncryptedVaultSerializer.SerializeToUtf8Bytes(vault);
+
+        // Reading enforces the limit, so writing has to as well: a larger file would replace a vault
+        // that opens with one that this build - and the server, and the web vault - refuses to read.
+        if (bytes.Length > MaxFileSizeBytes)
+        {
+            throw new VaultTooLargeException(MaxFileSizeBytes);
+        }
+
         StorageFiles.CreatePrivateDirectory(_directory);
         await StorageFiles.WriteAtomicAsync(_vaultFilePath, bytes, cancellationToken).ConfigureAwait(false);
     }

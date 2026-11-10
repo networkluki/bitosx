@@ -88,8 +88,32 @@ public interface IVaultService
     Task StrengthenKeyDerivationAsync(
         string currentPassword, Argon2Parameters newParameters, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Verifies that <paramref name="currentPassword"/> is the master password of the unlocked vault,
+    /// the way changing the master password does: the stored vault must be the one this session
+    /// holds, and the password must open it. Changes nothing. For an action that the unlocked session
+    /// alone must not authorize, such as writing the vault out unencrypted.
+    /// Requires the vault to be unlocked; a wrong password throws.
+    /// </summary>
+    /// <returns>
+    /// The items the vault held when the password was verified, so that the caller acts on exactly
+    /// what was authorized, whatever happens to the session afterwards.
+    /// </returns>
+    Task<IReadOnlyList<VaultItem>> VerifyMasterPasswordAsync(string currentPassword, CancellationToken cancellationToken = default);
+
     /// <summary>Adds a login item and persists the vault.</summary>
     Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Adds several login items and persists the vault <b>once</b>: either all of them are stored, or
+    /// none is. <paramref name="chooseItems"/> is given the items the vault holds at that moment —
+    /// nothing else can change them before the write is done — and returns the items to add. If it
+    /// returns none, nothing is written. If it throws, nothing is written and its exception is what
+    /// the caller sees. Returns the items that were added.
+    /// </summary>
+    Task<IReadOnlyList<LoginItem>> AddLoginsAsync(
+        Func<IReadOnlyList<VaultItem>, IReadOnlyList<LoginItem>> chooseItems,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Updates an existing item and persists the vault. Returns the stored (timestamped) item.</summary>
     Task<VaultItem> UpdateItemAsync(VaultItem item, CancellationToken cancellationToken = default);

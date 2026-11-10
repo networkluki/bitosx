@@ -39,6 +39,82 @@ public sealed class VaultTests
     }
 
     [Fact]
+    public void AddRange_StoresEveryItem_AfterWhatWasThere_InTheOrderGiven()
+    {
+        var vault = new Vault();
+        vault.Add(Login("Already there"));
+        LoginItem[] items = [Login("One"), Login("Two"), Login("Three")];
+
+        vault.AddRange(items);
+
+        Assert.Equal(["Already there", "One", "Two", "Three"], vault.Items.Select(i => i.Name));
+    }
+
+    [Fact]
+    public void AddRange_OneInvalidItem_AddsNone()
+    {
+        var vault = new Vault();
+        vault.Add(Login("Already there"));
+
+        Assert.Throws<VaultValidationException>(
+            () => vault.AddRange([Login("One"), Login(name: "  "), Login("Three")]));
+
+        Assert.Equal(["Already there"], vault.Items.Select(i => i.Name));
+    }
+
+    [Fact]
+    public void AddRange_AnIdTheVaultHas_AddsNone()
+    {
+        var vault = new Vault();
+        LoginItem existing = Login("Already there");
+        vault.Add(existing);
+
+        Assert.Throws<DuplicateItemException>(
+            () => vault.AddRange([Login("One"), Login("Two") with { Id = existing.Id }]));
+
+        Assert.Single(vault.Items);
+    }
+
+    [Fact]
+    public void AddRange_TheSameIdTwice_AddsNone()
+    {
+        var vault = new Vault();
+        LoginItem one = Login("One");
+
+        Assert.Throws<DuplicateItemException>(() => vault.AddRange([one, Login("Two"), one with { Name = "Again" }]));
+
+        Assert.Empty(vault.Items);
+    }
+
+    [Fact]
+    public void AddRange_AnEmptyEntry_AddsNone()
+    {
+        var vault = new Vault();
+
+        Assert.Throws<ArgumentException>(() => vault.AddRange([Login("One"), null!]));
+
+        Assert.Empty(vault.Items);
+    }
+
+    [Fact]
+    public void AddRange_ManyItems_DoesNotSearchTheVaultForEachOne()
+    {
+        // 50,000 items into a vault of 50,000. Searching the vault for every new item, as adding them
+        // one by one does, is several billion comparisons and takes some twenty seconds where this
+        // was written; one pass over the ids takes a tenth of a second.
+        var vault = new Vault();
+        vault.AddRange([.. Enumerable.Range(0, 50_000).Select(i => Login("Existing " + i))]);
+        LoginItem[] more = [.. Enumerable.Range(0, 50_000).Select(i => Login("New " + i))];
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        vault.AddRange(more);
+        watch.Stop();
+
+        Assert.Equal(100_000, vault.Items.Count);
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(5), $"Took {watch.Elapsed}.");
+    }
+
+    [Fact]
     public void Update_ReplacesItem_AndStampsUpdatedAt()
     {
         var vault = new Vault();

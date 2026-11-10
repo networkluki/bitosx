@@ -22,6 +22,7 @@ internal static class UserFacingError
         // These carry a fixed, non-secret message that tells the user what to do next.
         VaultChangedExternallyException changed => changed.Message,
         VaultInconsistentStateException inconsistent => inconsistent.Message,
+        VaultTooLargeException tooLarge => tooLarge.Message,
 
         VaultValidationException validation => validation.Message,
         VaultException => "That item is no longer available. It may have been changed or removed.",

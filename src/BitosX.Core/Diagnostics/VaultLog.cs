@@ -73,4 +73,13 @@ public static partial class VaultLog
 
     [LoggerMessage(EventId = 1009, EventName = "vault_item_deleted", Level = LogLevel.Information, Message = "Vault item deleted.")]
     public static partial void VaultItemDeleted(ILogger logger);
+
+    [LoggerMessage(EventId = 1021, EventName = "vault_items_added", Level = LogLevel.Information, Message = "{Count} vault item(s) added in one write.")]
+    public static partial void VaultItemsAdded(ILogger logger, int count);
+
+    [LoggerMessage(EventId = 1022, EventName = "master_password_verified", Level = LogLevel.Information, Message = "Master password verified.")]
+    public static partial void MasterPasswordVerified(ILogger logger);
+
+    [LoggerMessage(EventId = 1023, EventName = "master_password_verification_failed", Level = LogLevel.Warning, Message = "Master password verification failed.")]
+    public static partial void MasterPasswordVerificationFailed(ILogger logger);
 }
