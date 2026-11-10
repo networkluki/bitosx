@@ -53,8 +53,9 @@ session must be unlocked** (authorizes the destructive replace) in addition to t
   right after could leave empty). The copies before it are kept as `vault.bitosx.pre-restore.1`
   (the one before) to `.3` (the oldest), so a second restore — or a sync download right after a
   restore — no longer overwrites the only copy of the vault that was there before both.
-- The replacement itself is atomic (`File.Replace`), so a crash leaves **either** the old **or** the
-  restored valid vault — never a partial file.
+- The replacement itself is one rename over the vault file (`rename(2)`; on Windows `MoveFileEx`
+  with `MOVEFILE_REPLACE_EXISTING` since 0.13.1, `ReplaceFile` before), so a crash leaves **either**
+  the old **or** the restored valid vault — never a partial file, and never no file.
 
 ## Compatibility
 - Backups from every earlier version (all v1 envelopes) restore into the current one.
