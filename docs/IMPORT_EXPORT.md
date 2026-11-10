@@ -513,10 +513,11 @@ characters long is the name:
 
 1. the host of its first web address, taken from the text: what follows `://` up to the first
    `/`, `?` or `#`; of that, what follows the last `@`; of that, if it starts with `[`,
-   everything up to and including the first `]`, and otherwise everything before the last `:` if
-   only digits (or nothing) follow that colon; in lower case; trimmed. Nothing is decoded or
-   converted: `https://Shop.Example:8443/x` gives `shop.example`, and a host in Punycode stays in
-   Punycode;
+   everything up to and including the first `]` (all of it, if there is no `]`), and otherwise
+   everything before the last `:` if only digits (or nothing) follow that colon; in lower case;
+   trimmed. The address is not handed to a URL parser for this, and nothing is decoded or
+   converted: `https://Shop.Example:8443/x` gives `shop.example`, a host in Punycode stays in
+   Punycode, and a host with letters outside ASCII keeps them as they are, capitals included;
 2. its username, trimmed;
 3. `Untitled`.
 
@@ -880,8 +881,11 @@ Every value in the fixtures is made up.
 | `keepass1.csv` | KeePass CSV (1.x) with its backslashes. |
 | `generic.csv` | A header no exporter is known by, with a byte order mark: other names for the columns, ignored columns, a name with spaces around it, hosts without a scheme, several addresses in one cell, and the four limits on names and addresses. |
 | `addresses.csv` | 151 address values, one to a row: what is a web address, what is given `https://`, what is an other address, and what fails §7.3 or the vault's rule. |
+| `columns.csv` | A header that offers more than one column for a field (§3.2): the first name of the field's list decides, not the first column; of two columns with one name, the left one; the others are ignored and named; a column without a name is not. A row whose column is empty does not fall back on another column, and a row that ends early has empty values. |
+| `text-rules.csv` | The text operations of §2.1, where the two runtimes' own functions differ: every character that is trimmed, around a column name, a name, an address, an authenticator key and a folder, and two that are not; a lone CR between addresses, between custom fields and between records; a record of nothing but characters that are trimmed, and an entry of nothing but such values and a folder; a favorite mark and a type in capitals with such characters around them; a control character in an address; a name of 200 and one of 202 UTF-16 code units, both of characters outside the Basic Multilingual Plane; two names that differ only in how an accent is encoded, which are not duplicates. And the names that are derived (§7.5): from an address with a user name and a port, with an IPv6 host, with a bracket that is never closed, with a capital outside ASCII, in Punycode, with a port that is not a number, without a host, with a host longer than a name may be; from the first address that is a web address; from a host that was given `https://`; from a username, trimmed; and `Untitled` where the username is too long to be a name. Two cases: the choices as they are at first, and the extras copied into the notes. |
 | `bitwarden.json` | Bitwarden's unencrypted export: a login with everything, one item of every other kind, an item in the trash, a duplicate, an item with only a name, hosts without a scheme, an item without a name, a passkey, an archived item. |
 | `keepass.xml` | A KeePassXC export: nested groups, the recycle bin, a history, custom strings, values marked `ProtectInMemory`, CDATA and character references, a password of three spaces, a field twice, an entry with nothing in it, a duplicate in another group. |
+| `keepass-line-ends.xml` | Line ends inside the values of a KeePass file (§5.2): written as they are — CR LF and a lone CR, which an XML processor turns into LF — written as character references, which stay what they are, and in a CDATA section. The file itself has CR LF line ends, as one written on Windows has. |
 | `bitosx-export.csv`, `bitosx-export.json` | The desktop's own two exports of one vault of eight items (`ConformanceFixtures.ExportedVault`): quotes, commas, line ends, text outside ASCII, spaces that have to stay, values that look like formulas, backslashes, two addresses. Each is read back into an empty vault, and into the vault it came from: the JSON adds nothing; the CSV adds the item that has two addresses, because it holds only the first. |
 | `refused-*` | One file for each refusal that a file of ordinary size can end in: both encrypted Bitwarden exports, a document type declaration (external, and with entities), protected values, XML that is damaged, XML that is not KeePass's, JSON that is damaged, has a name twice, has half a surrogate pair, or is neither format, a BitosX export of a newer version, UTF-16, bytes that are not UTF-8, a quote that is not closed, text after a closing quote, no known columns, no password column, an empty file, a file of white space. |
 | `generated-*` | Inputs given as parts: 10,001 CSV rows, JSON items and KeePass entries; 16 MiB and 27 bytes; a value of 8 MiB in an ignored column; groups 64 and 65 deep; elements 101 deep; JSON 64 and 65 levels deep. |
@@ -936,13 +940,20 @@ PapaParse `1fcb83c64acf61ae636b556b0eadeebaca0aea33`; KeePassXC
 ### 15.3 Where the two clients can differ
 
 - **Addresses.** §7.3 was tried on 151 address values (`addresses.csv`), each asked of .NET 10's
-  `Uri.TryCreate` and of Node 22's `URL`: after §7.3 the two agreed on all of them. Two that are
-  not among the fixtures still differ: `https://xn--/` and `https://xn--a.example/`, which the
-  desktop accepts and the web vault refuses. Hosts with letters outside ASCII were tried in three
-  ordinary cases only.
+  `Uri.TryCreate` and of Node 22's `URL`: after §7.3 the two agreed on all of them. So did they
+  on every other address in the fixtures: what the expected files say of each was held against
+  §7.3, written a second time in JavaScript from the text above, together with Node's `URL`. Two
+  addresses that are not among the fixtures still differ: `https://xn--/` and
+  `https://xn--a.example/`, which the desktop accepts and the web vault refuses. Hosts with
+  letters outside ASCII were tried in a few ordinary cases only.
 - **XML that is not well formed.** Which exotic documents an XML processor refuses is the
   processor's affair. The fixtures hold the cases that matter; beyond them the two clients may
   disagree about whether a damaged file is damaged.
+- **An XML file with two faults.** §5.2 lets the first fault in the document decide, which the
+  desktop can do because it reads the document forward. A client whose XML processor has parsed
+  the whole document before the client looks at it can only answer `invalid_xml` for a file that
+  has, say, a protected value and, further down, a tag that is never closed, where the desktop
+  answers `protected_values`. Both refuse the file. No fixture has two faults.
 
 ## 16. What is not imported
 
