@@ -45,7 +45,8 @@ public sealed class SettingsPageViewModelRestoreTests : IDisposable
             new NullSystemSessionEvents(),
             backup,
             picker,
-            new FakeKeyDerivationBenchmark());
+            new FakeKeyDerivationBenchmark(),
+            ImportExportCard.NotUsed(vault));
 
         return (vm, backup, picker, vault);
     }

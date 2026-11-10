@@ -264,5 +264,40 @@ internal sealed class WholeApplication : IAsyncDisposable
             TimesAsked++;
             return Task.FromResult(OpenPath);
         }
+
+        /// <summary>The file the "import" dialog answers with; <see langword="null"/>: the dialog is cancelled.</summary>
+        public string? ImportPath { get; set; }
+
+        /// <summary>The file the "export" dialog answers with; <see langword="null"/>: the dialog is cancelled.</summary>
+        public string? ExportPath { get; set; }
+
+        /// <summary>The name the last "export" dialog suggested.</summary>
+        public string? SuggestedExportName { get; private set; }
+
+        /// <summary>When set, the dialogs for import and export stay open until this completes.</summary>
+        public Task? WhileOpen { get; set; }
+
+        public async Task<string?> PickImportOpenAsync(CancellationToken cancellationToken = default)
+        {
+            TimesAsked++;
+            if (WhileOpen is not null)
+            {
+                await WhileOpen.ConfigureAwait(true);
+            }
+
+            return ImportPath;
+        }
+
+        public async Task<string?> PickExportSaveAsync(string suggestedFileName, string extension, CancellationToken cancellationToken = default)
+        {
+            TimesAsked++;
+            SuggestedExportName = suggestedFileName;
+            if (WhileOpen is not null)
+            {
+                await WhileOpen.ConfigureAwait(true);
+            }
+
+            return ExportPath;
+        }
     }
 }

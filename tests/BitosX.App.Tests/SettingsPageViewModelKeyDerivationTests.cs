@@ -47,7 +47,8 @@ public sealed class SettingsPageViewModelKeyDerivationTests : IDisposable
             new NullSystemSessionEvents(),
             new FakeVaultBackupService(),
             new FakeFilePicker(),
-            benchmark);
+            benchmark,
+            ImportExportCard.NotUsed(vault));
 
         return (vm, vault, benchmark);
     }

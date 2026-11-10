@@ -58,7 +58,8 @@ public sealed class SettingsPageUiTests : IDisposable
             new NullSystemSessionEvents(),
             new FakeVaultBackupService(),
             new FakeFilePicker(),
-            benchmark ?? new KeyDerivationBenchmark(new Argon2idKeyDerivation()));
+            benchmark ?? new KeyDerivationBenchmark(new Argon2idKeyDerivation()),
+            ImportExportCard.NotUsed(vault));
     }
 
     private static (Window Window, SettingsPageView View) Show(SettingsPageViewModel viewModel)

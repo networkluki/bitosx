@@ -174,6 +174,81 @@ internal sealed class FakeFilePicker : IFilePicker
 
     public Task<string?> PickBackupOpenAsync(CancellationToken cancellationToken = default)
         => ChoosesANonLocalLocation ? Task.FromException<string?>(new FileLocationNotLocalException()) : Task.FromResult(OpenPath);
+
+    /// <summary>The file the "import" dialog answers with; <see langword="null"/>: the dialog is cancelled.</summary>
+    public string? ImportPath { get; set; }
+
+    /// <summary>The file the "export" dialog answers with; <see langword="null"/>: the dialog is cancelled.</summary>
+    public string? ExportPath { get; set; }
+
+    public int ImportAsked { get; private set; }
+
+    public int ExportAsked { get; private set; }
+
+    /// <summary>The name and the extension the last "export" dialog was opened with.</summary>
+    public (string SuggestedName, string Extension)? LastExportRequest { get; private set; }
+
+    /// <summary>When set, the dialogs for import and export stay open until this completes, as a dialog does while it is looked at.</summary>
+    public Task? WhileOpen { get; set; }
+
+    public async Task<string?> PickImportOpenAsync(CancellationToken cancellationToken = default)
+    {
+        ImportAsked++;
+        if (ChoosesANonLocalLocation)
+        {
+            throw new FileLocationNotLocalException();
+        }
+
+        if (WhileOpen is not null)
+        {
+            await WhileOpen.ConfigureAwait(true);
+        }
+
+        return ImportPath;
+    }
+
+    public async Task<string?> PickExportSaveAsync(string suggestedFileName, string extension, CancellationToken cancellationToken = default)
+    {
+        ExportAsked++;
+        LastExportRequest = (suggestedFileName, extension);
+        if (ChoosesANonLocalLocation)
+        {
+            throw new FileLocationNotLocalException();
+        }
+
+        if (WhileOpen is not null)
+        {
+            await WhileOpen.ConfigureAwait(true);
+        }
+
+        return ExportPath;
+    }
+}
+
+/// <summary>
+/// The import and export card for tests of the rest of the Settings page, which never touch it: its
+/// services answer nothing.
+/// </summary>
+internal static class ImportExportCard
+{
+    public static BitosX.App.ViewModels.ImportExportViewModel NotUsed(IVaultService vault)
+        => new(new NoImport(), new NoExport(), vault, new FakeFilePicker(), InlineUiDispatcher.Instance, TimeProvider.System);
+
+    private sealed class NoImport : IVaultImportService
+    {
+        public Task<BitosX.Core.ImportExport.ParsedImport> ReadAsync(string sourcePath, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<BitosX.Core.ImportExport.ImportPlan> PreviewAsync(
+            BitosX.Core.ImportExport.ParsedImport file, BitosX.Core.ImportExport.ImportOptions options, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<ImportResult> ApplyAsync(BitosX.Core.ImportExport.ImportPlan plan, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class NoExport : IVaultExportService
+    {
+        public Task<ExportResult> ExportAsync(
+            string destinationPath, BitosX.Core.ImportExport.ExportFormat format, string masterPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
 }
 
 /// <summary>Records copies and clears; can simulate a clipboard that is busy.</summary>

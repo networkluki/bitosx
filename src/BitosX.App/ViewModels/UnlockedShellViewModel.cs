@@ -84,7 +84,12 @@ public sealed partial class UnlockedShellViewModel : ViewModelBase, IDisposable
     [RelayCommand]
     private void ShowSettings()
     {
-        _settingsPage ??= ActivatorUtilities.CreateInstance<SettingsPageViewModel>(_services);
+        // The card for import and export is made here, for this page alone, and not handed out by
+        // the service provider: a provider keeps what it hands out until the application ends, and
+        // this card is to be let go of when the vault locks.
+        _settingsPage ??= ActivatorUtilities.CreateInstance<SettingsPageViewModel>(
+            _services, ActivatorUtilities.CreateInstance<ImportExportViewModel>(_services));
+        _settingsPage.Refresh();
         CurrentPage = _settingsPage;
     }
 
