@@ -38,7 +38,18 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.14.0`** — import and export. Settings has a card "Import and export". **Import** reads a file
+**`0.14.1`** — one rule of an import. A web address with a backslash before the `@`
+(`https://evil.example\@bank.example/`) is no longer taken for an address both clients read
+alike: a browser ends the host at the backslash and goes to `evil.example`, while the text after
+the `@` says `bank.example`. The desktop already refused such addresses through .NET's own rule,
+and the web vault accepted them; the shared rule of [IMPORT_EXPORT.md](IMPORT_EXPORT.md) §7.3 now
+refuses a backslash anywhere in the authority, in both. An entry with such an address is listed as
+not imported, like one with any other address that is not valid. No expected file of the fixtures
+changes. §15.3 of the specification now lists the differences between the two clients that
+generating addresses brought out, and which of them are left as they are. The vault format, the
+content schema and the server are unchanged. **Not verified:** as for `0.14.0` below.
+
+Builds on `0.14.0` — import and export. Settings has a card "Import and export". **Import** reads a file
 another password manager exported and adds its logins: a CSV file (one reader that finds its columns
 by their names; the headers of Chrome and Edge, Firefox, Bitwarden, KeePassXC and KeePass 1.x are
 recognised and named), Bitwarden's unencrypted JSON, KeePass 2 XML, and BitosX's own JSON export. A
