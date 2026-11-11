@@ -238,7 +238,6 @@ deletion, the two-factor state and revisions that never restart need the server 
 (`bitosx-api`) deployed. `api.bitosx.se` is not publicly reachable yet
 (`bitosx-api/docs/DEPLOYMENT.md`), so the application has only been run against the scripted
 server of the tests. The contract it implements is `bitosx-api/docs/API.md`. The passkey part
-(0.13.0) has not run against the stack of bitosx-api with passkeys yet: the live test that
-registers a passkey and signs in with a code (`tests/BitosX.LiveTests`) is written, and its
-software authenticator was checked against the WebAuthn library the server uses, but it has not
-run against the server.
+(0.13.0) has run against the local stack of bitosx-api with passkeys (2026-11-03): the live test
+that registers a passkey and signs in with a code (`tests/BitosX.LiveTests`) passed there, with the
+other thirteen. It has not run against `api.bitosx.se`.

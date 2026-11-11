@@ -118,9 +118,13 @@ transitions happened. Handlers must not block waiting on another thread.
 ## Persistence
 
 `FileLocalVaultStorage` writes to a uniquely named temporary file that it creates exclusively,
-flushes it to the physical disk, and then atomically replaces the target (`File.Replace`), so an
-interrupted or failed write — including a crash or power loss — cannot corrupt or destroy the
-existing vault. Reads enforce a maximum file size on the bytes actually read and delegate parsing
+flushes it to the physical disk, and then renames it over the target in one step of the file system
+(`File.Move` with `overwrite`: `rename(2)` on Unix, `MoveFileEx` with `MOVEFILE_REPLACE_EXISTING` on
+Windows), so an interrupted or failed write — including a crash or power loss — cannot corrupt or
+destroy the existing vault. Until 0.13.1 Windows used `File.Replace` (`ReplaceFile`), which is
+several steps in one call and documents failures after which the file being replaced is no longer
+under its name; see [VERSIONING.md](VERSIONING.md). On Windows the rename is tried again for up to
+1.5 s while another program has the file open. Reads enforce a maximum file size on the bytes actually read and delegate parsing
 to the fail-closed `EncryptedVaultSerializer`. Backups and the settings file go through the same
 primitives (`StorageFiles`).
 

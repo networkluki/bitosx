@@ -38,7 +38,25 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.13.0`** — passkeys, as far as the desktop goes. Passkeys (WebAuthn) are added, renamed,
+**`0.13.1`** — how a file is replaced on Windows. Every file BitosX keeps (the vault, the settings,
+the sync record, a backup, the recovery copies) is written to a temporary file and then put in the
+place of the old one. On Windows that last step was `File.Replace`, which is the Win32 `ReplaceFile`:
+several steps in one call. Its documentation lists failures (`ERROR_UNABLE_TO_MOVE_REPLACEMENT`,
+`ERROR_UNABLE_TO_MOVE_REPLACEMENT_2`) after which the file that was to be replaced is no longer under
+its name, with the new content only in the temporary file — which a failed write then deleted. No
+such loss has been observed; the documented behaviour was enough to stop relying on it. The step is
+now one rename over the old file (`File.Move` with `overwrite`, i.e. `MoveFileEx` with
+`MOVEFILE_REPLACE_EXISTING`; on Unix it always was `rename(2)`): if it fails, both files are what and
+where they were. The price is that Windows refuses that rename while another program has the old file
+open (its documented rule for a rename over an existing file; `ReplaceFile` may have been more
+forgiving of some of them, which was not measured). It is tried again for up to 1.5 s, as before,
+and then reported, with the vault in memory and on disk intact. The retry now
+counts the pauses it asks for instead of the clock, and its tests hand in the waiting, after one of
+them failed on a loaded build machine (the `main` build after 0.13.0). **Not verified:** what
+Windows leaves behind when the power fails during the rename (NTFS journals it; this was not
+tested), and the same for `ReplaceFile` before.
+
+Builds on `0.13.0` — passkeys, as far as the desktop goes. Passkeys (WebAuthn) are added, renamed,
 removed and used on vault.bitosx.se, on top of the authenticator code, never instead of it; this
 application has no WebAuthn and keeps signing in with the authenticator code or a recovery code.
 The Account page shows how many passkeys the account has, read-only (`GET /v1/account/passkeys`;
@@ -47,8 +65,9 @@ lists `passkey` among its `methods`, that passkeys are used on the web vault and
 code is needed. The `methods` of the sign-in challenge are read tolerantly: no list means the code
 step, as before; names this client does not know are ignored; a challenge that offers no code step
 is refused as unexpected. The vault, its master password and the on-disk format (still v1) are
-untouched. **Not verified:** the live passkey test (`tests/BitosX.LiveTests`) against the stack of
-bitosx-api with passkeys; `api.bitosx.se` itself, which is not publicly reachable yet.
+untouched. The live passkey test (`tests/BitosX.LiveTests`) passed against the local stack of
+bitosx-api with passkeys on 2026-11-03. **Not verified:** `api.bitosx.se` itself, which is not
+publicly reachable yet.
 
 Builds on `0.12.0` — ready for the real server. BitosX has an icon of its own (a padlock on a
 rounded square in its two accent colours), for its windows and for the program file on Windows,

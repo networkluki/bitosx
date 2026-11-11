@@ -158,64 +158,73 @@ internal static class StorageFiles
     }
 
     /// <summary>
-    /// How long, in total, a swap on Windows is retried while another process holds the file open.
-    /// Windows refuses to replace a file that is open without delete sharing; virus scanners, search
-    /// indexers and backup tools open freshly written files that way for a moment. Without the retry a
-    /// save fails whenever one of them happens to be looking (found by the Windows CI run of the
-    /// settings checklist, where the test itself reads the file while it is being replaced).
+    /// How long, in total, replacing a file on Windows waits for another program to let go of it.
+    /// Windows refuses to rename over a file that is open; virus scanners, search indexers and backup
+    /// tools open freshly written files for a moment. Without the retry a save fails whenever one of
+    /// them happens to be looking (found by the Windows CI run of the settings checklist, where the
+    /// test itself reads the file while it is being replaced).
+    /// <para>The budget is counted in the pauses asked for, not on the clock, so the number of attempts
+    /// is the same on a slow machine as on a fast one.</para>
     /// </summary>
     internal static readonly TimeSpan WindowsReplaceRetryBudget = TimeSpan.FromMilliseconds(1500);
+
+    private static readonly TimeSpan FirstRetryPause = TimeSpan.FromMilliseconds(10);
+    private static readonly TimeSpan LongestRetryPause = TimeSpan.FromMilliseconds(200);
 
     private static void MoveIntoPlace(string tempPath, string path)
     {
         if (OperatingSystem.IsWindows())
         {
-            SwapRetryingWhileHeld(tempPath, path);
+            ReplaceRetryingWhileHeld(tempPath, path, static pause => Thread.Sleep(pause));
         }
         else
         {
-            Swap(tempPath, path);
+            Replace(tempPath, path);
         }
 
         // On Unix the rename is a change to the directory, which is flushed on its own.
         UnixDirectory.TryFlush(Path.GetDirectoryName(path));
     }
 
-    private static void Swap(string tempPath, string path)
-    {
-        if (File.Exists(path))
-        {
-            // Atomic swap; if it fails the original file is left untouched.
-            File.Replace(tempPath, path, destinationBackupFileName: null);
-        }
-        else
-        {
-            File.Move(tempPath, path);
-        }
-    }
+    /// <summary>
+    /// Renames <paramref name="tempPath"/> over <paramref name="path"/> in one step of the file system:
+    /// <c>rename(2)</c> on Unix, <c>MoveFileEx</c> with <c>MOVEFILE_REPLACE_EXISTING</c> on Windows (both
+    /// files are in the same directory, so it is never a copy). If it fails, both files are what and
+    /// where they were, which is what lets a caller try again, or give up and delete the temporary file.
+    /// <para>Deliberately not <see cref="File.Replace(string, string, string?)"/>. On Windows that is
+    /// <c>ReplaceFile</c>, which carries out several steps in one call, and whose documented failures
+    /// include two (<c>ERROR_UNABLE_TO_MOVE_REPLACEMENT</c> and <c>ERROR_UNABLE_TO_MOVE_REPLACEMENT_2</c>)
+    /// after which the file that was to be replaced is no longer under its name: with no backup name
+    /// given it is gone, and the new content exists only as the temporary file - the one a failed write
+    /// deletes. A vault must never be able to end up there.</para>
+    /// </summary>
+    private static void Replace(string tempPath, string path) => File.Move(tempPath, path, overwrite: true);
 
     /// <summary>
-    /// <see cref="Swap"/>, tried again with a growing pause while the failure is the kind another
-    /// process's open handle causes, until <see cref="WindowsReplaceRetryBudget"/> is spent. Each failed
-    /// attempt leaves the original file untouched, so retrying cannot lose it; the last failure is thrown.
+    /// <see cref="Replace"/>, tried again after a growing pause while the failure is the kind an open
+    /// handle of another program causes, until the pauses would add up to more than
+    /// <see cref="WindowsReplaceRetryBudget"/>. A failed attempt changes nothing, so trying again cannot
+    /// lose the file; the last failure is thrown. <paramref name="pause"/> does the waiting (tests pass
+    /// their own, so that they depend neither on the clock nor on how busy the machine is).
     /// </summary>
-    private static void SwapRetryingWhileHeld(string tempPath, string path)
+    internal static void ReplaceRetryingWhileHeld(string tempPath, string path, Action<TimeSpan> pause)
     {
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        int pauseMilliseconds = 10;
+        TimeSpan waited = TimeSpan.Zero;
+        TimeSpan next = FirstRetryPause;
         while (true)
         {
             try
             {
-                Swap(tempPath, path);
+                Replace(tempPath, path);
                 return;
             }
             catch (Exception ex) when ((ex is IOException or UnauthorizedAccessException)
-                                       && File.Exists(tempPath)
-                                       && elapsed.Elapsed + TimeSpan.FromMilliseconds(pauseMilliseconds) < WindowsReplaceRetryBudget)
+                                       && waited + next <= WindowsReplaceRetryBudget
+                                       && File.Exists(tempPath))
             {
-                Thread.Sleep(pauseMilliseconds);
-                pauseMilliseconds = Math.Min(pauseMilliseconds * 2, 200);
+                pause(next);
+                waited += next;
+                next = next + next < LongestRetryPause ? next + next : LongestRetryPause;
             }
         }
     }
