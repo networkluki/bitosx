@@ -714,6 +714,12 @@ unlocked session alone does not authorize it:
   on Unix; on Windows it has the permissions of its folder), flushed to the disk, and moved into
   place in one step. An interrupted export leaves no file with part of the passwords under the
   name that was asked for.
+- **What an interrupted export can leave behind.** The new file is a temporary file in the folder
+  that was chosen, named `<name>.<32 hexadecimal digits>.tmp`. A write that fails deletes it. If
+  the application or the machine dies during an export, it stays: a file with some or all of the
+  passwords in plain text (readable by its owner only on Unix). Nothing removes it, unless a later
+  export is written to the same name in the same folder more than ten minutes afterwards. BitosX
+  does not look for such files when it starts, and does not remember where exports were written.
 - The vault file itself is never written over.
 - The suggested name is `BitosX-export-YYYY-MM-DD.csv` or `.json`, with the local date.
 - The bytes of the export are wiped once they are written. The log says that an unencrypted
@@ -961,3 +967,50 @@ Besides what §7.4 counts: an entry's history and earlier passwords, passkeys, a
 icons, expiry dates, auto-type settings, the match setting of an address, the times an entry was
 created and changed, and every item that is not a login. An authenticator key is never used by
 BitosX, only kept as text if the user asks for it to be copied into the notes.
+
+## 17. The desktop's user interface (0.14.0)
+
+None of this is a rule for the other client; it says how the desktop carries out the rules above.
+Settings has a card "Import and export" (`ImportExportViewModel`, `ImportPreview`), below Backup &
+Restore.
+
+**Import.** "Choose a file to import…" reads the file (§2) and shows the plan (§9); nothing is
+written. A refusal is shown in its fixed text (§13.1), for `invalid_csv` followed by "The fault is
+on line N of the file." The two choices, in the words of §7.4 and §8 and both off for every file,
+ask for the plan again. The button that imports ("Import N logins") is disabled while the plan on
+screen is not the one the choices ask for, while nothing would be added, and while the vault would
+hold more than 10,000 items (shown with the text of `vault_item_limit`). Coming back to the page
+from another page asks for the plan again, against the vault as it is then. Importing says what was
+done (§10) — "N logins were added to the vault.", or, if the vault changed after the preview, that
+the file was compared with it again and how many were added — and then the reminder of §10.
+
+What the page is given is sentences, counts, and for each entry that cannot be imported its
+position ("Entry 17"), its name and the fixed text of its reason (§13.2). It is given no password,
+authenticator key, note, address or value of a custom field. Three things are decided here and not
+by the specification:
+
+- A name comes from the file. It is shown on one line (control characters and line separators as
+  spaces), cut to 80 characters, in a text block of its own.
+- An entry with the reason `row_has_extra_values` is listed **without a name**: its values moved
+  by a column, so what stands where the name should may be any of them, the password included.
+- At most 200 entries that cannot be imported are listed; the rest are counted ("… and N more.").
+  At most 10 ignored columns are named, each cut to 40 characters.
+
+**Export.** "Export unencrypted…" opens the warning and the box of §11.3, the choice of format
+(CSV at first), the number of items with more than one address, and a box for the master password.
+The button is disabled until the box is ticked and a password is typed. **The save dialog comes
+first; then one call checks the password and writes the file** (`IVaultExportService.ExportAsync`).
+So the key is derived once for an export and not at all for one that is called off in the dialog,
+and what is written is what the check was for. A wrong password says "The master password is
+incorrect. Nothing was exported.", and nothing more; the password box is emptied after every
+attempt, and a new attempt starts with the save dialog again.
+
+**Locking** — by hand, by the timer, by the workstation or the system going to sleep, after an
+unexpected error, or because the vault was replaced by a backup or by the server's — closes both
+and lets go of what they hold: the logins of the file, the plan, the file's name, what was typed.
+An answer that arrives afterwards from a call that was still running is dropped. The next unlock
+gets a new card.
+
+**Words of failure** are fixed. No text of an exception reaches the page or the log, except the
+texts of a refusal (§13.1): a parser's message can quote the file, and the file system's names a
+path. A file that is gone is said to be gone. A file that cannot be read leaves the vault open.

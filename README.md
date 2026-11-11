@@ -33,6 +33,14 @@ ever sent. There is intentionally **no subscription, browser extension, or mobil
   opaque bytes, revisions are compare-and-set, nothing is merged, and a conflict is shown with both
   ways out rather than resolved. A downloaded vault is opened with its master password and validated
   on the device before it replaces the local vault. See [docs/SYNC.md](docs/SYNC.md).
+- Import logins from a file another password manager exported — a CSV file (the layouts of Chrome,
+  Edge, Firefox, Bitwarden, KeePassXC and KeePass 1.x are recognised; other files are read by their
+  column names), Bitwarden's unencrypted JSON, KeePass 2 XML, or BitosX's own JSON export. A preview
+  shows what would be added, what is a duplicate and what cannot be imported and why; nothing is
+  written until it is confirmed, and then in one write. Export the vault **unencrypted**, as CSV or
+  BitosX JSON, after a warning, an acknowledgement and the master password. The readers were written
+  from the exporters' source code; no file produced by those programs has been imported (see
+  [docs/VERIFICATION.md](docs/VERIFICATION.md)). See [docs/IMPORT_EXPORT.md](docs/IMPORT_EXPORT.md).
 - Add, edit, delete, favorite, and search login items; deleting is asked for and then confirmed.
 - Copy username / password to the clipboard with an automatic timed clear.
 - Show/hide passwords (hidden by default).
@@ -106,7 +114,8 @@ assets/icon/              The icon as PNG (16 to 512 pixels) and SVG, drawn by t
 docs/
   ARCHITECTURE.md  SECURITY_MODEL.md  THREAT_MODEL.md  CRYPTOGRAPHY.md  DEVELOPMENT.md
   VERIFICATION.md  VERSIONING.md  AUTO_LOCK.md  BACKUP_RESTORE.md  KEY_ROTATION.md
-  KEY_DERIVATION.md  MASTER_PASSWORD.md  ACCOUNT.md  SYNC.md  SECURITY_REVIEW_0.5.1.md  SECURITY_REVIEW_0.7.0.md
+  KEY_DERIVATION.md  MASTER_PASSWORD.md  ACCOUNT.md  SYNC.md  IMPORT_EXPORT.md
+  SECURITY_REVIEW_0.5.1.md  SECURITY_REVIEW_0.7.0.md
 .github/workflows/ci.yml  Builds and tests on Linux, macOS and Windows for every change
 ```
 
@@ -115,7 +124,9 @@ docs/
 ## Where the vault is stored
 
 By default the encrypted vault lives at your per-user application data directory, e.g.
-`%APPDATA%\BitosX\vault.bitosx` on Windows. The plaintext vault contents are never written to disk.
+`%APPDATA%\BitosX\vault.bitosx` on Windows. The plaintext vault contents are never written to disk —
+with one exception that you have to ask for: an unencrypted export (Settings, "Import and export"),
+which writes them to the file you choose, after the master password.
 `--data-directory <full path>` keeps the vault and the settings somewhere else.
 
 ## Security

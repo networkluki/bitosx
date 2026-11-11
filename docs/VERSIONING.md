@@ -38,7 +38,28 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.13.1`** — how a file is replaced on Windows. Every file BitosX keeps (the vault, the settings,
+**`0.14.0`** — import and export. Settings has a card "Import and export". **Import** reads a file
+another password manager exported and adds its logins: a CSV file (one reader that finds its columns
+by their names; the headers of Chrome and Edge, Firefox, Bitwarden, KeePassXC and KeePass 1.x are
+recognised and named), Bitwarden's unencrypted JSON, KeePass 2 XML, and BitosX's own JSON export. A
+preview shows what would be added, the duplicates, what cannot be imported and why, what is not a
+login, and what BitosX has no field for (authenticator keys, folders, custom fields, addresses that
+are not web addresses — left out, or copied into the notes if chosen). Nothing is written before it
+is confirmed; then every login is added in one write, or none is. Nothing is ever cut short to make
+it fit. **Export** writes the vault unencrypted, as CSV (Chrome's layout, one address per item) or
+BitosX JSON (everything), after a warning, a box that has to be ticked, and the master password,
+which is verified before anything is written; the file is written atomically and, on Unix, readable
+by its owner only. Locking closes both and lets go of what they hold. Every file to import is
+treated as hostile: size and entry limits, strict UTF-8, no document type declarations, bounded
+nesting, one pass. The rules are a specification both clients follow, with fixtures that hold them
+to the same results: [IMPORT_EXPORT.md](IMPORT_EXPORT.md). A vault file larger than BitosX can read
+back (16 MiB) is no longer written, by an import or by anything else. The vault format, the content
+schema and the server are unchanged. **Not verified:** the readers were written from the exporters'
+source code, and no file produced by running those programs has been imported; 1Password's CSV
+layout could not be verified at all; nothing of this was run on Windows or macOS, and not in a real
+window (the GuiCheck does not cover it). See [VERIFICATION.md](VERIFICATION.md).
+
+Builds on `0.13.1` — how a file is replaced on Windows. Every file BitosX keeps (the vault, the settings,
 the sync record, a backup, the recovery copies) is written to a temporary file and then put in the
 place of the old one. On Windows that last step was `File.Replace`, which is the Win32 `ReplaceFile`:
 several steps in one call. Its documentation lists failures (`ERROR_UNABLE_TO_MOVE_REPLACEMENT`,

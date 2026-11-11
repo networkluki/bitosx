@@ -68,6 +68,14 @@ touches the vault master password, which never leaves the device. See [docs/ACCO
   be guessed in a few thousand attempts.
 - Improving a vault's protection — a new master password, a rotated key, stronger key derivation —
   applies from then on. Copies and backups made earlier keep the protection they were made with.
+- An unencrypted export (Settings, "Import and export") is what it says: every password in plain
+  text, in a file of your choosing. BitosX asks for the master password before it writes one and
+  has no say over the file afterwards. If BitosX or the computer stops while one is being written,
+  a temporary file with some or all of the passwords can be left next to it
+  (`<name>.<32 hex digits>.tmp`), and nothing removes it for you. A file you import stays where it
+  is, in plain text, until you delete it. See [docs/IMPORT_EXPORT.md](docs/IMPORT_EXPORT.md).
+- Importing was written from the source code of the programs whose exports it reads, and tested
+  with made-up files. No export produced by those programs has been imported yet.
 - The application itself has only been run on Windows. On Linux and macOS its tests run for every
   change — including the whole application without a display — but the application has **not**
   been started there, and locking on workstation lock and suspend is not implemented there.
