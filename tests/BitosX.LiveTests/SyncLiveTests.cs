@@ -1,6 +1,8 @@
 using System.Text.Json;
 using BitosX.ApiClient;
 using BitosX.ApiClient.Sync;
+using BitosX.Core.Domain;
+using BitosX.Core.ImportExport;
 using BitosX.Core.Services;
 using BitosX.Core.Storage;
 using BitosX.Storage;
@@ -98,6 +100,44 @@ public sealed class SyncLiveTests
 
             Assert.Equal(SyncOutcome.UpToDate, (await second.Sync.SyncAsync()).Outcome);
             Assert.Equal(SyncOutcome.UpToDate, (await first.Sync.SyncAsync()).Outcome);
+        }
+    }
+
+    [LiveFact]
+    public async Task LoginsImportedOnOneDevice_GoUpWithTheNextSync_AndComeDownOnTheOther()
+    {
+        (Device first, Device second, string email, string password, string master) = await TwoDevicesAsync();
+        using (first)
+        using (second)
+        {
+            await TakeTheServersVaultAsync(second, master, email, password);
+            long common = (await second.Sync.SyncAsync()).Server!.Revision;
+
+            // The first device imports a small file (docs/IMPORT_EXPORT.md): two logins, one write of its vault.
+            string file = Path.Combine(Path.GetDirectoryName(first.Location.VaultFilePath)!, "import.csv");
+            await File.WriteAllTextAsync(
+                file,
+                "name,url,username,password\n"
+                + "Imported one,https://one.example.test/,someone@example.test,FAKE-" + LiveStack.NewPassword() + "\n"
+                + "Imported two,two.example.test,someone@example.test,FAKE-" + LiveStack.NewPassword() + "\n");
+            ImportPlan plan = await first.Import.PreviewAsync(await first.Import.ReadAsync(file), ImportOptions.Default);
+            Assert.Equal(SyncOutcome.UpToDate, (await first.Sync.SyncAsync()).Outcome); // a preview is no change
+            Assert.Equal(2, (await first.Import.ApplyAsync(plan)).Added);
+
+            // To the sync that is what a login added by hand is: a change on this device only.
+            SyncResult up = await first.Sync.SyncAsync();
+            Assert.Equal(SyncOutcome.Uploaded, up.Outcome);
+            Assert.Equal(common + 1, up.Server!.Revision); // one write, one revision
+            Assert.Equal(SyncOutcome.UpToDate, (await first.Sync.SyncAsync()).Outcome);
+
+            // The other device is told that the server is ahead, takes its vault, and has the logins.
+            Assert.Equal(SyncOutcome.ServerAhead, (await second.Sync.SyncAsync()).Outcome);
+            await TakeTheServersVaultAsync(second, master, email, password);
+            Assert.Equal(await first.EnvelopeBytesAsync(), await second.EnvelopeBytesAsync());
+            Assert.Equal(["Imported one", "Imported two", "first device"], second.Vault.Items.Select(i => i.Name).Order(StringComparer.Ordinal));
+            LoginItem two = Assert.Single(second.Vault.Items.OfType<LoginItem>(), i => i.Name == "Imported two");
+            Assert.Equal(["https://two.example.test"], two.Urls);
+            Assert.Equal(SyncOutcome.UpToDate, (await second.Sync.SyncAsync()).Outcome);
         }
     }
 
