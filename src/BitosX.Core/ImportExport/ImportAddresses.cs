@@ -139,7 +139,9 @@ internal static class ImportAddresses
     /// first, so that an entry is imported by both clients or by neither:
     /// <list type="number">
     /// <item>The authority is what follows <c>://</c>, up to the first <c>/</c>, <c>?</c> or
-    /// <c>#</c>. It holds at most one <c>@</c>; what follows the <c>@</c> is host and port.</item>
+    /// <c>#</c>. It holds no backslash (a browser ends the host at one, so what follows an
+    /// <c>@</c> after it is not the host a browser would go to). It holds at most one <c>@</c>;
+    /// what follows the <c>@</c> is host and port.</item>
     /// <item>A host in square brackets holds only hexadecimal digits, colons and dots, and at
     /// least one of them. After the closing bracket comes nothing, or a colon and digits.</item>
     /// <item>Any other host ends at the first colon, after which come only digits. It is not
@@ -161,6 +163,13 @@ internal static class ImportAddresses
         ReadOnlySpan<char> rest = webAddress.AsSpan(start + 3);
         int end = rest.IndexOfAny("/?#");
         ReadOnlySpan<char> authority = end < 0 ? rest : rest[..end];
+
+        // Also before the "@": "https://u\@example.com/" goes to the host "u" in a browser, and is
+        // no address at all to .NET. The host itself may hold none either way (below).
+        if (authority.Contains('\\'))
+        {
+            return false;
+        }
 
         int at = authority.IndexOf('@');
         if (at >= 0)

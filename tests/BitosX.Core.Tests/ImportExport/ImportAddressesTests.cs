@@ -320,6 +320,10 @@ public sealed partial class ImportAddressesTests
     [InlineData("https://%41.com")]
     [InlineData("https://ex%61mple.com/")]
     [InlineData("https://example.com\\path")]
+    [InlineData("https://u\\@example.com/")]              // a backslash before the @: a browser goes to "u"
+    [InlineData("https://evil.example\\@bank.example/")]
+    [InlineData("https://user:pa\\ss@example.com/")]
+    [InlineData("https://\\@example.com")]
     [InlineData("https://exam[ple.com")]
     [InlineData("https://example.com:abc")]               // a port that is not digits
     [InlineData("https://example.com:80:90")]

@@ -452,7 +452,9 @@ vault accepts, and accepts `https://example.123`, which the web vault refuses. A
 asks a rule of its own first, and an address that fails it is not valid (§7.6, `url_invalid`):
 
 1. The *authority* is what follows `://`, up to the first `/`, `?` or `#` (a backslash does not end
-   it). It contains at most one `@`; what follows the `@` is host and port.
+   it). It contains no backslash, before an `@` or after it: a browser ends the host at a
+   backslash, so `https://u\@example.com/` goes to the host `u` there, while the text after the
+   `@` says `example.com`. It contains at most one `@`; what follows the `@` is host and port.
 2. If that starts with `[`: there is a `]`; between the brackets is at least one character, and
    only hexadecimal digits, `:` and `.`; after the `]` comes nothing, or `:` and then only digits
    (none is allowed).
@@ -952,6 +954,21 @@ PapaParse `1fcb83c64acf61ae636b556b0eadeebaca0aea33`; KeePassXC
   addresses that are not among the fixtures still differ: `https://xn--/` and
   `https://xn--a.example/`, which the desktop accepts and the web vault refuses. Hosts with
   letters outside ASCII were tried in a few ordinary cases only.
+- **Addresses found by generating them** (2026-11-11, .NET 10.0.113 against Node 22.22.0, behind
+  §7.3):
+  - Some hosts with a part that starts with `-` or `_`, or is longer than 63, are refused by the
+    desktop and accepted by the web vault: `https://1.-a/`, `https://a.b.-c/`, `https://12._b/`.
+    (The pattern seen: the first part is all digits, or a part from the third on starts with `-`
+    or `_`.) `https://-a.example/`, `https://a.-b.example/` and `https://_dmarc.example.com/` are
+    accepted by both. §7.3 was not tightened for this: a rule that covers it would refuse
+    addresses both clients accept today, and an entry with such an address would then not be
+    imported at all.
+  - A backslash before the `@` (`https://u\@example.com/`) was accepted by the web vault, with the
+    host `u`, and refused by the desktop. §7.3 now refuses it in both.
+  - Of 2,500 generated hosts with deliberately odd characters outside ASCII (a zero-width joiner,
+    a soft hyphen, U+00A0, full-width dots) 994 differed, in both directions (measured on the web
+    side). Ordinary hosts outside ASCII agreed. The specification leaves these to each client's
+    own rule.
 - **XML that is not well formed.** Which exotic documents an XML processor refuses is the
   processor's affair. The fixtures hold the cases that matter; beyond them the two clients may
   disagree about whether a damaged file is damaged.
