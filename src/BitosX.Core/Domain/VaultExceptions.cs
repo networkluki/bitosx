@@ -50,3 +50,21 @@ public sealed class VaultInconsistentStateException : VaultException
     public VaultInconsistentStateException()
         : base("The vault could not be verified after a disk error and has been locked. Reopen it and check your data — restore from a backup if it will not open.") { }
 }
+
+/// <summary>
+/// Thrown when the encrypted vault would be larger than the store can read back. It is raised before
+/// anything is written: a file this build refuses to open must never take the place of one it can
+/// open. The change that was being saved is not applied, and the stored vault is untouched.
+/// The message is deliberately non-secret.
+/// </summary>
+public sealed class VaultTooLargeException : VaultException
+{
+    public VaultTooLargeException(long limitBytes)
+        : base($"The vault would be larger than {limitBytes / (1024 * 1024)} MiB, which is the most BitosX can store. Nothing was saved.")
+    {
+        LimitBytes = limitBytes;
+    }
+
+    /// <summary>The largest vault file the store accepts, in bytes.</summary>
+    public long LimitBytes { get; }
+}

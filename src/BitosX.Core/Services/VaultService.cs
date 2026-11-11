@@ -602,6 +602,82 @@ public sealed class VaultService : IVaultService, IDisposable
         }
     }
 
+    public async Task<IReadOnlyList<VaultItem>> VerifyMasterPasswordAsync(
+        string currentPassword, CancellationToken cancellationToken = default)
+    {
+        const string notUnlocked = "The vault must be unlocked to check the master password.";
+
+        ArgumentNullException.ThrowIfNull(currentPassword);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (_state != VaultState.Unlocked)
+        {
+            throw new InvalidOperationException(notUnlocked);
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            SessionSnapshot session = CaptureSession(notUnlocked);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                // The same course as a master password change: the password is checked against the
+                // stored vault, which therefore has to be the one this session holds. A password that
+                // opens some other file says nothing about the items this session is showing.
+                EncryptedVault current = await _storage.ReadAsync(cancellationToken).ConfigureAwait(false);
+                if (!MatchesSession(current, session))
+                {
+                    VaultLog.MasterPasswordVerificationFailed(_logger);
+                    throw new VaultChangedExternallyException();
+                }
+
+                PasswordCandidates candidates = MasterPasswordEncoding.EncodeCandidates(currentPassword);
+                UnlockResult opened;
+                try
+                {
+                    // An authenticated unwrap and decrypt, as unlocking does. Off the caller's thread.
+                    (opened, _) = await Task.Run(
+                        () => candidates.FirstAccepted(encoding => _cryptor.Unlock(current, encoding))).ConfigureAwait(false);
+                }
+                catch (BitosXCryptographicException)
+                {
+                    VaultLog.MasterPasswordVerificationFailed(_logger);
+                    throw;
+                }
+                finally
+                {
+                    candidates.Wipe();
+                }
+
+                // Only the fact that it opened is wanted.
+                CryptoBuffers.Wipe(opened.VaultKey);
+                CryptoBuffers.Wipe(opened.Plaintext);
+
+                lock (_sessionLock)
+                {
+                    if (_sessionId != session.SessionId)
+                    {
+                        // Lock() was called while the password was being checked: the lock request wins.
+                        throw new OperationCanceledException("The vault was locked while the master password was being checked.");
+                    }
+                }
+
+                VaultLog.MasterPasswordVerified(_logger);
+                return session.Vault.Items;
+            }
+            finally
+            {
+                CryptoBuffers.Wipe(session.VaultKey);
+            }
+        }
+        finally
+        {
+            _operationGate.Release();
+        }
+    }
+
     public async Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
@@ -610,6 +686,38 @@ public sealed class VaultService : IVaultService, IDisposable
 
         VaultLog.VaultItemAdded(_logger, item.ItemType);
         return item;
+    }
+
+    public async Task<IReadOnlyList<LoginItem>> AddLoginsAsync(
+        Func<IReadOnlyList<VaultItem>, IReadOnlyList<LoginItem>> chooseItems,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(chooseItems);
+
+        IReadOnlyList<LoginItem> added = [];
+        await ApplyAsync(
+            vault =>
+            {
+                // A copy: what the caller is shown must not change when the items are added below.
+                IReadOnlyList<VaultItem> current = [.. vault.Items];
+                added = chooseItems(current)
+                    ?? throw new InvalidOperationException("The items to add must not be null.");
+                if (added.Count == 0)
+                {
+                    return false; // nothing to store: no write
+                }
+
+                vault.AddRange(added); // validates every item and id before adding the first
+                return true;
+            },
+            cancellationToken).ConfigureAwait(false);
+
+        if (added.Count > 0)
+        {
+            VaultLog.VaultItemsAdded(_logger, added.Count);
+        }
+
+        return added;
     }
 
     public async Task<VaultItem> UpdateItemAsync(VaultItem item, CancellationToken cancellationToken = default)
@@ -675,7 +783,21 @@ public sealed class VaultService : IVaultService, IDisposable
     /// Applies <paramref name="change"/> to a copy of the vault, persists the result, and only then
     /// publishes it. If anything fails the session keeps showing the vault that is on disk.
     /// </summary>
-    private async Task ApplyAsync(Action<Vault> change, CancellationToken cancellationToken)
+    private Task ApplyAsync(Action<Vault> change, CancellationToken cancellationToken)
+        => ApplyAsync(
+            vault =>
+            {
+                change(vault);
+                return true;
+            },
+            cancellationToken);
+
+    /// <summary>
+    /// As <see cref="ApplyAsync(Action{Vault}, CancellationToken)"/>, for a change that may turn out
+    /// to change nothing: when <paramref name="change"/> returns <see langword="false"/> the copy is
+    /// dropped and nothing is written.
+    /// </summary>
+    private async Task ApplyAsync(Func<Vault, bool> change, CancellationToken cancellationToken)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -685,7 +807,10 @@ public sealed class VaultService : IVaultService, IDisposable
             try
             {
                 Vault candidate = session.Vault.Clone();
-                change(candidate); // validates; rejects before anything is encrypted or written
+                if (!change(candidate)) // validates; rejects before anything is encrypted or written
+                {
+                    return;
+                }
 
                 try
                 {

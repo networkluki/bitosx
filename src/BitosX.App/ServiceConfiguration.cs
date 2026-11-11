@@ -66,6 +66,12 @@ public static class ServiceConfiguration
             fallbackCreationParameters: KeyDerivationProfile.Standard.Parameters,
             sp.GetRequiredService<ILogger<VaultService>>()));
         services.AddSingleton<IVaultBackupService, VaultBackupService>();
+
+        // Import and export (docs/IMPORT_EXPORT.md). The files they read and write hold passwords in
+        // plain text; the vault file itself is never the destination of an export.
+        services.AddSingleton<IImportExportFiles>(sp => new FileImportExportFiles(sp.GetRequiredService<FileLocalVaultStorage>().VaultFilePath));
+        services.AddSingleton<IVaultImportService, VaultImportService>();
+        services.AddSingleton<IVaultExportService, VaultExportService>();
         services.AddSingleton<IPasswordGenerator, PasswordGenerator>();
         services.AddSingleton<GeneratorSettings>();
         services.AddSingleton<ISecurityAnalyzer, SecurityAnalyzer>();

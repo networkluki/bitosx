@@ -57,7 +57,8 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
             new NullSystemSessionEvents(),
             new FakeVaultBackupService(),
             new FakeFilePicker(),
-            new FakeKeyDerivationBenchmark());
+            new FakeKeyDerivationBenchmark(),
+            ImportExportCard.NotUsed(vault));
 
         return (vm, vault, store, controller);
     }

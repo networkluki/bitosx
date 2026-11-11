@@ -17,3 +17,7 @@
 
 # Shell scripts run on Unix, whatever system they were checked out on.
 *.sh      text eol=lf
+
+# The import fixtures are read byte for byte, by this repository's tests and by the web vault's:
+# their line ends are part of what is tested, and some of them are deliberately not text.
+tests/fixtures/import/** -text

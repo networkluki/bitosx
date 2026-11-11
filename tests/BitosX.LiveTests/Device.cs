@@ -43,6 +43,9 @@ internal sealed class Device : IDisposable
 
     public IVaultSyncService Sync => _services.GetRequiredService<IVaultSyncService>();
 
+    /// <summary>Importing logins from a file, as the Settings page does it.</summary>
+    public IVaultImportService Import => _services.GetRequiredService<IVaultImportService>();
+
     /// <summary>The application's own HTTP client of the API, for the calls a test makes past the session.</summary>
     public IBitosXApiClient Api => _services.GetRequiredService<IBitosXApiClient>();
 

@@ -179,6 +179,149 @@
                 </StackPanel>
             </Border>
 
+            <Border Name="ImportExportCard" Classes="card">
+                <StackPanel Spacing="10" DataContext="{Binding ImportExport}" x:DataType="vm:ImportExportViewModel">
+                    <TextBlock Text="Import and export" Classes="h2" />
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="Import adds the logins of a file that another password manager exported: a CSV file (as Chrome, Edge, Firefox, Bitwarden, KeePassXC and others write them), Bitwarden's unencrypted JSON, KeePass 2 XML, or BitosX's own JSON export. You are shown what would be added first, and nothing is added until you confirm." />
+
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Button Name="ChooseImportFileButton" Grid.Column="0" Content="Choose a file to import…" Command="{Binding ChooseImportFileCommand}" />
+                        <!-- A file name too long for the line is shortened, and shown in full on hover. -->
+                        <TextBlock Name="ImportFileName" Grid.Column="1" Text="{Binding ImportFileName}" Margin="8,0,0,0"
+                                   VerticalAlignment="Center" Classes="muted"
+                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ImportFileName}"
+                                   IsVisible="{Binding HasImportFile}" />
+                    </Grid>
+                    <TextBlock Name="ImportReadingProgress" Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsReadingImport}"
+                               AutomationProperties.LiveSetting="Polite" Text="Reading the file…" />
+                    <TextBlock Name="ImportStatus" Text="{Binding ImportStatus}" TextWrapping="Wrap" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
+                               IsVisible="{Binding ImportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <TextBlock Name="ImportFileReminder" Text="{Binding ImportReminder}" TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite"
+                               IsVisible="{Binding ImportReminder, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                    <!-- What importing the file would do. Counts, names and reasons only: nothing here is
+                         bound to a password, an authenticator key, notes or the value of a custom field. -->
+                    <Border Name="ImportPreviewPanel" IsVisible="{Binding HasImportPreview}" Padding="12" CornerRadius="6" Background="#225B8DEF">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Nothing has been added yet." FontWeight="Bold" TextWrapping="Wrap" />
+                            <TextBlock Name="ImportSource" Text="{Binding Preview.Source}" TextWrapping="Wrap" Classes="muted" />
+                            <TextBlock Name="ImportToAdd" Text="{Binding Preview.ToAdd}" TextWrapping="Wrap"
+                                       AutomationProperties.LiveSetting="Polite" />
+                            <TextBlock Name="ImportOverLimit" Text="{Binding Preview.OverLimit}" Classes="error"
+                                       IsVisible="{Binding Preview.OverLimit, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ImportDuplicates" Text="{Binding Preview.Duplicates}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.Duplicates, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                            <StackPanel Name="ImportNotImportedPanel" Spacing="6"
+                                        IsVisible="{Binding Preview.NotImported, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                <Grid ColumnDefinitions="*,Auto">
+                                    <TextBlock Name="ImportNotImported" Grid.Column="0" Text="{Binding Preview.NotImported}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                    <Button Name="ToggleNotImportedButton" Grid.Column="1" Margin="8,0,0,0" Content="{Binding NotImportedToggleText}"
+                                            AutomationProperties.Name="Show or hide the entries that cannot be imported"
+                                            Command="{Binding ToggleNotImportedListCommand}" />
+                                </Grid>
+                                <!-- Each entry by its position, its name and the reason. A name comes from the file: it has a
+                                     text block of its own, is on one line, and is shortened if it does not fit. -->
+                                <ScrollViewer Name="ImportNotImportedList" MaxHeight="220" IsVisible="{Binding IsNotImportedListShown}">
+                                    <StackPanel Spacing="2">
+                                        <ItemsControl ItemsSource="{Binding Preview.NotImportedEntries}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="vm:ImportPreviewEntry">
+                                                    <StackPanel Spacing="1" Margin="0,0,0,8">
+                                                        <Grid ColumnDefinitions="Auto,*">
+                                                            <TextBlock Name="NotImportedPosition" Grid.Column="0" Text="{Binding Position}" Classes="muted" FontSize="12" />
+                                                            <TextBlock Name="NotImportedName" Grid.Column="1" Margin="8,0,0,0" Text="{Binding Name}" FontSize="12" FontWeight="SemiBold"
+                                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}"
+                                                                       IsVisible="{Binding Name, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                                        </Grid>
+                                                        <TextBlock Name="NotImportedReason" Text="{Binding Reason}" TextWrapping="Wrap" FontSize="12" Classes="muted" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Name="ImportNotImportedMore" Text="{Binding Preview.NotImportedMore}" TextWrapping="Wrap" FontSize="12" Classes="muted"
+                                                   IsVisible="{Binding Preview.NotImportedMore, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </StackPanel>
+
+                            <TextBlock Name="ImportUnsupported" Text="{Binding Preview.Unsupported}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.Unsupported, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ImportInTrash" Text="{Binding Preview.InTrash}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.InTrash, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ImportEmpty" Text="{Binding Preview.Empty}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.Empty, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ImportExtras" Text="{Binding Preview.Extras}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.Extras, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ImportHttpsAdded" Text="{Binding Preview.HttpsAdded}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.HttpsAdded, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ImportNamesDerived" Text="{Binding Preview.NamesDerived}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.NamesDerived, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ImportIgnoredColumns" Text="{Binding Preview.IgnoredColumns}" TextWrapping="Wrap" Classes="muted"
+                                       IsVisible="{Binding Preview.IgnoredColumns, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                            <CheckBox Name="CopyExtrasCheckBox" IsChecked="{Binding CopyExtrasToNotes}" IsEnabled="{Binding CanChangeImportChoices}"
+                                      Content="{Binding CopyExtrasText}" />
+                            <CheckBox Name="ImportDuplicatesCheckBox" IsChecked="{Binding ImportDuplicates}" IsEnabled="{Binding CanChangeImportChoices}"
+                                      Content="{Binding ImportDuplicatesText}" />
+
+                            <TextBlock Name="ImportApplyingProgress" Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsApplyingImport}"
+                                       AutomationProperties.LiveSetting="Polite" Text="Adding the logins to the vault…" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <!-- Enabled only while the preview above is the one the two choices ask for
+                                     (ConfirmImportCommand.CanExecute). Not the default button. -->
+                                <Button Name="ConfirmImportButton" Content="{Binding Preview.ConfirmText}" Command="{Binding ConfirmImportCommand}" />
+                                <Button Name="CancelImportButton" Content="Cancel"
+                                        AutomationProperties.Name="Cancel the import" Command="{Binding CancelImportCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Height="1" Background="#33888888" Margin="0,6" />
+
+                    <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                               Text="Export writes every login of this vault to a file that is not encrypted, for another password manager to read. It asks for your master password again. To keep a copy of your vault, use the encrypted backup above instead." />
+                    <Button Name="ExportUnencryptedButton" Content="Export unencrypted…" Command="{Binding OpenExportCommand}" HorizontalAlignment="Left" />
+
+                    <Border Name="ExportPanel" IsVisible="{Binding IsExportOpen}" Padding="12" CornerRadius="6" Background="#22CC3333">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="This file will NOT be encrypted." FontWeight="Bold" TextWrapping="Wrap" />
+                            <TextBlock Name="ExportWarning" Text="{Binding ExportWarning}" TextWrapping="Wrap" />
+
+                            <TextBlock Text="Format" Classes="muted" FontSize="12" />
+                            <RadioButton Name="ExportCsvRadio" GroupName="ExportFormat" IsChecked="{Binding IsExportCsv}"
+                                         AutomationProperties.Name="Export format: CSV" Content="CSV" />
+                            <RadioButton Name="ExportJsonRadio" GroupName="ExportFormat" IsChecked="{Binding IsExportJson}"
+                                         AutomationProperties.Name="Export format: BitosX JSON" Content="BitosX JSON" />
+                            <TextBlock Classes="muted" FontSize="12" TextWrapping="Wrap"
+                                       Text="CSV is the layout Chrome exports, which most password managers read; it holds one address for each item. BitosX JSON holds everything, every address included." />
+                            <TextBlock Name="ExportSeveralUrlsNote" Text="{Binding ExportSeveralUrlsNote}" TextWrapping="Wrap"
+                                       IsVisible="{Binding ExportSeveralUrlsNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+                            <CheckBox Name="ExportAcknowledgeCheckBox" IsChecked="{Binding ExportAcknowledged}"
+                                      Content="{Binding ExportAcknowledgementText}" />
+                            <controls:SecretBox Name="ExportPasswordBox" AutomationProperties.Name="Master password, to export the vault unencrypted"
+                                                PlaceholderText="Master password" Text="{Binding ExportPassword}" />
+                            <TextBlock Name="ExportProgress" Classes="muted" FontSize="12" TextWrapping="Wrap" IsVisible="{Binding IsExporting}"
+                                       AutomationProperties.LiveSetting="Polite" Text="Checking the master password and writing the file… this takes a few seconds." />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <!-- Disabled until the acknowledgement is ticked and a password is typed
+                                     (WriteExportCommand.CanExecute). Not the default button. -->
+                                <Button Name="WriteExportButton" Content="Export…" Command="{Binding WriteExportCommand}" />
+                                <Button Name="CancelExportButton" Content="Cancel"
+                                        AutomationProperties.Name="Cancel the export" Command="{Binding CancelExportCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Name="ExportStatus" Text="{Binding ExportStatus}" TextWrapping="Wrap" Classes="muted"
+                               AutomationProperties.LiveSetting="Polite"
+                               IsVisible="{Binding ExportStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                </StackPanel>
+            </Border>
+
             <Border Classes="card">
                 <StackPanel Spacing="10">
                     <TextBlock Text="Security" Classes="h2" />

@@ -112,10 +112,17 @@ public static class VaultValidation
             throw new VaultValidationException($"A URL must be at most {MaxUrlLength} characters.");
         }
 
-        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? parsed)
-            || (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps))
+        if (!IsValidUrl(url))
         {
             throw new VaultValidationException($"'{url}' is not a valid absolute http(s) URL.");
         }
     }
+
+    /// <summary>
+    /// Whether <paramref name="url"/> is an address an item may hold: an absolute http or https URL.
+    /// Says nothing about its length, which <see cref="MaxUrlLength"/> limits.
+    /// </summary>
+    public static bool IsValidUrl(string url)
+        => Uri.TryCreate(url, UriKind.Absolute, out Uri? parsed)
+            && (parsed.Scheme == Uri.UriSchemeHttp || parsed.Scheme == Uri.UriSchemeHttps);
 }

@@ -37,7 +37,7 @@ actually confirmed is marked `NOT VERIFIED`.
 | KDF parameter upper bounds (resource-exhaustion guard) | AUTOMATED TESTED | `Argon2idKeyDerivationTests`, `EncryptedVaultSerializerTests`, `VaultServiceTests`. |
 | Master password never persisted / logged / retained | VERIFIED | `VaultService` (wiped after use), `VaultLog` (no secret fields). |
 | Vault key wiped and released on lock | VERIFIED + AUTOMATED TESTED | `VaultService.Lock`, `VaultServiceTests` locking tests. |
-| Vault plaintext never written to disk | VERIFIED + AUTOMATED TESTED | `FileLocalVaultStorage` writes ciphertext only; `VaultPersistenceIntegrationTests` plaintext-leak check. |
+| Vault plaintext never written to disk | VERIFIED + AUTOMATED TESTED | `FileLocalVaultStorage` writes ciphertext only; `VaultPersistenceIntegrationTests` plaintext-leak check. Since 0.14.0 with one exception, which has to be asked for and needs the master password: an unencrypted export (see the section on 0.14.0). |
 | No accidental plaintext in the persisted file | AUTOMATED TESTED | `VaultPersistenceIntegrationTests` (per-field distinctive markers). |
 | Atomic write preserves prior vault on failure, leaves nothing behind | AUTOMATED TESTED | `FileLocalVaultStorageTests` (byte-for-byte comparison; directory listing). |
 | Oversized vault file rejected before large allocation | AUTOMATED TESTED | `FileLocalVaultStorageTests.Read_OversizedFile_FailsClosed`. |
@@ -637,6 +637,42 @@ On these figures new vaults are created with 256 MiB since this release; see
 | That flushing the directory makes a rename survive a power loss | Only that the flush succeeds |
 | The file dialogs of Linux and macOS | The application has not been started there |
 | That Windows keeps a copied secret out of its clipboard history, for this release | `tools/BitosX.ClipboardProbe` ran on Windows Server 2025, where the history is turned off: its 16 other checks passed and the two of the history were left out. They were last made on a desktop with the history turned on for 0.6.0; the code they exercise is unchanged |
+
+## Import and export (0.14.0) — automated tested on Linux; not run in a real window
+
+Two things first, plainly:
+
+- **The files the import was tested with were written by hand, from reading the source code of the
+  programs that export them.** They are not files produced by running Chrome, Firefox, Bitwarden,
+  KeePassXC or KeePass, and **no real export from any of those programs has been imported.** What
+  was verified is that BitosX reads what those programs' source code says they write (the sources,
+  with the commits read, are in [IMPORT_EXPORT.md](IMPORT_EXPORT.md) §15).
+- **Nothing of this was run on Windows or macOS.** The suite ran on Linux only (in a container, as
+  root) when 0.14.0 was written; the CI that runs it on all three systems had not run for this
+  change. Nobody looked at a window, and the application was not started.
+
+| Item | Status | Evidence |
+|---|---|---|
+| Reading a file: the size limit, UTF-8 and byte order marks, which format it is; CSV syntax, column names in their order, the headers that have a label, KeePass 1.x quoting; Bitwarden's JSON; KeePass 2 XML; BitosX's JSON | AUTOMATED TESTED | `ImportParserTests`, `ImportTextTests`, `CsvRecordReaderTests`, `CsvImportTests`, `JsonImportTests`, `KeePassXmlImportTests` (`BitosX.Core.Tests`). |
+| Hostile files are refused as a whole: 16 MiB and one byte, 10,001 entries, a document type declaration (external, with entities, in a comment), protected values, groups 65 and elements 101 deep, JSON 65 deep, a name twice, half a surrogate pair, invalid UTF-8, UTF-16. One pass: a value of 15 MiB, half a million columns, 600,000 records and 80,000 strings of one entry within fixed times | AUTOMATED TESTED | The same classes; the fixtures `refused-*` and `generated-*`. With the XML depth guard and the DOCTYPE scan taken out, 17 tests fail. |
+| From an entry to an item: trimming, web addresses and other addresses, the host rule, derived names, every limit with its reason and their order, extras copied into the notes, duplicates | AUTOMATED TESTED | `ImportAddressesTests`, `ImportPlanTests`. |
+| Several items are added in one write, or none; a vault file that would be larger than 16 MiB is not written and the session keeps what it had | AUTOMATED TESTED | `VaultServiceBulkAddTests`, `VaultTests`, `VaultSizeLimitTests`, `FileLocalVaultStorageTests`. |
+| The master password is verified before an export, against the stored vault; a wrong one writes nothing and leaves a file at the destination as it was; a lock stops it | AUTOMATED TESTED | `VaultServiceVerifyPasswordTests`, `ImportExportServiceTests`. |
+| The two export formats, byte for byte; an export read back into its vault adds nothing | AUTOMATED TESTED | `VaultExporterTests`, `ConformanceFixtureTests`. |
+| An export file: written atomically, readable by its owner only, never over the vault file | AUTOMATED TESTED on Linux | `FileImportExportFilesTests`. The mode is a Unix matter; on Windows the file has the permissions of its folder, which was not looked at. |
+| The specification's tables are what the code does; every expected file of the fixtures is what the library produces | AUTOMATED TESTED | `ImportSpecificationTests`, `ConformanceFixtureTests` (44 expected files compared byte for byte). |
+| The card: the preview and each of its lines, the two choices asking for it again, nothing importable while a preview is on its way or the vault would hold more than 10,000 items, refusals in their fixed words, no text of an exception anywhere, the export impossible without the box and a password, a wrong password writing nothing, the password box emptied after every attempt, the dialog first and one check | AUTOMATED TESTED | `ImportExportViewModelTests` (63), on the real services and real files. |
+| Nothing bound to the page holds a secret of the file; what was read is let go of after an import, a cancel, a lock and a dispose | AUTOMATED TESTED | `ImportExportViewModelTests.WhatIsBound_…` (every text a binding can reach, searched), `…AssertLetGoOfAsync` (the parsed file must be collected; with the two fields no longer cleared, five tests fail); `ImportExportUiTests.WhatCannotBeImported_…` (every text, tooltip and accessibility name of the window). |
+| The same on the real Settings view and on the whole application, without a display: an import from choosing a file to the vault page; an export behind the master password; every way the vault locks (Lock now, the lock button, the workstation, sleep, inactivity, an unexpected error, a restored backup) closes both, and the next unlock starts from nothing; the card laid out at both window sizes; every input named | AUTOMATED TESTED | `ImportExportUiTests` (9), `ImportExportChecklistTests` (13). The file dialogs are stood in for. |
+| An import is a change the next sync uploads, exactly as a login added by hand is; a preview and an export are not changes | AUTOMATED TESTED | `ImportExportChecklistTests.AnImport_IsAChangeTheNextSyncUploads_…`, with a scripted server. |
+| The same against a real API and database: one device imports, its next sync uploads one revision, the other device takes it and holds the logins | AUTOMATED TESTED (live) | `SyncLiveTests.LoginsImportedOnOneDevice_…`, run on 2026-11-11 against the local stack of bitosx-api (`main` at `ede3a07`), together with the other fourteen live tests: all 15 passed. |
+| The desktop and the web vault's address rule agree on every address in the fixtures; a derived name is the same when the rule is written a second time from the specification | VERIFIED (2026-11-10) | Each address of the 44 expected files held against the host rule rewritten in JavaScript from the text of the specification, with Node 22's `URL`; each derived name likewise. Scripts outside the repository. This is not the web vault's code. |
+| **Exports produced by the programs themselves** (Chrome, Edge, Firefox, Bitwarden, KeePassXC, KeePass) | **NOT VERIFIED** | See above: the inputs were written from the exporters' source code. |
+| 1Password's CSV; Edge (assumed to be Chromium's); Safari's and LastPass's CSV (known from other programs' importers only) | **NOT VERIFIED** | [IMPORT_EXPORT.md](IMPORT_EXPORT.md) §15.2. |
+| **Windows and macOS** | **NOT VERIFIED** | Not run there. That includes the rename that puts an export in place on Windows, and what a save dialog of Windows or macOS does with the suggested name and the extension. |
+| **A real window, and the file dialogs of an operating system** | **NOT VERIFIED** | `tools/BitosX.GuiCheck` has no step for import or export: it cannot be run here, so a step could not have been tried before it was relied on. Its existing steps are unchanged, and it compiles. `AvaloniaFilePicker.PickImportOpenAsync` and `PickExportSaveAsync` have never opened a dialog. |
+| What an export leaves behind when the application or the machine dies while it is written | VERIFIED by reading; not tested | A temporary file with plaintext passwords stays in the destination folder and nothing removes it ([THREAT_MODEL.md](THREAT_MODEL.md) #29). |
+| The web vault arriving at the same results | Not in this repository | The fixtures in `tests/fixtures/import` are what it is held to. |
 
 ## Encrypted sync (0.9.0) — automated tested
 

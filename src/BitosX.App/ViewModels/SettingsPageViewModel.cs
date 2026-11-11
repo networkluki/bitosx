@@ -15,6 +15,7 @@ using CommunityToolkit.Mvvm.Input;
 namespace BitosX.App.ViewModels;
 
 /// <summary>The Settings page: environment/security information plus auto-lock preferences.</summary>
+/// <remarks>Import and export have a card and a view model of their own: <see cref="ImportExport"/>.</remarks>
 public sealed partial class SettingsPageViewModel : ViewModelBase, IDisposable
 {
     private readonly IVaultService _vaultService;
@@ -30,6 +31,12 @@ public sealed partial class SettingsPageViewModel : ViewModelBase, IDisposable
     private bool _loading;
 
     public string VaultLocation { get; }
+
+    /// <summary>
+    /// Importing logins from a file, and exporting the vault unencrypted; see
+    /// <see cref="ImportExportViewModel"/>. It belongs to this page and is disposed of with it.
+    /// </summary>
+    public ImportExportViewModel ImportExport { get; }
 
     /// <summary>The key-derivation settings of the vault that is open.</summary>
     [ObservableProperty]
@@ -199,8 +206,10 @@ public sealed partial class SettingsPageViewModel : ViewModelBase, IDisposable
         ISystemSessionEvents sessionEvents,
         IVaultBackupService backupService,
         IFilePicker filePicker,
-        IKeyDerivationBenchmark benchmark)
+        IKeyDerivationBenchmark benchmark,
+        ImportExportViewModel importExport)
     {
+        ImportExport = importExport ?? throw new ArgumentNullException(nameof(importExport));
         _vaultService = vaultService;
         _settingsStore = settingsStore;
         _autoLock = autoLock;
@@ -334,12 +343,22 @@ public sealed partial class SettingsPageViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
+    /// Called when the page is shown, the first time and every time it is come back to: what depends
+    /// on the items of the vault, which another page may have changed, is looked at again.
+    /// </summary>
+    public void Refresh() => ImportExport.Refresh();
+
+    /// <summary>
     /// Waits briefly for a write still in flight, and writes a change still queued behind it, so that
     /// locking or closing right after a change does not lose it. Only the write itself is waited for,
     /// never the UI-thread part of the save loop (which runs on the thread that is waiting here).
     /// </summary>
     public void Dispose()
     {
+        // First, and whatever else happens here: what an import read from a file, and what was typed
+        // for an export, is let go of.
+        ImportExport.Dispose();
+
         try
         {
             _lastWrite.Wait(TimeSpan.FromSeconds(2));

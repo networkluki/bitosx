@@ -160,7 +160,9 @@ It describes the current **local vault** milestone. No marketing claims are made
 
 - **Persisted:** only the encrypted, versioned vault (ciphertext + public parameters), and, once
   synced, the sync record next to it (the server's address, the account id, a revision number and
-  the SHA-256 of the server's and of the local vault file).
+  the SHA-256 of the server's and of the local vault file). **And, only when it is asked for and
+  after the master password: an unencrypted export**, at the place the user chooses — the one case
+  in which BitosX writes vault contents to disk in plain text ([IMPORT_EXPORT.md](IMPORT_EXPORT.md)).
 - **In memory while unlocked:** the decrypted vault, the vault key (byte buffer, wiped on lock
   and on shutdown), transiently the master password bytes during create/unlock (wiped after
   use), and, while signed in, the account's access and refresh tokens (dropped on sign-out, on
@@ -174,7 +176,11 @@ It describes the current **local vault** milestone. No marketing claims are made
   finishes on a private copy of the key, which is wiped, and never puts key material back into
   the locked service.
 - **Never persisted or logged:** master password, item passwords, secure notes, encryption keys,
-  decrypted contents, the account password, the account tokens.
+  decrypted contents, the account password, the account tokens. The one exception to "persisted" is
+  the unencrypted export above; nothing of an import file or of an export is ever logged.
+- **While a file is being imported:** its bytes are wiped once parsed; its logins are held as text
+  until they are imported, the import is called off, or the vault locks, and are never given to
+  the page.
 
 See [THREAT_MODEL.md](THREAT_MODEL.md) for a threat-by-threat breakdown and
 [CRYPTOGRAPHY.md](CRYPTOGRAPHY.md) for algorithm details.

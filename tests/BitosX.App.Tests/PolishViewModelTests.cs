@@ -206,7 +206,8 @@ public sealed class PolishViewModelTests : IDisposable
             new NullSystemSessionEvents(),
             new FakeVaultBackupService(),
             files,
-            new FakeKeyDerivationBenchmark());
+            new FakeKeyDerivationBenchmark(),
+            ImportExportCard.NotUsed(vault));
         return (vm, vault, files);
     }
 
@@ -252,7 +253,8 @@ public sealed class PolishViewModelTests : IDisposable
         var vm = new SettingsPageViewModel(
             vault, new FileLocalVaultStorage(Path.Combine(_tempDir, "vault.bitosx")), new FakeClipboardService(), new LocalOnlyApiClient(),
             Argon2Parameters.Default, store, new AutoLockService(controller, new NullSystemSessionEvents()),
-            new NullSystemSessionEvents(), new FakeVaultBackupService(), new FakeFilePicker(), new FakeKeyDerivationBenchmark());
+            new NullSystemSessionEvents(), new FakeVaultBackupService(), new FakeFilePicker(), new FakeKeyDerivationBenchmark(),
+            ImportExportCard.NotUsed(vault));
 
         // A thread of its own stands in for the UI thread: it is not a pool thread, so a write on it shows.
         var ui = new Thread(() =>
@@ -301,7 +303,8 @@ public sealed class PolishViewModelTests : IDisposable
         var vm = new SettingsPageViewModel(
             vault, new FileLocalVaultStorage(Path.Combine(_tempDir, "vault.bitosx")), new FakeClipboardService(), server,
             Argon2Parameters.Default, new FakeAppSettingsStore(), new AutoLockService(controller, new NullSystemSessionEvents()),
-            new NullSystemSessionEvents(), new FakeVaultBackupService(), new FakeFilePicker(), new FakeKeyDerivationBenchmark());
+            new NullSystemSessionEvents(), new FakeVaultBackupService(), new FakeFilePicker(), new FakeKeyDerivationBenchmark(),
+            ImportExportCard.NotUsed(vault));
 
         Assert.Contains("encrypted file", vm.ServerIntegrationDescription, StringComparison.Ordinal);
         Assert.DoesNotContain("your vault never", vm.ServerIntegrationDescription, StringComparison.Ordinal);
@@ -334,6 +337,8 @@ public sealed class PolishViewModelTests : IDisposable
         public Task RotateVaultKeyAsync(string currentPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task StrengthenKeyDerivationAsync(string currentPassword, Argon2Parameters newParameters, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<LoginItem>> AddLoginsAsync(Func<IReadOnlyList<VaultItem>, IReadOnlyList<LoginItem>> chooseItems, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<VaultItem>> VerifyMasterPasswordAsync(string currentPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<VaultItem> UpdateItemAsync(VaultItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task DeleteItemAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<VaultItem> ToggleFavoriteAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
