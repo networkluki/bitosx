@@ -52,6 +52,23 @@
                         </Grid>
                     </StackPanel>
 
+                    <!-- The authenticator key is as secret as the password: masked unless shown, and the
+                         box tells the accessibility interface only what it shows (SecretBox). The
+                         error under it is a fixed text that never quotes what was typed. -->
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="{Binding TotpLabel}" />
+                        <Grid ColumnDefinitions="*,Auto">
+                            <controls:SecretBox Name="TotpBox" AutomationProperties.Name="Authenticator key" Grid.Column="0"
+                                                Text="{Binding TotpText}" RevealPassword="{Binding IsTotpVisible}" />
+                            <Button Name="RevealTotpButton" Grid.Column="1" Content="{Binding TotpToggleText}" Margin="6,0,0,0"
+                                    Command="{Binding ToggleTotpVisibilityCommand}" ToolTip.Tip="Show or hide the authenticator key" />
+                        </Grid>
+                        <TextBlock Name="TotpError" Text="{Binding TotpError}" Classes="error" TextWrapping="Wrap"
+                                   AutomationProperties.LiveSetting="Polite"
+                                   IsVisible="{Binding HasTotpError}" />
+                        <TextBlock Name="TotpHint" Text="{Binding TotpHint}" Classes="muted" FontSize="12" TextWrapping="Wrap" />
+                    </StackPanel>
+
                     <StackPanel Spacing="5">
                         <TextBlock Text="URLs (one per line)" />
                         <TextBox Name="UrlsBox" AutomationProperties.Name="URLs, one per line" Text="{Binding UrlsText}" AcceptsReturn="True" Height="66"

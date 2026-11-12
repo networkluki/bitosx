@@ -254,6 +254,10 @@
                                        IsVisible="{Binding Preview.InTrash, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <TextBlock Name="ImportEmpty" Text="{Binding Preview.Empty}" TextWrapping="Wrap"
                                        IsVisible="{Binding Preview.Empty, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ImportAuthenticatorKeys" Text="{Binding Preview.AuthenticatorKeys}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.AuthenticatorKeys, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ImportUnreadableKeys" Text="{Binding Preview.UnreadableKeys}" TextWrapping="Wrap"
+                                       IsVisible="{Binding Preview.UnreadableKeys, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <TextBlock Name="ImportExtras" Text="{Binding Preview.Extras}" TextWrapping="Wrap"
                                        IsVisible="{Binding Preview.Extras, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <TextBlock Name="ImportHttpsAdded" Text="{Binding Preview.HttpsAdded}" TextWrapping="Wrap"
@@ -300,6 +304,8 @@
                                        Text="CSV is the layout Chrome exports, which most password managers read; it holds one address for each item. BitosX JSON holds everything, every address included." />
                             <TextBlock Name="ExportSeveralUrlsNote" Text="{Binding ExportSeveralUrlsNote}" TextWrapping="Wrap"
                                        IsVisible="{Binding ExportSeveralUrlsNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ExportKeysNote" Text="{Binding ExportKeysNote}" TextWrapping="Wrap"
+                                       IsVisible="{Binding ExportKeysNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                             <CheckBox Name="ExportAcknowledgeCheckBox" IsChecked="{Binding ExportAcknowledged}"
                                       Content="{Binding ExportAcknowledgementText}" />

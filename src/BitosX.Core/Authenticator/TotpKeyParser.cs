@@ -65,6 +65,24 @@ public static class TotpKeyParser
     }
 
     /// <summary>
+    /// The text the editor shows for a stored key: the secret alone when the key has the defaults
+    /// (SHA1, 6 digits, 30 seconds), and otherwise an <c>otpauth://totp/</c> link without a label
+    /// that carries the other three. <see cref="Parse"/> reads either back to the same key.
+    /// </summary>
+    public static string ToText(TotpKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        if (key is { Algorithm: TotpAlgorithm.Sha1, Digits: 6, Period: 30 })
+        {
+            return key.Secret;
+        }
+
+        return string.Create(
+            System.Globalization.CultureInfo.InvariantCulture,
+            $"otpauth://totp/?secret={key.Secret}&algorithm={TotpTexts.AlgorithmName(key.Algorithm)}&digits={key.Digits}&period={key.Period}");
+    }
+
+    /// <summary>
     /// Reads the key KeePass 2 keeps in an entry's strings (docs/IMPORT_EXPORT.md §5.3):
     /// <c>TimeOtp-Secret-Base32</c> and, each optional, <c>TimeOtp-Algorithm</c>,
     /// <c>TimeOtp-Length</c> and <c>TimeOtp-Period</c>. The secret is read by §3.1's first two

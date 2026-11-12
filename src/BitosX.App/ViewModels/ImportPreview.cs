@@ -120,11 +120,31 @@ public sealed class ImportPreview
                 : string.Create(Culture, $"{Number(plan.EmptyEntries)} entries have nothing in them and are passed over.");
         }
 
-        if (plan.Extras.Count > 0)
+        if (plan.TotpKeys > 0)
+        {
+            AuthenticatorKeys = plan.TotpKeys == 1
+                ? "1 login brings an authenticator key, which is imported with it."
+                : string.Create(Culture, $"{Number(plan.TotpKeys)} logins bring an authenticator key, which is imported with them.");
+        }
+
+        if (plan.TotpUnreadable > 0)
+        {
+            // Said here rather than among the extras below: from a KeePass file such a key is in
+            // custom fields, which the extras count as such.
+            bool one = plan.TotpUnreadable == 1;
+            UnreadableKeys = (one
+                    ? "1 authenticator key could not be read."
+                    : string.Create(Culture, $"{Number(plan.TotpUnreadable)} authenticator keys could not be read."))
+                + (plan.Options.CopyExtrasToNotes
+                    ? (one ? " Its text is copied into the notes." : " Their text is copied into the notes.")
+                    : (one ? " It is" : " They are") + " left out, unless you choose below to copy what BitosX has no field for into the notes.");
+        }
+
+        if (plan.Extras.Keys.Any(kind => kind != ImportExtraKind.Totp))
         {
             Extras = "BitosX has no field for some of what these logins hold — "
                 + string.Join("; ", Enum.GetValues<ImportExtraKind>()
-                    .Where(plan.Extras.ContainsKey)
+                    .Where(kind => kind != ImportExtraKind.Totp && plan.Extras.ContainsKey(kind))
                     .Select(kind => string.Create(Culture, $"{ImportTexts.Text(kind)}: {Number(plan.Extras[kind])}")))
                 + (plan.Options.CopyExtrasToNotes
                     ? ". It is copied into each item's notes."
@@ -198,6 +218,12 @@ public sealed class ImportPreview
 
     /// <summary>What the logins hold that BitosX has no field for, by kind, and what becomes of it.</summary>
     public string? Extras { get; }
+
+    /// <summary>How many logins bring an authenticator key.</summary>
+    public string? AuthenticatorKeys { get; }
+
+    /// <summary>How many authenticator keys could not be read, and what becomes of their text.</summary>
+    public string? UnreadableKeys { get; }
 
     /// <summary>How many addresses are given <c>https://</c>.</summary>
     public string? HttpsAdded { get; }

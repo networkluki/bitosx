@@ -1,3 +1,5 @@
+using System.Globalization;
+using BitosX.Core.Authenticator;
 using BitosX.Core.Domain;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -34,6 +36,8 @@ public sealed partial class LoginItemViewModel : ViewModelBase
 
     public string CopyPasswordLabel => $"Copy the password of {Name}";
 
+    public string CopyCodeLabel => $"Copy the authenticator code of {Name}";
+
     public string EditLabel => $"Edit {Name}";
 
     public string DeleteLabel => $"Delete {Name}";
@@ -43,6 +47,30 @@ public sealed partial class LoginItemViewModel : ViewModelBase
     public string ConfirmDeleteLabel => $"Delete {Name} for good";
     public string? PrimaryUrl => Model.Urls.Count > 0 ? Model.Urls[0] : null;
     public bool HasPassword => !string.IsNullOrEmpty(Model.Password);
+
+    /// <summary>Whether the login has an authenticator key. The key itself is never shown here.</summary>
+    public bool HasTotp => Model.Totp is not null;
+
+    /// <summary>
+    /// The current authenticator code, grouped (docs/TOTP.md §4), or <see langword="null"/> while
+    /// none is shown: before the first tick, and once the vault locks.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCodeShown))]
+    public partial string? CodeDisplay { get; private set; }
+
+    /// <summary>"N s left" for the code shown, or <see langword="null"/>.</summary>
+    [ObservableProperty]
+    public partial string? CodeSecondsLeft { get; private set; }
+
+    public bool IsCodeShown => CodeDisplay is not null;
+
+    /// <summary>Shows <paramref name="code"/>, or clears what is shown when it is <see langword="null"/>.</summary>
+    internal void ShowCode(TotpCode? code)
+    {
+        CodeDisplay = code?.Display;
+        CodeSecondsLeft = code is null ? null : string.Create(CultureInfo.InvariantCulture, $"{code.SecondsLeft} s left");
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DisplayedPassword))]

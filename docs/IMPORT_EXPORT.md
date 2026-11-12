@@ -1099,8 +1099,14 @@ by the specification:
 - At most 200 entries that cannot be imported are listed; the rest are counted ("… and N more.").
   At most 10 ignored columns are named, each cut to 40 characters.
 
+**Authenticator keys (0.15.0).** The preview says how many logins bring a key ("N logins bring an
+authenticator key, which is imported with them.") and how many keys could not be read, and what
+becomes of their text. A key that could not be read from text is not listed again among the
+extras.
+
 **Export.** "Export unencrypted…" opens the warning and the box of §11.3, the choice of format
-(CSV at first), the number of items with more than one address, and a box for the master password.
+(CSV at first), the number of items with more than one address, the number of items with an
+authenticator key (which a CSV file does not hold), and a box for the master password.
 The button is disabled until the box is ticked and a password is typed. **The save dialog comes
 first; then one call checks the password and writes the file** (`IVaultExportService.ExportAsync`).
 So the key is derived once for an export and not at all for one that is called off in the dialog,

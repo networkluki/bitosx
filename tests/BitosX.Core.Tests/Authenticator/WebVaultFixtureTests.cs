@@ -59,9 +59,10 @@ public sealed class WebVaultFixtureTests
         Assert.Equal(3, logins.Where(l => l.Totp is not null).Select(l => l.Totp!.Digits).Distinct().Count());
         Assert.Equal(3, logins.Where(l => l.Totp is not null).Select(l => l.Totp!.Period).Distinct().Count());
 
-        foreach (JsonNode? expected in meta["totpCodes"]!.AsArray())
+        foreach (JsonNode? node in meta["totpCodes"]!.AsArray())
         {
-            LoginItem login = logins.Single(l => l.Id == Guid.Parse(expected!["id"]!.GetValue<string>()));
+            JsonNode expected = node!;
+            LoginItem login = logins.Single(l => l.Id == Guid.Parse(expected["id"]!.GetValue<string>()));
             TotpCode code = TotpGenerator.Generate(login.Totp!, expected["unixSeconds"]!.GetValue<long>());
             Assert.Equal(expected["code"]!.GetValue<string>(), code.Code);
             Assert.Equal(expected["display"]!.GetValue<string>(), code.Display);

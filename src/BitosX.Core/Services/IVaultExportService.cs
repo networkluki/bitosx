@@ -29,4 +29,7 @@ public interface IVaultExportService
 /// How many of them have more than one address. In a CSV export only the first address of each is
 /// in the file.
 /// </param>
-public sealed record ExportResult(ExportFormat Format, int ItemCount, int ItemsWithSeveralUrls);
+/// <param name="ItemsWithAuthenticatorKeys">
+/// How many of them have an authenticator key. A CSV export holds none of the keys.
+/// </param>
+public sealed record ExportResult(ExportFormat Format, int ItemCount, int ItemsWithSeveralUrls, int ItemsWithAuthenticatorKeys = 0);

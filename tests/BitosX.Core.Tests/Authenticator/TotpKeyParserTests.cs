@@ -197,3 +197,18 @@ public sealed class TotpSpecificationTests
         Assert.Contains($"> {TotpTexts.ClockNote}", specification, StringComparison.Ordinal);
     }
 }
+
+public sealed class TotpKeyTextTests
+{
+    [Theory]
+    [InlineData("GEZDGNBVGY3TQOJQ", TotpAlgorithm.Sha1, 6, 30, "GEZDGNBVGY3TQOJQ")]
+    [InlineData("GEZDGNBVGY3TQOJQ", TotpAlgorithm.Sha256, 8, 60, "otpauth://totp/?secret=GEZDGNBVGY3TQOJQ&algorithm=SHA256&digits=8&period=60")]
+    [InlineData("GEZDGNBVGY3TQOJQ", TotpAlgorithm.Sha1, 7, 30, "otpauth://totp/?secret=GEZDGNBVGY3TQOJQ&algorithm=SHA1&digits=7&period=30")]
+    [InlineData("GEZDGNBVGY3TQOJQ", TotpAlgorithm.Sha512, 6, 1, "otpauth://totp/?secret=GEZDGNBVGY3TQOJQ&algorithm=SHA512&digits=6&period=1")]
+    public void ToText_ReadsBackAsTheSameKey(string secret, TotpAlgorithm algorithm, int digits, int period, string expected)
+    {
+        var key = new TotpKey { Secret = secret, Algorithm = algorithm, Digits = digits, Period = period };
+        Assert.Equal(expected, TotpKeyParser.ToText(key));
+        Assert.Equal(key, TotpKeyParser.Parse(TotpKeyParser.ToText(key)).Key);
+    }
+}

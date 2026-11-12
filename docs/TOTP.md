@@ -169,6 +169,37 @@ shows the code, never the key. Nothing is computed or shown while the vault is l
 stops every timer and clears what was shown. See [THREAT_MODEL.md](THREAT_MODEL.md) for what it
 means to keep both factors in one vault.
 
+### 5.1 The desktop (0.15.0)
+
+None of this is a rule for the other client; it says how the desktop carries out the rules above.
+
+- **Editor** (`LoginEditorViewModel`, `LoginEditorView`): the field "Authenticator key", below the
+  password, is a `SecretBox` — masked, and telling the accessibility interface only the dots — with
+  a Show/Hide button and the hint of §6. What is typed is read by §3 as it is typed; a refusal shows
+  its fixed text under the field and the login cannot be saved. Removing the text removes the key.
+  An existing key is put into the field as text that reads back to the same key: the secret alone
+  for SHA1/6/30, otherwise `otpauth://totp/?secret=…&algorithm=…&digits=…&period=…`
+  (`TotpKeyParser.ToText`), so that saving without touching it never changes the key.
+- **Vault page** (`VaultPageViewModel`, `LoginItemViewModel`): a card whose login has a key shows the
+  current code (grouped, §4), "N s left", and a "Copy code" button. The note on the clock (§4) is
+  shown once, above the list, when a login has a key. One timer of one second
+  (`TimeProvider.CreateTimer`) updates the codes on the UI thread; it runs only while the vault is
+  unlocked and a login has a key, and only the cards the search shows get a code. Copying computes
+  the code of that moment — not the one on screen, which can be a second old — and puts the digits
+  on the clipboard through the sensitive clipboard service (excluded from clipboard history and
+  cloud sync where the platform allows, and cleared after the delay), with the status
+  "Authenticator code copied. Clipboard clears in 30s."
+- **Locking** — by hand, by the timer, by the system, after an unexpected error — changes the vault's
+  state, on which the page stops the timer and clears every code shown at once; the shell then lets
+  go of the page, which does the same again. Nothing is computed while the vault is locked, and a
+  copy asked for then copies nothing.
+- **Import and export** (Settings): the preview says how many logins bring a key and how many keys
+  could not be read; the export says, before a CSV file is chosen and after it is written, how many
+  items have a key that the file does not hold.
+- The key is never in a tooltip, a status text, an accessibility name or the log; the decoded secret
+  and the HMAC are wiped after each code (`TotpGenerator`). The secret as text cannot be wiped, as
+  no text can ([SECURITY_MODEL.md](SECURITY_MODEL.md)).
+
 ## 6. Codes and texts
 
 The codes are what the fixtures spell. The texts are fixed, the same in both clients, shown under

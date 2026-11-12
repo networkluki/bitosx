@@ -1,4 +1,5 @@
 using BitosX.App.Services;
+using BitosX.Core.Authenticator;
 using BitosX.Core.Domain;
 using BitosX.Core.Generation;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -45,6 +46,38 @@ public sealed partial class LoginEditorViewModel : ViewModelBase
     /// <summary>What the button next to the password does when pressed.</summary>
     public string PasswordToggleText => IsPasswordVisible ? "Hide" : "Show";
 
+    /// <summary>
+    /// The authenticator key as typed: base32, or an <c>otpauth://</c> link (docs/TOTP.md §3). Empty
+    /// means no key. It is held only while the editor is open, and is masked unless shown.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TotpError))]
+    [NotifyPropertyChangedFor(nameof(HasTotpError))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    public partial string TotpText { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TotpToggleText))]
+    public partial bool IsTotpVisible { get; set; }
+
+    /// <summary>What the button next to the authenticator key does when pressed.</summary>
+    public string TotpToggleText => IsTotpVisible ? "Hide" : "Show";
+
+    /// <summary>The label of the authenticator key's field.</summary>
+    public string TotpLabel { get; } = TotpTexts.FieldLabel;
+
+    /// <summary>The hint under the authenticator key's field.</summary>
+    public string TotpHint { get; } = TotpTexts.FieldHint;
+
+    /// <summary>
+    /// Why the authenticator key as typed is not one, in the fixed words of docs/TOTP.md §6; or
+    /// <see langword="null"/> when it is one, or is empty. Never quotes what was typed. While it is
+    /// set, the login cannot be saved.
+    /// </summary>
+    public string? TotpError => TotpKeyParser.Parse(TotpText).Refusal is { } refusal ? TotpTexts.Text(refusal) : null;
+
+    public bool HasTotpError => TotpError is not null;
+
     [ObservableProperty]
     public partial string? ErrorMessage { get; set; }
 
@@ -74,6 +107,7 @@ public sealed partial class LoginEditorViewModel : ViewModelBase
             UrlsText = string.Join(Environment.NewLine, existing.Urls);
             Notes = existing.Notes ?? string.Empty;
             Favorite = existing.Favorite;
+            TotpText = existing.Totp is { } key ? TotpKeyParser.ToText(key) : string.Empty;
         }
     }
 
@@ -88,7 +122,10 @@ public sealed partial class LoginEditorViewModel : ViewModelBase
     [RelayCommand]
     private void TogglePasswordVisibility() => IsPasswordVisible = !IsPasswordVisible;
 
-    private bool CanSave() => !IsBusy && !string.IsNullOrWhiteSpace(Name);
+    [RelayCommand]
+    private void ToggleTotpVisibility() => IsTotpVisible = !IsTotpVisible;
+
+    private bool CanSave() => !IsBusy && !string.IsNullOrWhiteSpace(Name) && !HasTotpError;
 
     [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync()
@@ -129,6 +166,9 @@ public sealed partial class LoginEditorViewModel : ViewModelBase
             Notes = string.IsNullOrWhiteSpace(Notes) ? null : Notes,
             Favorite = Favorite,
             Urls = urls,
+
+            // Empty text is no key: removing the text removes the key.
+            Totp = TotpKeyParser.Parse(TotpText).Key,
         };
     }
 }

@@ -485,6 +485,10 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     public partial string? ExportSeveralUrlsNote { get; private set; }
 
+    /// <summary>How many items have an authenticator key, and that only the JSON file holds keys.</summary>
+    [ObservableProperty]
+    public partial string? ExportKeysNote { get; private set; }
+
     /// <summary>The acknowledgement that the file is not encrypted. Without it nothing is written.</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(WriteExportCommand))]
@@ -670,6 +674,16 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
             1 => "1 item in this vault has more than one address." + OnlyJson,
             _ => string.Create(CultureInfo.CurrentCulture, $"{count:N0} items in this vault have more than one address.{OnlyJson}"),
         };
+
+        // Authenticator keys, like further addresses, are only in the JSON file (docs/IMPORT_EXPORT.md §11.1).
+        int keys = VaultExporter.CountItemsWithAuthenticatorKeys(_vault.Items);
+        const string KeysOnlyJson = " A CSV file holds no authenticator keys; only the JSON file keeps them.";
+        ExportKeysNote = keys switch
+        {
+            0 => null,
+            1 => "1 item in this vault has an authenticator key." + KeysOnlyJson,
+            _ => string.Create(CultureInfo.CurrentCulture, $"{keys:N0} items in this vault have an authenticator key.{KeysOnlyJson}"),
+        };
     }
 
     private static string Extension(ExportFormat format) => format == ExportFormat.BitosXJson ? "json" : "csv";
@@ -686,6 +700,15 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
                 : string.Create(
                     CultureInfo.CurrentCulture,
                     $" {result.ItemsWithSeveralUrls:N0} items have more than one address; the file holds only the first of each.");
+        }
+
+        if (result.Format == ExportFormat.Csv && result.ItemsWithAuthenticatorKeys > 0)
+        {
+            text += result.ItemsWithAuthenticatorKeys == 1
+                ? " 1 item has an authenticator key, which the file does not hold."
+                : string.Create(
+                    CultureInfo.CurrentCulture,
+                    $" {result.ItemsWithAuthenticatorKeys:N0} items have an authenticator key, which the file does not hold.");
         }
 
         return text;
@@ -735,6 +758,7 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
         CloseExport();
         ExportStatus = null;
         ExportSeveralUrlsNote = null;
+        ExportKeysNote = null;
     }
 
     public void Dispose()

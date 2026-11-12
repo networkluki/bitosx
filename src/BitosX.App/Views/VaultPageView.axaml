@@ -26,6 +26,10 @@
                        AutomationProperties.LiveSetting="Polite"
                        IsVisible="{Binding StatusMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
 
+            <!-- Authenticator codes come from this device's clock (docs/TOTP.md §4). -->
+            <TextBlock Name="ClockNote" DockPanel.Dock="Top" Text="{Binding ClockNote}" Classes="muted" FontSize="12"
+                       TextWrapping="Wrap" Margin="0,0,0,8" IsVisible="{Binding HasAuthenticatorCodes}" />
+
             <TextBlock Name="EmptyVaultNote" DockPanel.Dock="Top" Classes="muted" Margin="0,20,0,0"
                        Text="No logins yet. Click “Add login” to create your first entry."
                        IsVisible="{Binding IsVaultEmpty}" />
@@ -67,6 +71,14 @@
                                         <TextBlock Name="ItemPassword" Text="{Binding DisplayedPassword}" FontFamily="Cascadia Code,Consolas,monospace"
                                                    FontSize="13" Margin="0,3,0,0" TextWrapping="Wrap"
                                                    IsVisible="{Binding HasPassword}" />
+                                        <!-- The current authenticator code; never the key. Cleared when the vault locks. -->
+                                        <StackPanel Name="ItemCode" Orientation="Horizontal" Spacing="8" Margin="0,3,0,0"
+                                                    IsVisible="{Binding IsCodeShown}">
+                                            <TextBlock Name="ItemCodeText" Text="{Binding CodeDisplay}" FontFamily="Cascadia Code,Consolas,monospace"
+                                                       FontSize="15" FontWeight="SemiBold" />
+                                            <TextBlock Name="ItemCodeSecondsLeft" Text="{Binding CodeSecondsLeft}" Classes="muted" FontSize="12"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
                                     </StackPanel>
 
                                     <!-- Deleting cannot be undone, so it is asked for twice. -->
@@ -102,6 +114,11 @@
                                                 AutomationProperties.Name="{Binding CopyPasswordLabel}"
                                                 IsVisible="{Binding HasPassword}"
                                                 Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CopyPasswordCommand}"
+                                                CommandParameter="{Binding}" />
+                                        <Button Name="CopyCodeButton" Content="Copy code" Margin="4,2"
+                                                AutomationProperties.Name="{Binding CopyCodeLabel}"
+                                                IsVisible="{Binding HasTotp}"
+                                                Command="{Binding $parent[ItemsControl].((vm:VaultPageViewModel)DataContext).CopyCodeCommand}"
                                                 CommandParameter="{Binding}" />
                                         <Button Name="EditButton" Content="Edit" Margin="4,2"
                                                 AutomationProperties.Name="{Binding EditLabel}"
