@@ -268,7 +268,7 @@ public sealed class ImportPlanTests
 
     private const string BitwardenRowWithExtras =
         "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n" +
-        " Work/Mail ,1,login,Example,my own notes,\"PIN: 0000\nEmpty: \nno separator\n Recovery : FAKE: recovery \",0,\"https://example.com,androidapp://com.example.app, ftp://files.example\",fake.user,FAKE-pw,  FAKEFAKEFAKEFAKE \n";
+        " Work/Mail ,1,login,Example,my own notes,\"PIN: 0000\nEmpty: \nno separator\n Recovery : FAKE: recovery \",0,\"https://example.com,androidapp://com.example.app, ftp://files.example\",fake.user,FAKE-pw,  FAKE-1-not-a-key \n";
 
     [Fact]
     public void Extras_AreLeftOut_AndCounted()
@@ -277,7 +277,7 @@ public sealed class ImportPlanTests
         ImportCandidate candidate = Assert.Single(plan.Candidates);
 
         Assert.Equal("my own notes", candidate.Notes); // nothing was added to them
-        Assert.Equal("FAKEFAKEFAKEFAKE", candidate.Extras.Totp);
+        Assert.Equal("FAKE-1-not-a-key", candidate.Extras.Totp);
         Assert.Equal("Work/Mail", candidate.Extras.Folder);
         Assert.Equal(["androidapp://com.example.app", "ftp://files.example"], candidate.Extras.OtherAddresses);
         Assert.Equal(
@@ -289,6 +289,44 @@ public sealed class ImportPlanTests
         Assert.Equal(2, plan.Extras[ImportExtraKind.OtherAddress]);
         Assert.Equal(3, plan.Extras[ImportExtraKind.CustomField]);
         Assert.True(candidate.Favorite);
+
+        // A value that is not an authenticator key is what stays an extra, and is counted as such.
+        Assert.Null(candidate.Totp);
+        Assert.Equal(BitosX.Core.Authenticator.TotpRefusal.InvalidSecret, candidate.TotpRefusal);
+        Assert.Equal(1, plan.TotpUnreadable);
+        Assert.Equal(0, plan.TotpKeys);
+    }
+
+    [Fact]
+    public void AnAuthenticatorKey_IsStored_AndIsNoExtra()
+    {
+        ImportPlan plan = Plan("name,password,totp\nExample,FAKE-pw, gezd gnbv gy3t qojq \n", new ImportOptions(CopyExtrasToNotes: true));
+        ImportCandidate candidate = Assert.Single(plan.Candidates);
+
+        Assert.Equal(new BitosX.Core.Domain.TotpKey { Secret = "GEZDGNBVGY3TQOJQ", Algorithm = BitosX.Core.Domain.TotpAlgorithm.Sha1, Digits = 6, Period = 30 }, candidate.Totp);
+        Assert.Null(candidate.TotpRefusal);
+        Assert.Equal(string.Empty, candidate.Extras.Totp);
+        Assert.Empty(plan.Extras);
+        Assert.Equal(string.Empty, candidate.Notes); // nothing is copied: the key is not an extra
+        Assert.Equal(1, plan.TotpKeys);
+        Assert.Equal(0, plan.TotpUnreadable);
+        Assert.Equal(candidate.Totp, Assert.Single(plan.CreateItems(DateTimeOffset.UnixEpoch)).Totp);
+    }
+
+    [Fact]
+    public void AnEntryWithNothingButAKey_IsNotEmpty()
+    {
+        ImportPlan plan = Plan("name,password,totp\n,,GEZDGNBVGY3TQOJQ\n");
+        Assert.Equal(0, plan.EmptyEntries);
+        Assert.Equal(ImportTexts.UntitledName, Assert.Single(plan.Candidates).Name);
+    }
+
+    [Fact]
+    public void Duplicates_DoNotCompareTheKey()
+    {
+        ImportPlan plan = Plan("name,password,totp\nExample,FAKE-pw,GEZDGNBVGY3TQOJQ\nExample,FAKE-pw,JBSWY3DPEHPK3PXP\n");
+        Assert.Equal(1, plan.Duplicates);
+        Assert.Equal(ImportStatus.Duplicate, plan.Candidates[1].Status);
     }
 
     [Fact]
@@ -299,7 +337,7 @@ public sealed class ImportPlanTests
         Assert.Equal(
             "my own notes\n" +
             "\n" +
-            "Authenticator key (TOTP): FAKEFAKEFAKEFAKE\n" +
+            "Authenticator key (TOTP): FAKE-1-not-a-key\n" +
             "Folder: Work/Mail\n" +
             "Other address: androidapp://com.example.app\n" +
             "Other address: ftp://files.example\n" +
@@ -310,7 +348,7 @@ public sealed class ImportPlanTests
         Assert.Equal(ImportStatus.Add, candidate.Status);
 
         // The extras are still told apart, and still counted: the preview says what was copied.
-        Assert.Equal("FAKEFAKEFAKEFAKE", candidate.Extras.Totp);
+        Assert.Equal("FAKE-1-not-a-key", candidate.Extras.Totp);
         Assert.Equal(3, candidate.Extras.CustomFields.Count);
     }
 
@@ -344,7 +382,7 @@ public sealed class ImportPlanTests
     [Fact]
     public void NotesThatFit_ButNotWithTheExtras_MeanTheEntryIsNotImported_WithThatReason()
     {
-        string file = "name,password,notes,totp\nExample,FAKE-pw," + new string('n', 16384 - 40) + ",FAKEFAKEFAKEFAKE\n";
+        string file = "name,password,notes,totp\nExample,FAKE-pw," + new string('n', 16384 - 40) + ",FAKE-1-not-a-key\n";
 
         ImportPlan left = Plan(file);
         ImportPlan copied = Plan(file, new ImportOptions(CopyExtrasToNotes: true));

@@ -64,6 +64,75 @@ public static class TotpKeyParser
             : TotpParseResult.Parsed(new TotpKey { Secret = secret!, Algorithm = TotpAlgorithm.Sha1, Digits = 6, Period = 30 });
     }
 
+    /// <summary>
+    /// Reads the key KeePass 2 keeps in an entry's strings (docs/IMPORT_EXPORT.md §5.3):
+    /// <c>TimeOtp-Secret-Base32</c> and, each optional, <c>TimeOtp-Algorithm</c>,
+    /// <c>TimeOtp-Length</c> and <c>TimeOtp-Period</c>. The secret is read by §3.1's first two
+    /// steps and §3.3; the other three are trimmed, and absent or empty means the default.
+    /// </summary>
+    public static TotpParseResult ParseKeePass2(string secretBase32, string? algorithm, string? length, string? period)
+    {
+        ArgumentNullException.ThrowIfNull(secretBase32);
+        if (secretBase32.Length > MaxTextLength)
+        {
+            return TotpParseResult.Refused(TotpRefusal.TooLong);
+        }
+
+        string trimmed = ImportText.Trim(secretBase32);
+        if (trimmed.Length == 0)
+        {
+            return TotpParseResult.Empty;
+        }
+
+        if (ParseSecret(trimmed, out string? secret) is { } refusal)
+        {
+            return TotpParseResult.Refused(refusal);
+        }
+
+        TotpAlgorithm parsedAlgorithm;
+        switch (ImportText.Trim(algorithm ?? string.Empty))
+        {
+            case "":
+            case "HMAC-SHA-1":
+                parsedAlgorithm = TotpAlgorithm.Sha1;
+                break;
+            case "HMAC-SHA-256":
+                parsedAlgorithm = TotpAlgorithm.Sha256;
+                break;
+            case "HMAC-SHA-512":
+                parsedAlgorithm = TotpAlgorithm.Sha512;
+                break;
+            default:
+                return TotpParseResult.Refused(TotpRefusal.UnsupportedAlgorithm);
+        }
+
+        int digits = 6;
+        string lengthText = ImportText.Trim(length ?? string.Empty);
+        if (lengthText.Length > 0)
+        {
+            if (lengthText is not ("6" or "7" or "8"))
+            {
+                return TotpParseResult.Refused(TotpRefusal.UnsupportedDigits);
+            }
+
+            digits = lengthText[0] - '0';
+        }
+
+        int parsedPeriod = 30;
+        string periodText = ImportText.Trim(period ?? string.Empty);
+        if (periodText.Length > 0)
+        {
+            if (ParsePeriod(periodText) is not { } value)
+            {
+                return TotpParseResult.Refused(TotpRefusal.UnsupportedPeriod);
+            }
+
+            parsedPeriod = value;
+        }
+
+        return TotpParseResult.Parsed(new TotpKey { Secret = secret!, Algorithm = parsedAlgorithm, Digits = digits, Period = parsedPeriod });
+    }
+
     /// <summary>§3.2: an <c>otpauth://</c> link, already trimmed.</summary>
     private static TotpParseResult ParseLink(string link)
     {

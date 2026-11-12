@@ -48,12 +48,18 @@ public enum ImportReason
 
     /// <summary>The notes are within the limit, but not with the extras copied into them.</summary>
     NotesTooLongWithExtras = 9,
+
+    /// <summary>
+    /// A BitosX export whose <c>totp</c> member is neither absent, <c>null</c>, nor a key the vault
+    /// accepts. An export of BitosX's own is never guessed at. Checked last.
+    /// </summary>
+    TotpInvalid = 10,
 }
 
 /// <summary>What a file can hold that BitosX has no field for.</summary>
 public enum ImportExtraKind
 {
-    /// <summary>An authenticator (TOTP) secret.</summary>
+    /// <summary>An authenticator key (TOTP) that could not be read (docs/TOTP.md §3), as text.</summary>
     Totp = 0,
 
     /// <summary>The name of the folder or group an entry is in.</summary>

@@ -108,9 +108,11 @@ public static class VaultExporter
     /// <code>
     /// { "format": "bitosx-export", "version": 1, "exportedAt": "2026-11-10T12:00:00Z",
     ///   "items": [ { "type": "login", "name": "…", "username": "…", "password": "…", "urls": ["…"],
+    ///                "totp": { "secret": "…", "algorithm": "SHA1", "digits": 6, "period": 30 },
     ///                "notes": "…", "favorite": false, "createdAt": "…", "updatedAt": "…" } ] }
     /// </code>
-    /// A value an item does not have is an empty string. Times are UTC and end in <c>Z</c>; those of
+    /// A value an item does not have is an empty string; <c>totp</c> is <c>null</c> for a login
+    /// without an authenticator key. Times are UTC and end in <c>Z</c>; those of
     /// an item keep their fraction of a second, without trailing zeros.
     /// </summary>
     public static byte[] ToBitosXJson(IReadOnlyList<VaultItem> items, DateTimeOffset exportedAt)
@@ -144,6 +146,20 @@ public static class VaultExporter
                 }
 
                 writer.WriteEndArray();
+                if (login.Totp is { } totp)
+                {
+                    writer.WriteStartObject("totp");
+                    writer.WriteString("secret", totp.Secret);
+                    writer.WriteString("algorithm", Authenticator.TotpTexts.AlgorithmName(totp.Algorithm));
+                    writer.WriteNumber("digits", totp.Digits);
+                    writer.WriteNumber("period", totp.Period);
+                    writer.WriteEndObject();
+                }
+                else
+                {
+                    writer.WriteNull("totp");
+                }
+
                 writer.WriteString("notes", login.Notes ?? string.Empty);
                 writer.WriteBoolean("favorite", login.Favorite);
                 writer.WriteString("createdAt", Timestamp(login.CreatedAt));
@@ -177,6 +193,16 @@ public static class VaultExporter
         }
 
         return count;
+    }
+
+    /// <summary>
+    /// How many items have an authenticator key. A CSV export does not hold them: this is the number
+    /// a person is told before choosing it.
+    /// </summary>
+    public static int CountItemsWithAuthenticatorKeys(IReadOnlyList<VaultItem> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        return items.Count(item => item is LoginItem { Totp: not null });
     }
 
     /// <summary>

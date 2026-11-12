@@ -49,8 +49,30 @@ public sealed class ImportEntry
     /// </summary>
     public IReadOnlyList<string> Addresses { get; init; } = [];
 
-    /// <summary>The authenticator (TOTP) secret, or empty.</summary>
+    /// <summary>
+    /// The authenticator key as text (a CSV cell, Bitwarden's <c>login.totp</c>), or empty. It is read
+    /// by docs/TOTP.md §3 when the entry is normalised; text that is not a key stays an extra.
+    /// </summary>
     public string Totp { get; init; } = string.Empty;
+
+    /// <summary>
+    /// An authenticator key the reader already read from the file (KeePass strings, BitosX's own
+    /// export). When it is set, <see cref="Totp"/> is empty.
+    /// </summary>
+    public Domain.TotpKey? TotpKey { get; init; }
+
+    /// <summary>
+    /// Why a key the reader found could not be read, when the strings it came from stay custom
+    /// fields (KeePass). Counted as a key that could not be read.
+    /// </summary>
+    public Authenticator.TotpRefusal? TotpRefusal { get; init; }
+
+    /// <summary>
+    /// Whether BitosX's own export holds a <c>totp</c> member that is not a key (docs/IMPORT_EXPORT.md
+    /// §6). Such an entry is not imported, with the reason <see cref="ImportReason.TotpInvalid"/>,
+    /// checked after every other reason.
+    /// </summary>
+    public bool TotpInvalid { get; init; }
 
     /// <summary>The folder or group the entry is in, or empty.</summary>
     public string Folder { get; init; } = string.Empty;

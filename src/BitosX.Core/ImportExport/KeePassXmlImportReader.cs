@@ -1,5 +1,7 @@
 using System.Text;
 using System.Xml;
+using BitosX.Core.Authenticator;
+using BitosX.Core.Domain;
 
 namespace BitosX.Core.ImportExport;
 
@@ -27,6 +29,21 @@ internal static class KeePassXmlImportReader
     private const string PasswordKey = "Password";
     private const string UrlKey = "URL";
     private const string NotesKey = "Notes";
+
+    // The strings an authenticator key is kept in (docs/IMPORT_EXPORT.md §5.3): KeePassXC's "otp"
+    // (an otpauth:// link), and KeePass 2's TimeOtp-* (KeePass/Util/EntryUtil.cs). KeePass reads
+    // the secret from the first of TimeOtp-Secret (UTF-8), -Hex, -Base32 and -Base64 that is not
+    // empty; only Base32 is read here.
+    private const string OtpKey = "otp";
+    private const string TimeOtpSecretUtf8 = "TimeOtp-Secret";
+    private const string TimeOtpSecretHex = "TimeOtp-Secret-Hex";
+    private const string TimeOtpSecretBase32 = "TimeOtp-Secret-Base32";
+    private const string TimeOtpAlgorithm = "TimeOtp-Algorithm";
+    private const string TimeOtpLength = "TimeOtp-Length";
+    private const string TimeOtpPeriod = "TimeOtp-Period";
+
+    private static readonly string[] AuthenticatorKeys =
+        [OtpKey, TimeOtpSecretUtf8, TimeOtpSecretHex, TimeOtpSecretBase32, TimeOtpAlgorithm, TimeOtpLength, TimeOtpPeriod];
 
     // The UUID of "no group": sixteen zero bytes, as both applications write it.
     private const string NoUuid = "AAAAAAAAAAAAAAAAAAAAAA==";
@@ -101,6 +118,12 @@ internal static class KeePassXmlImportReader
         public bool HasFieldTwice { get; set; }
 
         public List<ImportCustomField> CustomFields { get; } = [];
+
+        /// <summary>
+        /// For each string an authenticator key can be kept in, the custom field that is its first
+        /// occurrence in the entry. Later occurrences are ordinary custom fields.
+        /// </summary>
+        public Dictionary<string, int> AuthenticatorFields { get; } = new(StringComparer.Ordinal);
     }
 
     private sealed class Document
@@ -156,6 +179,7 @@ internal static class KeePassXmlImportReader
                     continue;
                 }
 
+                (TotpKey? key, TotpRefusal? refusal, List<ImportCustomField> customFields) = AuthenticatorKeyOf(entry);
                 entries.Add(new ImportEntry
                 {
                     Position = entry.Position,
@@ -165,7 +189,9 @@ internal static class KeePassXmlImportReader
                     Notes = entry.Notes ?? string.Empty,
                     Addresses = entry.Url is { Length: > 0 } url ? [url] : [],
                     Folder = PathOf(entry.Group),
-                    CustomFields = entry.CustomFields,
+                    CustomFields = customFields,
+                    TotpKey = key,
+                    TotpRefusal = refusal,
                     Problem = entry.HasFieldTwice ? ImportReason.FieldTwice : null,
                 });
             }
@@ -311,11 +337,81 @@ internal static class KeePassXmlImportReader
                     entry.Notes ??= value;
                     break;
                 default:
-                    // Every other string is a custom field. KeePass keeps authenticator keys in such
-                    // strings too ("otp", "TOTP Seed", "TimeOtp-Secret…"), under whatever name.
+                    // Every other string is a custom field. Those an authenticator key is kept in
+                    // are marked, by their name as written; whether they stay custom fields is
+                    // decided once the entry is read (AuthenticatorKeyOf).
+                    if (Array.IndexOf(AuthenticatorKeys, key) >= 0)
+                    {
+                        entry.AuthenticatorFields.TryAdd(key, entry.CustomFields.Count);
+                    }
+
                     entry.CustomFields.Add(new ImportCustomField(ImportText.Trim(key), value));
                     break;
             }
+        }
+
+        /// <summary>
+        /// The authenticator key of an entry (docs/IMPORT_EXPORT.md §5.3), and the custom fields that
+        /// are left once the strings it was read from are taken away. The first string of a name
+        /// counts; a value that is blank counts as none.
+        /// <list type="number">
+        /// <item><c>otp</c>: read by docs/TOTP.md §3.</item>
+        /// <item>Otherwise <c>TimeOtp-Secret-Base32</c>, if <c>TimeOtp-Secret</c> and
+        /// <c>TimeOtp-Secret-Hex</c> are blank (KeePass would use those first): read with
+        /// <c>TimeOtp-Algorithm</c>, <c>-Length</c> and <c>-Period</c>.</item>
+        /// </list>
+        /// A key that is read takes its strings out of the custom fields. One that is refused leaves
+        /// them where they are, and is counted as a key that could not be read.
+        /// </summary>
+        private static (TotpKey? Key, TotpRefusal? Refusal, List<ImportCustomField> CustomFields) AuthenticatorKeyOf(Entry entry)
+        {
+            string? Value(string name)
+                => entry.AuthenticatorFields.TryGetValue(name, out int index) ? entry.CustomFields[index].Value : null;
+
+            bool IsSet(string name) => Value(name) is { } value && !ImportText.IsBlank(value);
+
+            TotpParseResult result;
+            string[] used;
+            if (IsSet(OtpKey))
+            {
+                result = TotpKeyParser.Parse(Value(OtpKey));
+                used = [OtpKey];
+            }
+            else if (IsSet(TimeOtpSecretBase32) && !IsSet(TimeOtpSecretUtf8) && !IsSet(TimeOtpSecretHex))
+            {
+                result = TotpKeyParser.ParseKeePass2(
+                    Value(TimeOtpSecretBase32)!, Value(TimeOtpAlgorithm), Value(TimeOtpLength), Value(TimeOtpPeriod));
+                used = [TimeOtpSecretBase32, TimeOtpAlgorithm, TimeOtpLength, TimeOtpPeriod];
+            }
+            else
+            {
+                return (null, null, entry.CustomFields);
+            }
+
+            if (result.Key is null)
+            {
+                return (null, result.Refusal, entry.CustomFields);
+            }
+
+            var taken = new HashSet<int>();
+            foreach (string name in used)
+            {
+                if (entry.AuthenticatorFields.TryGetValue(name, out int index))
+                {
+                    taken.Add(index);
+                }
+            }
+
+            var left = new List<ImportCustomField>(entry.CustomFields.Count);
+            for (int i = 0; i < entry.CustomFields.Count; i++)
+            {
+                if (!taken.Contains(i))
+                {
+                    left.Add(entry.CustomFields[i]);
+                }
+            }
+
+            return (result.Key, null, left);
         }
 
         private bool IsInRecycleBin(Group group)

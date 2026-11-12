@@ -192,10 +192,15 @@ public sealed class KeePassXmlImportTests
                 Assert.False(first.Favorite);
                 Assert.Null(first.Problem);
 
-                // Every other string is a custom field, the authenticator key among them.
+                // KeePassXC's "otp" is read as the authenticator key (docs/IMPORT_EXPORT.md §5.3) ...
+                Assert.Equal(
+                    new BitosX.Core.Domain.TotpKey { Secret = "FAKEFAKEFAKEFAKE", Algorithm = BitosX.Core.Domain.TotpAlgorithm.Sha1, Digits = 6, Period = 30 },
+                    first.TotpKey);
+                Assert.Null(first.TotpRefusal);
+
+                // ... and every other string is a custom field.
                 Assert.Equal(
                     [
-                        ("otp", "otpauth://totp/Example:fake.user?secret=FAKEFAKEFAKEFAKE"),
                         ("Recovery code", "FAKE-recovery"),
                         ("Empty field", ""),
                     ],

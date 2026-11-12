@@ -246,6 +246,7 @@ internal static class JsonImportReader
                 }
             }
 
+            bool totpValid = TryReadBitosXTotp(item, out Domain.TotpKey? totp);
             entries.Add(new ImportEntry
             {
                 Position = position,
@@ -255,12 +256,95 @@ internal static class JsonImportReader
                 Notes = Text(item, "notes"),
                 Favorite = IsTrue(item, "favorite"),
                 Addresses = addresses,
+                TotpKey = totp,
+                TotpInvalid = !totpValid,
             });
         }
 
         return new ParsedImport(
             ImportFormat.BitosXJson, ImportTexts.LabelBitosXJson, entries, position, unsupported, inTrash: 0, ignoredColumns: []);
     }
+
+    /// <summary>
+    /// The <c>totp</c> member of an item of BitosX's own export (docs/IMPORT_EXPORT.md §6): absent or
+    /// <c>null</c> is no key; an object with exactly <c>secret</c>, <c>algorithm</c>, <c>digits</c>
+    /// and <c>period</c> that make a key the vault accepts (docs/TOTP.md §2) is that key. Anything
+    /// else returns <see langword="false"/>: the entry is not imported. Numbers may be written any
+    /// way JSON allows (<c>6</c>, <c>6.0</c>, <c>6e0</c>), as with <c>version</c>.
+    /// </summary>
+    private static bool TryReadBitosXTotp(JsonElement item, out Domain.TotpKey? key)
+    {
+        key = null;
+        if (!item.TryGetProperty("totp", out JsonElement totp) || totp.ValueKind == JsonValueKind.Null)
+        {
+            return true;
+        }
+
+        if (totp.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        string? secret = null;
+        Domain.TotpAlgorithm? algorithm = null;
+        int? digits = null;
+        int? period = null;
+        foreach (JsonProperty member in totp.EnumerateObject())
+        {
+            switch (member.Name)
+            {
+                case "secret" when member.Value.ValueKind == JsonValueKind.String:
+                    secret = member.Value.GetString();
+                    break;
+                case "algorithm" when member.Value.ValueKind == JsonValueKind.String:
+                    algorithm = member.Value.GetString() switch
+                    {
+                        "SHA1" => Domain.TotpAlgorithm.Sha1,
+                        "SHA256" => Domain.TotpAlgorithm.Sha256,
+                        "SHA512" => Domain.TotpAlgorithm.Sha512,
+                        _ => null,
+                    };
+                    if (algorithm is null)
+                    {
+                        return false;
+                    }
+
+                    break;
+                case "digits":
+                    digits = SmallInteger(member.Value);
+                    break;
+                case "period":
+                    period = SmallInteger(member.Value);
+                    break;
+                default:
+                    // Another member, or one of the four with the wrong JSON type.
+                    return false;
+            }
+        }
+
+        if (secret is null || algorithm is null || digits is null || period is null)
+        {
+            return false;
+        }
+
+        var candidate = new Domain.TotpKey { Secret = secret, Algorithm = algorithm.Value, Digits = digits.Value, Period = period.Value };
+        if (!Validation.VaultValidation.IsValidTotpKey(candidate))
+        {
+            return false;
+        }
+
+        key = candidate;
+        return true;
+    }
+
+    /// <summary>A JSON number with a whole value from 0 to 1000, written any way JSON allows; otherwise null.</summary>
+    private static int? SmallInteger(JsonElement value)
+        => value.ValueKind == JsonValueKind.Number
+            && value.TryGetDouble(out double number)
+            && number is >= 0 and <= 1000
+            && Math.Floor(number) == number
+                ? (int)number
+                : null;
 
     // ---- Reading one member ----
 
