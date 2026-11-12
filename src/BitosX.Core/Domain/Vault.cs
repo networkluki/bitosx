@@ -8,13 +8,26 @@ namespace BitosX.Core.Domain;
 /// </summary>
 public sealed class Vault
 {
-    /// <summary>Current in-memory schema version of the decrypted vault contents.</summary>
-    public const int CurrentSchemaVersion = 1;
+    /// <summary>
+    /// The content schema version of a vault in which no login has an authenticator key: what
+    /// every version up to 0.14 wrote and reads (docs/TOTP.md §2).
+    /// </summary>
+    public const int SchemaVersionWithoutAuthenticatorKeys = 1;
+
+    /// <summary>
+    /// The content schema version of a vault in which at least one login has an authenticator key
+    /// (<see cref="LoginItem.Totp"/>). Versions up to 0.14 refuse it, which is the point: they would
+    /// otherwise refuse the unknown member anyway, and must never save over it.
+    /// </summary>
+    public const int SchemaVersionWithAuthenticatorKeys = 2;
+
+    /// <summary>The newest content schema version this build reads.</summary>
+    public const int CurrentSchemaVersion = SchemaVersionWithAuthenticatorKeys;
 
     private readonly List<VaultItem> _items;
 
     /// <summary>Creates an empty vault at the current schema version.</summary>
-    public Vault() : this(CurrentSchemaVersion, []) { }
+    public Vault() : this(SchemaVersionWithoutAuthenticatorKeys, []) { }
 
     /// <summary>
     /// Creates a vault from persisted contents (used by the serializer). Every item is validated
@@ -38,6 +51,13 @@ public sealed class Vault
             try
             {
                 VaultValidation.Validate(loaded);
+
+                // A version 1 document cannot hold an authenticator key: the version is what keeps
+                // older builds from opening (and then saving over) a vault that holds one.
+                if (schemaVersion < SchemaVersionWithAuthenticatorKeys && HasAuthenticatorKey(loaded))
+                {
+                    throw new VaultValidationException("An authenticator key in a version 1 vault.");
+                }
             }
             catch (VaultValidationException)
             {
@@ -62,8 +82,21 @@ public sealed class Vault
         _items = [.. source._items];
     }
 
-    /// <summary>Schema version the contents were written with.</summary>
+    /// <summary>
+    /// Schema version the contents were read with (<see cref="SchemaVersionWithoutAuthenticatorKeys"/>
+    /// for a new vault). What a vault is written with is <see cref="RequiredSchemaVersion"/>.
+    /// </summary>
     public int SchemaVersion { get; }
+
+    /// <summary>
+    /// The schema version the contents are written with: <see cref="SchemaVersionWithAuthenticatorKeys"/>
+    /// if a login has an authenticator key, otherwise <see cref="SchemaVersionWithoutAuthenticatorKeys"/>,
+    /// so that a vault without keys stays byte for byte what earlier versions wrote and read.
+    /// </summary>
+    public int RequiredSchemaVersion
+        => _items.Any(HasAuthenticatorKey) ? SchemaVersionWithAuthenticatorKeys : SchemaVersionWithoutAuthenticatorKeys;
+
+    private static bool HasAuthenticatorKey(VaultItem item) => item is LoginItem { Totp: not null };
 
     /// <summary>All items, in insertion order.</summary>
     public IReadOnlyList<VaultItem> Items => _items;

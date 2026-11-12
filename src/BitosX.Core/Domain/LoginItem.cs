@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using BitosX.Core.Serialization;
 
 namespace BitosX.Core.Domain;
 
@@ -17,6 +18,14 @@ public sealed record LoginItem : VaultItem
 
     /// <summary>Associated URLs (e.g. login pages).</summary>
     public IReadOnlyList<string> Urls { get; init; } = [];
+
+    /// <summary>
+    /// The authenticator key (TOTP), or <see langword="null"/> if the login has none. Stored as the
+    /// member <c>Totp</c>, which is absent when there is no key; a vault that holds one is written
+    /// with content schema version 2 (docs/TOTP.md §2).
+    /// </summary>
+    [JsonConverter(typeof(TotpKeyJsonConverter))]
+    public TotpKey? Totp { get; init; }
 
     [JsonIgnore]
     public override VaultItemType ItemType => VaultItemType.Login;
