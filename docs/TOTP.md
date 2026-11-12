@@ -197,7 +197,8 @@ The editor's field:
 
 ## 7. The fixtures
 
-[`tests/fixtures/totp`](../tests/fixtures/totp) holds two files. Git does not convert their line
+[`tests/fixtures/totp`](../tests/fixtures/totp) holds two files (§7.1, §7.2), and
+[`tests/fixtures/web`](../tests/fixtures/web) an encrypted vault (§7.3). Git does not convert their line
 ends (`.gitattributes`); the web vault copies them unchanged and has to arrive at the same results.
 The results are **written by the tests**, never by hand
 (`tests/BitosX.Core.Tests/Authenticator/TotpFixtures.cs`), and a test fails if a committed file
@@ -255,6 +256,19 @@ Format (`JBSWY3DPEHPK3PXP`), runs of `A`.
   RFC's reference code and table use for SHA1, SHA256 and SHA512); and our own: 6 and 7 digits,
   both edges of a step, periods of 1, 45, 60 and 300, a 10-, an 11- and two 128-byte secrets, more
   than 2^32 steps.
+
+### 7.3 `tests/fixtures/web/totp.vault.json`: an encrypted vault
+
+An encrypted vault (envelope v1) for the web vault's tests, **written by this repository's own
+code** (`VaultCryptor`, `EncryptedVaultSerializer`, `VaultSerializer`, `MasterPasswordEncoding`) in
+the way `bitosx-manager/tests/fixtures/README.md` describes for the others: the test profile
+(Argon2id 1 MiB, t=1, p=1), the password `correct horse battery`, content schema version 2, three
+logins with keys (SHA1/6/30, SHA256/8/60, SHA512/7/45) and one without. `totp.meta.json` has the
+members of the other `*.meta.json` files and one more, `totpCodes`: for each key, its code at three
+moments, made by `TotpGenerator`. The web vault copies both files unchanged. A test here
+(`WebVaultFixtureTests`) opens the vault with the desktop's code and checks every member of the meta
+file, so the two cannot drift apart. The generator itself is not kept: the envelope has random
+nonces and a random salt, and is never written again for a change that does not need it.
 
 ## 8. Import and export
 
