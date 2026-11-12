@@ -638,6 +638,33 @@ On these figures new vaults are created with 256 MiB since this release; see
 | The file dialogs of Linux and macOS | The application has not been started there |
 | That Windows keeps a copied secret out of its clipboard history, for this release | `tools/BitosX.ClipboardProbe` ran on Windows Server 2025, where the history is turned off: its 16 other checks passed and the two of the history were left out. They were last made on a desktop with the history turned on for 0.6.0; the code they exercise is unchanged |
 
+## Authenticator codes (0.15.0) — automated tested on Linux; not run in a real window
+
+Plainly: **nothing of this was run on Windows or macOS.** GitHub Actions has started no jobs for
+this account since 2026-11-06, so the CI that runs the suite on the three systems did not run for
+this change. The suite ran on Linux only, in a container, as root. Nobody looked at a window, the
+application was not started, and `tools/BitosX.GuiCheck` has no step for authenticator keys (see
+below).
+
+| Item | Status | Evidence |
+|---|---|---|
+| Codes: RFC 6238 Appendix B (18 vectors, SHA1/SHA256/SHA512, 8 digits), copied from the RFC's text | AUTOMATED TESTED | `TotpGeneratorTests`, `TotpFixtureTests.CodesJson_HoldsRfc6238AppendixB`. The RFC was read from four byte-identical copies on GitHub; rfc-editor.org and datatracker.ietf.org could not be reached ([TOTP.md](TOTP.md) §9). |
+| Codes of our own (6 and 7 digits, periods of 1 to 300, both edges of a step, 10- to 128-byte secrets, more than 2^32 steps), the seconds left, the display | AUTOMATED TESTED + checked against a second implementation | `TotpGeneratorTests`, `codes.json` (40 cases); every code also computed with Python's `hmac` from the text of the specification, and RFC 4226 Appendix D's values for steps 0–2. The script is outside the repository. |
+| Reading a key from text: every rule and refusal of [TOTP.md](TOTP.md) §3 | AUTOMATED TESTED + checked against a second implementation | `TotpKeyParserTests`, `keys.json` (91 cases); every result also arrived at by a second reading of §3 written in Python. |
+| The stored form and the content schema: no key → version 1, byte for byte what 0.14.1 wrote; a key → version 2; a key in version 1, version 3 and 0, `null`, a member more or less, another case, another JSON type, values out of range, a secret that is not canonical — all refused without quoting the content | AUTOMATED TESTED | `TotpVaultContentTests`, `VaultLoadValidationTests`. |
+| HMAC-SHA1/256/512 through `HMACSHA1.HashData` etc. (the span overloads), and the wiping of the decoded secret and the HMAC | VERIFIED by the vectors; wiping VERIFIED by reading | `TotpGenerator`. That the buffers are zero afterwards is not tested; a copy the runtime made cannot be found. |
+| Import: keys from CSV, Bitwarden JSON, KeePassXC's `otp` and KeePass 2's `TimeOtp-*`; refused keys stay what they were and are counted; BitosX's JSON `totp` member and `totp_invalid`; duplicates do not compare the key | AUTOMATED TESTED | `ImportPlanTests`, `KeePassXmlImportTests`, `VaultExporterTests`, the four new fixtures and the 18 expected files written again (`ConformanceFixtureTests`). The KeePass rules come from KeePass 2.59's and KeePassXC's source code; **no database made by KeePass or KeePassXC was imported**. |
+| Export: the JSON export writes the key; CSV does not, and the dialog and the result say so | AUTOMATED TESTED | `VaultExporterTests`, `ImportExportViewModelTests.ACsvExport_SaysThatItHoldsNoAuthenticatorKeys`. |
+| The encrypted vault fixture for the web vault opens with the desktop's code and is what its meta file says | AUTOMATED TESTED | `WebVaultFixtureTests`. |
+| The editor: masked by default (a `SecretBox`), Show/Hide, each refusal in its fixed words under the field, no save while it is shown, an existing key kept when saved untouched, removed when the text is | AUTOMATED TESTED (headless) | `TotpUiTests` (view models and the real views without a display). |
+| The vault page: the code and the seconds left, the timer, a search that hides the card, copying the code of that moment through the sensitive clipboard; locking and letting go of the page stop the timer and clear the codes; nothing is copied while locked; no text, tooltip or accessibility name of the window holds the key | AUTOMATED TESTED (headless) | `TotpUiTests`, with a clock and timers the test moves. |
+| Two devices against the real API and database: a key added on one syncs to the other byte for byte, both make the same code at the same instant, and removing it brings version 1 back | AUTOMATED TESTED (live) | `TotpLiveTests`, run on 2026-11-12 against the local stack of bitosx-api. |
+| **Windows and macOS** | **NOT VERIFIED** | Not run there (see above). |
+| **A real window**: how the code, the seconds and the field look; that a screen reader is told nothing of the key in a real accessibility interface | **NOT VERIFIED** | Headless only. `tools/BitosX.GuiCheck` has no step for this: it is Windows-only and could not be run, so a step could not have been tried before it was relied on. Its existing steps are unchanged, and it compiles. |
+| **Codes accepted by a real site** | **NOT VERIFIED** | No sign-in to a real service was made with a code from BitosX. The RFC's vectors and the second implementation are what show the codes are right. |
+| A clock that is wrong | Not defended | The codes come from the device's clock; the page says so ([TOTP.md](TOTP.md) §4). |
+| The web vault arriving at the same keys and codes | Not in this repository | `tests/fixtures/totp` and `tests/fixtures/web` are what it is held to. |
+
 ## Import and export (0.14.0) — automated tested on Linux; not run in a real window
 
 Two things first, plainly:

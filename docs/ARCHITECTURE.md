@@ -24,6 +24,10 @@ BitosX.ApiClient ──> Core                                     (the BitosX se
   `ImportExport` reads what other password managers export and writes the two unencrypted
   exports — bytes in, a model out, no file and no vault — and `VaultImportService` and
   `VaultExportService` tie that to the vault; see [IMPORT_EXPORT.md](IMPORT_EXPORT.md).
+  `Authenticator` (0.15.0) reads an authenticator key from text (`TotpKeyParser`) and makes its
+  codes (`TotpGenerator`, RFC 6238); the key is `LoginItem.Totp` (`TotpKey`), stored strictly by
+  `TotpKeyJsonConverter`, and a vault that holds one is written with content schema version 2
+  (`Vault.RequiredSchemaVersion`); see [TOTP.md](TOTP.md).
 - **BitosX.Storage** — `FileLocalVaultStorage`, an atomic file implementation of
   `ILocalVaultStorage`, plus `FileVaultBackup` (`IVaultBackup`) for byte-for-byte encrypted
   export and recovery-copy-protected atomic restore, and `FileImportExportFiles`
@@ -45,7 +49,10 @@ BitosX.ApiClient ──> Core                                     (the BitosX se
 - **BitosX.App** — Avalonia views and view models, the DI composition root
   (`ServiceConfiguration`), the Avalonia-specific `IClipboardAccessor` (which marks copied secrets
   as sensitive, see `SensitiveClipboardData`), `ExitClipboardCleaner`, `UnexpectedErrorGuard`
-  (fails closed when a fault reaches the user interface), and `SecretBox` (the password field).
+  (fails closed when a fault reaches the user interface), and `SecretBox` (the password field, and
+  since 0.15.0 the authenticator key's). `VaultPageViewModel` keeps the authenticator codes of the
+  listed logins up to date with one timer of one second (`TimeProvider`), which runs only while the
+  vault is unlocked; locking stops it and clears the codes.
 
 ## How the application is put together
 

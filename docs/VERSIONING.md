@@ -38,7 +38,23 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.14.1`** — one rule of an import. A web address with a backslash before the `@`
+**`0.15.0`** — authenticator codes (TOTP) in logins. A login can hold one authenticator key: typed
+into the editor as base32 or an `otpauth://totp/` link, or read from an import (CSV, Bitwarden,
+KeePassXC's `otp`, KeePass 2's `TimeOtp-*`, BitosX's own JSON). The vault page shows the current
+code with the seconds it has left and copies it through the clipboard that clears itself; locking
+stops the timer and clears the codes. The key is masked in the editor like the password and appears
+in no log, error, tooltip or accessibility name. The rules — how text is read into a key, how it is
+stored, how a code is made, every refusal and its text — are a specification both clients follow,
+with shared fixtures: [TOTP.md](TOTP.md); the import and export changes are in
+[IMPORT_EXPORT.md](IMPORT_EXPORT.md). **The content schema inside the encryption changes:** a vault
+in which a login has a key is written as `schemaVersion` 2, one without keys as 1, byte for byte
+as before. **Desktop 0.14.1 and older, and the web vault 0.8.1 and older, refuse a vault that holds
+a key** ("unsupported vault schema version"), and so never save over it; they read a vault without
+keys as before. The vault file format (the v1 envelope) and the server are unchanged. Importing a
+JSON export of 0.15.0 into an older version drops the keys. **Not verified:** nothing was run on
+Windows or macOS, and not in a real window; see [VERIFICATION.md](VERIFICATION.md).
+
+Builds on `0.14.1` — one rule of an import. A web address with a backslash before the `@`
 (`https://evil.example\@bank.example/`) is no longer taken for an address both clients read
 alike: a browser ends the host at the backslash and goes to `evil.example`, while the text after
 the `@` says `bank.example`. The desktop already refused such addresses through .NET's own rule,
