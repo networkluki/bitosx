@@ -25,7 +25,7 @@ milestone and how to report issues. Detailed models live in [`docs/`](docs/):
 
 ## What is never logged
 
-The master password, item passwords, secure notes, encryption keys, authentication secrets,
+The master password, item passwords, authenticator keys (TOTP) and their codes, secure notes, encryption keys, authentication secrets,
 the account password, the account tokens, session ids, and decrypted vault contents are never written to logs. Logging is limited to non-sensitive
 lifecycle events (see `BitosX.Core.Diagnostics.VaultLog` and `BitosX.ApiClient.ApiLog`).
 
@@ -46,6 +46,14 @@ touches the vault master password, which never leaves the device. See [docs/ACCO
   the master password. See [docs/CRYPTOGRAPHY.md](docs/CRYPTOGRAPHY.md).
 
 ## Known limitations (honest disclosure)
+
+- **Both factors in one vault.** Since 0.15.0 a login can hold its authenticator key (TOTP) next
+  to its password. That is the user's choice, as in other password managers: it is convenient, but
+  whoever opens the vault then has both factors of that login, so two-step sign-in no longer
+  protects it against a stolen vault and master password. The key is treated as secret as the
+  password — encrypted with the vault, masked in the editor, never logged or shown in an error,
+  tooltip or accessibility name. See [docs/TOTP.md](docs/TOTP.md) and threat 31 of
+  [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
 - Managed .NET memory cannot be guaranteed to be wiped; secrets in `string` objects may persist
   in process memory. BitosX minimizes secret lifetime and wipes byte buffers on a best-effort basis.

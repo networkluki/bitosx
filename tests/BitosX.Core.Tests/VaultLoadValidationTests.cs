@@ -73,7 +73,9 @@ public sealed class VaultLoadValidationTests
         { "password too long", Document(LoginJson("\"Password\":\"" + new string('p', VaultValidation.MaxPasswordLength + 1) + "\"")) },
         { "notes too long", Document(LoginJson("\"Notes\":\"" + new string('x', VaultValidation.MaxNotesLength + 1) + "\"")) },
         { "too many URLs", Document(LoginJson("\"Urls\":[" + string.Join(',', Enumerable.Repeat("\"https://example.com\"", VaultValidation.MaxUrlCount + 1)) + "]")) },
-        { "unsupported schema version", "{\"schemaVersion\":2,\"items\":[]}" },
+        // Version 2 (authenticator keys, 0.15.0) is read since then; 3 is the first this build does not know.
+        { "unsupported schema version", "{\"schemaVersion\":3,\"items\":[]}" },
+        { "schema version 0", "{\"schemaVersion\":0,\"items\":[]}" },
         { "missing schema version", "{\"items\":[]}" },
         { "items is not a list", "{\"schemaVersion\":1,\"items\":{}}" },
         { "not an object", "[]" },

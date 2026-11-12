@@ -6,8 +6,10 @@ rule a second implementation needs to arrive at exactly the same items. The desk
 (this repository) and the web vault (bitosx-manager) both follow it, and the fixtures in
 [`tests/fixtures/import`](../tests/fixtures/import) hold the two to the same results (§14).
 
-Nothing here touches the server, the vault's file format (the v1 envelope) or the content schema
-(version 1, `login` items only). An import adds ordinary items; an export writes a new file.
+Nothing here touches the server or the vault's file format (the v1 envelope). An import adds
+ordinary items; an export writes a new file. Since 0.15.0 (web: 0.9.0) a login can hold an
+authenticator key (TOTP), which an import reads and the JSON export writes; how a key is read from
+text, and how it is stored, is [TOTP.md](TOTP.md), which this document refers to.
 
 Where it is in the code:
 
@@ -195,7 +197,8 @@ numbered from 1 in the order of the file (*position*), whatever becomes of them.
 - **name**, **username**, **password**, **notes**: the value as it is.
 - **favorite**: the value, trimmed and in lower case, is `1` or `true`. (Bitwarden writes `1` or
   nothing.)
-- **authenticator key**, **folder**: the value as it is; trimmed later (§7.4).
+- **authenticator key**: the value as it is; read later as a key (§7.4).
+- **folder**: the value as it is; trimmed later (§7.4).
 - **address**: if the address column is `login_uri` or `uri`, the value is split at every comma
   (Bitwarden writes an item's addresses into one cell with commas between them: the cell is an
   array in `base-vault-export.service.ts`, and PapaParse writes an array as its `toString()`).
@@ -274,7 +277,9 @@ For each element of `items`, in this order:
    (`cipher-type.ts`.) Everything but a login is counted by its kind and left out.
 4. A login is an entry:
    - name: `name`. notes: `notes`. favorite: `favorite` is `true`.
-   - username, password, authenticator key: `login.username`, `login.password`, `login.totp`.
+   - username, password, authenticator key: `login.username`, `login.password`, `login.totp`
+     (the text the user gave Bitwarden: an `otpauth://` link, a base32 key or a `steam://` link;
+     read as §7.4 says).
    - addresses: for each element of `login.uris` that is an object, its `uri`, if it is a string
      that is not empty.
    - custom fields: for each element of `fields` that is an object, its `name` (trimmed) and its
@@ -364,9 +369,41 @@ The key says what the value is. Keys are compared exactly, and are case sensitiv
 entry is not imported: `field_twice`. (KeePassXC refuses such a file; KeePass keeps the last
 value. The first value is the one a preview shows.) A custom field may occur any number of times.
 
-An authenticator key is, in a KeePass file, just another string — `otp` or `TOTP Seed` in
-KeePassXC, `TimeOtp-Secret…` in KeePass — and is therefore a custom field here. So is `KP2A_URL`,
-where KeePassXC keeps an entry's further addresses.
+`KP2A_URL`, where KeePassXC keeps an entry's further addresses, is a custom field.
+
+**The authenticator key.** A KeePass file keeps an authenticator key in strings of its own. The
+names are compared exactly, as written (not trimmed); of a name that occurs more than once in an
+entry, the first string counts, and the others are ordinary custom fields; a value that is blank
+counts as none. In this order:
+
+1. **`otp`** (KeePassXC 2.6 and later; `Totp.h`, `Entry.cpp`, `Totp.cpp`: an `otpauth://` link,
+   which is also what KeePassXC's CSV export writes): read by [TOTP.md](TOTP.md) §3.
+2. Otherwise **`TimeOtp-Secret-Base32`** (KeePass 2; `KeePass/Util/EntryUtil.cs`,
+   `KeePassLib/Cryptography/HmacOtp.cs`, `KeePass/Forms/OtpGeneratorForm.cs`), but only if
+   `TimeOtp-Secret` and `TimeOtp-Secret-Hex` are blank: KeePass takes the secret from the first of
+   `TimeOtp-Secret` (UTF-8), `-Hex`, `-Base32` and `-Base64` that is not empty. The key is read
+   by [TOTP.md](TOTP.md) §3.1 steps 1 and 2 and §3.3 for the
+   secret, then:
+   - `TimeOtp-Algorithm`, trimmed: absent or empty is SHA1; exactly `HMAC-SHA-1`, `HMAC-SHA-256` or
+     `HMAC-SHA-512` (KeePass's own names, case-sensitive) is that one; anything else is
+     `unsupported_algorithm`.
+   - `TimeOtp-Length`, trimmed: absent or empty is 6; exactly `6`, `7` or `8` is that number;
+     anything else is `unsupported_digits`.
+   - `TimeOtp-Period`, trimmed: absent or empty is 30; otherwise the rule of a link's `period`;
+     anything else is `unsupported_period`.
+
+   The checks are in that order, the secret first.
+3. Otherwise the entry has no key.
+
+A key that is read takes the strings it was read from out of the custom fields: `otp`, or
+`TimeOtp-Secret-Base32`, `TimeOtp-Algorithm`, `TimeOtp-Length` and `TimeOtp-Period`. A key that is
+refused leaves every string where it was — custom fields, as before 0.15.0 — and the entry counts as
+one whose key could not be read (§9).
+
+**Not read**, and left as custom fields: a KeePass 2 secret in UTF-8, hexadecimal or Base64
+(`TimeOtp-Secret`, `-Hex`, `-Base64`); KeePassXC's legacy `TOTP Seed` and `TOTP Settings`; the
+KeeOtp plugin's `key=…&size=…` in an `otp` string (refused by §3: `invalid_secret`); counter-based
+`HmacOtp-*` strings.
 
 **Folder:** the names of the groups the entry is in, from the one below its root group down to its
 own, with `/` between them. The root group is the database itself and is left out; a group without
@@ -395,15 +432,24 @@ The file §11.2 describes, read back.
   `other`.
 - A login is an entry: `name`, `username`, `password`, `notes` (strings), `favorite` (`true`),
   and `urls`: each element that is a string is an address.
+- `totp`: absent or `null` is no key. An object is a key if it has exactly the members `secret`,
+  `algorithm`, `digits` and `period` and nothing else, and they make a key the vault accepts
+  ([TOTP.md](TOTP.md) §2.1: `secret` a string in canonical base32 of 10 to 128 bytes;
+  `algorithm` exactly `SHA1`, `SHA256` or `SHA512`; `digits` 6 to 8; `period` 1 to 300, the two
+  numbers written any way JSON allows, `7.0` and `3e1` included). **Anything else** — another JSON
+  type, a member more or less, a value out of range, a secret in lower case or with padding — makes
+  the entry not imported, with the reason `totp_invalid` (§7.6): the file is BitosX's own, and is
+  never guessed at. A key that is read is never an extra.
 
 `exportedAt`, `createdAt` and `updatedAt` are not read: an imported item is a new item (§10).
-Members this version does not know are ignored.
+Members of an item or of the file this version does not know are ignored (the members of `totp` are
+not: see above).
 
 ## 7. From an entry to an item
 
 Every format arrives at the same thing: an entry with a name, a username, a password, notes, a
-favorite mark, address values, an authenticator key, a folder and custom fields. What follows is
-the same for all of them.
+favorite mark, address values, an authenticator key (as text, or already read: KeePass, BitosX), a
+folder and custom fields. What follows is the same for all of them.
 
 ### 7.1 Name, username, password, notes
 
@@ -477,13 +523,20 @@ These are the *extras* of an entry:
 
 | Kind | Code | What |
 |---|---|---|
-| authenticator key | `totp` | the value, trimmed, if it is not empty |
+| authenticator key that could not be read | `totp` | the text of the key, trimmed, if [TOTP.md](TOTP.md) §3 refuses it |
 | folder | `folder` | the folder or group, trimmed, if it is not empty |
 | other address | `other_address` | each address of §7.2 that is not a web address |
 | custom field | `custom_field` | each custom field whose **value is not blank**; its name is trimmed, its value is as it is |
 
 By default they are **not imported**. The preview counts them, by kind, over the entries that
 will be added, and says that they are left out.
+
+**The authenticator key** given as text (a CSV cell, Bitwarden's `login.totp`) is read by
+[TOTP.md](TOTP.md) §3. Text that is a key gives the item that key, and is **not** an extra. Text
+that §3 refuses is the extra `totp`, exactly as all such text was before 0.15.0, and the entry
+counts as one whose key could not be read (§9). Empty text, or text of nothing but characters that
+are trimmed, is no key and no extra. A key from a KeePass file (§5.3) or from BitosX's own export
+(§6) has been read already.
 
 With the choice "Copy what BitosX has no field for into each item's notes" (off unless chosen),
 they are appended to the notes as lines, in this order: the authenticator key, the folder, the
@@ -507,7 +560,8 @@ not imported: `notes_too_long_with_extras`.
 ### 7.5 An entry with nothing in it, and an entry without a name
 
 An entry is **empty** if its name is empty (after trimming), its username, password and notes are
-blank, it has no address of either kind, no authenticator key, and no custom field with a value.
+blank, it has no address of either kind, no authenticator key (neither one that was read nor text
+that could not be), and no custom field with a value.
 (A folder alone does not make an entry.) An empty entry is counted, and passed over.
 
 An entry that is not empty but has no name is given one. The first of these that is 1 to 200
@@ -542,6 +596,7 @@ is then **not imported**, and listed with its name and that reason.
 | 8 | A web address is longer than 2048 (with `https://`, if it was put in front) | `url_too_long` |
 | 9 | A web address fails §7.3 or the vault's own rule | `url_invalid` |
 | 10 | The notes with the extras copied in are longer than 16384 (§7.4) | `notes_too_long_with_extras` |
+| 11 | BitosX's own export has a `totp` member that is not a key (§6) | `totp_invalid` |
 
 A name the file gives is never replaced by a derived one, even if it is too long. Only web
 addresses count towards the 64.
@@ -558,7 +613,7 @@ same file that itself passed §7.6, has
 
 compared ordinally, where a value that is absent equals an empty one. For the comparison the name
 and the addresses of an item of the vault are trimmed, as those of an entry are. Notes, the
-favorite mark and extras are not compared.
+favorite mark, the authenticator key and extras are not compared.
 
 The comparison is of what would be stored: a derived name and an added `https://` are part of it.
 An entry that is not imported is nobody's duplicate, and nothing is a duplicate of it.
@@ -583,10 +638,11 @@ Reading a file and comparing it with a vault changes nothing. The result is a pl
 | not imported | candidates with a reason |
 | empty | entries with nothing in them |
 | extras, `https://` added, names derived | counted over the candidates with the status `add` only |
+| authenticator keys, keys that could not be read | counted over the candidates with the status `add` only: those that bring a key, and those whose key could not be read (§5.3, §7.4) |
 | items before, items after, over the limit | the vault's items, that number plus *to add*, and whether that is more than 10,000 |
 
-A preview shows names, counts and reasons. It never shows a password, an authenticator key, the
-value of a custom field or notes. (The types that hold them are classes, not records, so that
+A preview shows names, counts and reasons. It never shows a password, an authenticator key (or
+the text of one), the value of a custom field or notes. (The types that hold them are classes, not records, so that
 nothing prints their content by accident.)
 
 ## 10. Applying an import (desktop)
@@ -608,7 +664,9 @@ Nothing is written before the user confirms. Then:
 - It is refused while the vault is locked.
 
 Each item is new: a new identifier, never one from the file; created and last changed at the time
-of the import; the favorite mark of the file, if the format has one. An empty username, password
+of the import; the favorite mark of the file, if the format has one; the authenticator key, if one
+was read. A vault that gets its first key is written with content schema version 2 from then on
+([TOTP.md](TOTP.md) §2.2). An empty username, password
 or notes is stored the way the editor stores it, as none.
 
 The bytes of the file are wiped once they are parsed. What was parsed holds the file's passwords
@@ -641,7 +699,9 @@ Chrome's layout, which most password managers read.
 
 Only the first address of an item is in the file. The number of items with more than one is
 known beforehand (`VaultExporter.CountItemsWithSeveralUrls`), and the dialog says that only JSON
-keeps them all. Read back by §3, the file has the label `Chrome or Edge (CSV)`.
+keeps them all. **Authenticator keys are not in the file** either (the columns are Chrome's); the
+number of items that have one is known beforehand (`VaultExporter.CountItemsWithAuthenticatorKeys`),
+and the dialog says that, like further addresses, they are only in the JSON file. Read back by §3, the file has the label `Chrome or Edge (CSV)`.
 
 ### 11.2 BitosX JSON
 
@@ -659,6 +719,12 @@ keeps them all. Read back by §3, the file has the label `Chrome or Edge (CSV)`.
       "urls": [
         "https://example.com/login"
       ],
+      "totp": {
+        "secret": "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ",
+        "algorithm": "SHA1",
+        "digits": 6,
+        "period": 30
+      },
       "notes": "",
       "favorite": false,
       "createdAt": "2025-01-02T03:04:05.1234567Z",
@@ -670,6 +736,11 @@ keeps them all. Read back by §3, the file has the label `Chrome or Edge (CSV)`.
 
 - UTF-8, no byte order mark. The members in this order. Everything a vault holds is in it.
 - A value an item does not have is the empty string; `urls` is an array, empty if there are none.
+- `totp` comes after `urls`: the item's authenticator key with the members of its stored form in
+  camelCase ([TOTP.md](TOTP.md) §2.1), or `null` when it has none. `version` stays 1: the member is
+  an addition that an older importer ignores. **Importing such a file into desktop 0.14.1 or older,
+  or the web vault 0.8.1 or older, drops the keys** without a word; the rest of each item is
+  imported.
 - Times are UTC and end in `Z`. `exportedAt` is to the second. `createdAt` and `updatedAt` keep
   their fraction of a second, up to seven digits, without trailing zeros, and without the point
   if there is none.
@@ -791,12 +862,13 @@ quote a file.
 | `url_too_long` | A web address is longer than 2048 characters. |
 | `url_invalid` | A web address is not a valid http or https address. |
 | `notes_too_long_with_extras` | With the fields BitosX has no place for copied into them, the notes would be longer than 16384 characters. |
+| `totp_invalid` | The authenticator key in the file is not valid. |
 
 ### 13.3 Kinds
 
 | Extras | In a sentence |
 |---|---|
-| `totp` | authenticator keys (TOTP) |
+| `totp` | authenticator keys that could not be read |
 | `folder` | folder or group names |
 | `other_address` | addresses that are not web addresses |
 | `custom_field` | custom fields |
@@ -832,6 +904,14 @@ git diff tests/fixtures/import     # look at what changed, and say so here
 
 A new fixture starts as an expected file that has its `input` and its `cases` and no `result`.
 
+**0.15.0 (authenticator keys).** Every expected file was written again: `counts` gained `totpKeys`
+and `totpUnreadable`, and every candidate `totp` and `totpRefused`. Where a fixture held a key that
+§7.4 or §5.3 now reads — `FAKEFAKEFAKEFAKE` is sixteen base32 characters, ten bytes — the item gets
+it and it is no longer an extra, nor copied into the notes: in `bitwarden.csv`, `keepassxc.csv`,
+`text-rules.csv`, `bitwarden.json` and `keepass.xml` (whose `otp` string is no longer a custom
+field). `FAKEFAKE` (five bytes) stays an extra. `bitosx-export.json` holds two keys. The new
+fixtures are `totp.csv`, `bitwarden-totp.json`, `keepass-totp.xml` and `bitosx-export-totp.json`.
+
 ### 14.1 An expected file
 
 ```json
@@ -864,13 +944,15 @@ A new fixture starts as an expected file that has its `input` and its `cases` an
   | `unsupported` | an object, code → number; a kind with none is absent |
   | `inTrash` | a number |
   | `ignoredColumns` | an array of names |
-  | `counts` | `toAdd`, `duplicates`, `notImported`, `empty`, `httpsAdded`, `namesDerived`, `vaultItemsBefore`, `vaultItemsAfter`, `exceedsVaultItemLimit` |
+  | `counts` | `toAdd`, `duplicates`, `notImported`, `empty`, `httpsAdded`, `namesDerived`, `totpKeys`, `totpUnreadable`, `vaultItemsBefore`, `vaultItemsAfter`, `exceedsVaultItemLimit` |
   | `extras` | an object, code → number, over the candidates that are added; a kind with none is absent |
   | `candidates` | every entry that is not empty, in the order of the file |
 
   and each candidate: `position`, `status`, `duplicate`, `reason` (a code or `null`), `name`,
   `username`, `password`, `urls`, `notes` (as they would be stored: with the extras, if they are
-  copied), `favorite`, `nameWasDerived`, `httpsAdded` (how many of its addresses), and `extras`:
+  copied), `favorite`, `nameWasDerived`, `httpsAdded` (how many of its addresses), `totp` (the
+  key the item gets, as `{ "secret", "algorithm", "digits", "period" }`, or `null`), `totpRefused`
+  (the code of [TOTP.md](TOTP.md) §6 for a key that could not be read, or `null`), and `extras`:
   `totp`, `folder`, `otherAddresses`, `customFields` (each a `name` and a `value`).
 
 There are no identifiers and no times in an expected file: an imported item gets both when it is
@@ -894,7 +976,11 @@ Every value in the fixtures is made up.
 | `bitwarden.json` | Bitwarden's unencrypted export: a login with everything, one item of every other kind, an item in the trash, a duplicate, an item with only a name, hosts without a scheme, an item without a name, a passkey, an archived item. |
 | `keepass.xml` | A KeePassXC export: nested groups, the recycle bin, a history, custom strings, values marked `ProtectInMemory`, CDATA and character references, a password of three spaces, a field twice, an entry with nothing in it, a duplicate in another group. |
 | `keepass-line-ends.xml` | Line ends inside the values of a KeePass file (§5.2): written as they are — CR LF and a lone CR, which an XML processor turns into LF — written as character references, which stay what they are, and in a CDATA section. The file itself has CR LF line ends, as one written on Windows has. |
-| `bitosx-export.csv`, `bitosx-export.json` | The desktop's own two exports of one vault of eight items (`ConformanceFixtures.ExportedVault`): quotes, commas, line ends, text outside ASCII, spaces that have to stay, values that look like formulas, backslashes, two addresses. Each is read back into an empty vault, and into the vault it came from: the JSON adds nothing; the CSV adds the item that has two addresses, because it holds only the first. |
+| `bitosx-export.csv`, `bitosx-export.json` | The desktop's own two exports of one vault of eight items (`ConformanceFixtures.ExportedVault`): quotes, commas, line ends, text outside ASCII, spaces that have to stay, values that look like formulas, backslashes, two addresses, two authenticator keys. Each is read back into an empty vault, and into the vault it came from: the JSON adds nothing; the CSV adds the item that has two addresses, because it holds only the first, and holds no keys. |
+| `totp.csv` | Authenticator keys in a `totp` column: base32 in capitals and in lower-case groups, `otpauth://` links with other algorithms, digits and periods and in capitals with spaces around, and keys that cannot be read (HOTP, Steam, too short, not base32, a link without a secret, a period of 0); a cell of white space; an entry with nothing but a key; a duplicate with another key. Three cases: as at first, with the extras copied, with duplicates imported. |
+| `bitwarden-totp.json` | Bitwarden's authenticator keys (`totp` of a login): a link as Bitwarden writes it, a base32 key in groups, `steam://`, `null`, a number, a link with a period of 301. |
+| `keepass-totp.xml` | KeePassXC's `otp` (SHA512 and 7 digits, HOTP, Steam with 5 digits), KeePass 2's `TimeOtp-*` (with every parameter, with the defaults, with 5 digits, with an algorithm spelled the way a link spells it), secrets KeePass keeps in hexadecimal or UTF-8 (not read), Base64 after Base32, KeePassXC's legacy strings (not read), `otp` and `TimeOtp-*` together, `otp` twice, a blank `otp`, an entry without a title. |
+| `bitosx-export-totp.json` | BitosX's own export with `totp` members: keys, `null`, absent, numbers written as 7.0 and 3e1, and every kind of member that is not a key (`totp_invalid`). |
 | `refused-*` | One file for each refusal that a file of ordinary size can end in: both encrypted Bitwarden exports, a document type declaration (external, and with entities), protected values, XML that is damaged, XML that is not KeePass's, JSON that is damaged, has a name twice, has half a surrogate pair, or is neither format, a BitosX export of a newer version, UTF-16, bytes that are not UTF-8, a quote that is not closed, text after a closing quote, no known columns, no password column, an empty file, a file of white space. |
 | `generated-*` | Inputs given as parts: 10,001 CSV rows, JSON items and KeePass entries; 16 MiB and 27 bytes; a value of 8 MiB in an ignored column; groups 64 and 65 deep; elements 101 deep; JSON 64 and 65 levels deep. |
 
@@ -914,8 +1000,8 @@ Read on 2026-11-10, each at the commit named.
 | Firefox | `github.com/mozilla-firefox/firefox`, `main` at `5a3f639` | `toolkit/components/passwordmgr/LoginExport.sys.mjs`, `LoginCSVImport.sys.mjs` |
 | Bitwarden | `github.com/bitwarden/clients`, `main` at `7d445be`, and the tag `web-v2025.6.2` | `libs/tools/export-vault-core/src/services/base-vault-export.service.ts`, `individual-vault-export.service.ts`, `org-vault-export.service.ts`, `…/types/bitwarden-json-export-types.ts`; `libs/common/src/models/export/cipher.export.ts`, `login.export.ts`, `login-uri.export.ts`, `field.export.ts`, `folder-with-id.export.ts`; `libs/common/src/vault/enums/cipher-type.ts`; `libs/importer/src/importers/base-importer.ts`, `bitwarden/bitwarden-csv-importer.ts`, `bitwarden/bitwarden-json-importer.ts`, `keepass2-xml-importer.ts` |
 | PapaParse | `github.com/mholt/PapaParse`, `master` at `1fcb83c` | `papaparse.js`, `safe()`: how Bitwarden's CSV is quoted, and how an array becomes a cell |
-| KeePassXC | `github.com/keepassxreboot/keepassxc`, `develop` at `6bcb901`, and the tags `2.3.4`, `2.5.4`, `2.6.0`, `2.6.6`, `2.7.0`, `2.7.10` | `src/format/CsvExporter.cpp`, `KdbxXmlWriter.cpp`, `KdbxXmlReader.cpp`, `KdbxWriter.cpp`; `src/core/Group.cpp`, `EntryAttributes.cpp`, `Totp.h` |
-| KeePass 2 | `KeePass-2.59-Source.zip` from `sourceforge.net/projects/keepass` (SHA-256 `7ac27118…04a7b`) | `KeePass/DataExchange/Formats/KeePassCsv1.cs`; `KeePassLib/Serialization/KdbxFile.cs`, `KdbxFile.Write.cs`; `KeePassLib/PwDefs.cs`; `KeePass/Util/EntryUtil.cs` |
+| KeePassXC | `github.com/keepassxreboot/keepassxc`, `develop` at `6bcb901`, and the tags `2.3.4`, `2.5.4`, `2.6.0`, `2.6.6`, `2.7.0`, `2.7.10` | `src/format/CsvExporter.cpp`, `KdbxXmlWriter.cpp`, `KdbxXmlReader.cpp`, `KdbxWriter.cpp`; `src/core/Group.cpp`, `EntryAttributes.cpp`, `Totp.h`; for authenticator keys (read again on 2026-11-12, same commit) `src/core/Totp.h`, `Totp.cpp`, `Entry.cpp` |
+| KeePass 2 | `KeePass-2.59-Source.zip` from `sourceforge.net/projects/keepass` (SHA-256 `7ac27118…04a7b`) | `KeePass/DataExchange/Formats/KeePassCsv1.cs`; `KeePassLib/Serialization/KdbxFile.cs`, `KdbxFile.Write.cs`; `KeePassLib/PwDefs.cs`; `KeePass/Util/EntryUtil.cs`; for authenticator keys (downloaded again on 2026-11-12, the same SHA-256) `KeePass/Util/EntryUtil.cs`, `KeePassLib/Cryptography/HmacOtp.cs`, `KeePassLib/Utility/MemUtil.cs`, `KeePass/Forms/OtpGeneratorForm.cs` |
 
 The full hashes: Chromium `410329972c7f59251c659a45f66cb5f05c9422bd`; Firefox
 `5a3f6397e61554eda92b0ec63ddd0ff752a22da2`; Bitwarden `7d445bee64fae6907c82662a8a7b3a10c62ee1b3`;
@@ -982,8 +1068,8 @@ PapaParse `1fcb83c64acf61ae636b556b0eadeebaca0aea33`; KeePassXC
 
 Besides what §7.4 counts: an entry's history and earlier passwords, passkeys, attachments, tags,
 icons, expiry dates, auto-type settings, the match setting of an address, the times an entry was
-created and changed, and every item that is not a login. An authenticator key is never used by
-BitosX, only kept as text if the user asks for it to be copied into the notes.
+created and changed, and every item that is not a login. An authenticator key that §5.3 or §7.4
+cannot read is kept only as text, if the user asks for the extras to be copied into the notes.
 
 ## 17. The desktop's user interface (0.14.0)
 
@@ -1013,8 +1099,14 @@ by the specification:
 - At most 200 entries that cannot be imported are listed; the rest are counted ("… and N more.").
   At most 10 ignored columns are named, each cut to 40 characters.
 
+**Authenticator keys (0.15.0).** The preview says how many logins bring a key ("N logins bring an
+authenticator key, which is imported with them.") and how many keys could not be read, and what
+becomes of their text. A key that could not be read from text is not listed again among the
+extras.
+
 **Export.** "Export unencrypted…" opens the warning and the box of §11.3, the choice of format
-(CSV at first), the number of items with more than one address, and a box for the master password.
+(CSV at first), the number of items with more than one address, the number of items with an
+authenticator key (which a CSV file does not hold), and a box for the master password.
 The button is disabled until the box is ticked and a password is typed. **The save dialog comes
 first; then one call checks the password and writes the file** (`IVaultExportService.ExportAsync`).
 So the key is derived once for an export and not at all for one that is called off in the dialog,

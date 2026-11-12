@@ -1,4 +1,6 @@
 using System.Text;
+using BitosX.Core.Authenticator;
+using BitosX.Core.Domain;
 using BitosX.Core.Validation;
 
 namespace BitosX.Core.ImportExport;
@@ -59,11 +61,27 @@ internal static class ImportNormalizer
             }
         }
 
-        var extras = new ImportExtras(
-            ImportText.Trim(entry.Totp), ImportText.Trim(entry.Folder), otherAddresses, customFields ?? []);
+        // The authenticator key: read already, or read now from its text (docs/TOTP.md §3). Text that
+        // is not a key stays an extra, as it was before keys were stored.
+        TotpKey? totp = entry.TotpKey;
+        TotpRefusal? totpRefusal = entry.TotpRefusal;
+        string totpText = string.Empty;
+        if (totp is null && entry.Totp.Length > 0)
+        {
+            TotpParseResult parsed = TotpKeyParser.Parse(entry.Totp);
+            totp = parsed.Key;
+            if (parsed.Refusal is { } refusal)
+            {
+                totpRefusal = refusal;
+                totpText = ImportText.Trim(entry.Totp);
+            }
+        }
+
+        var extras = new ImportExtras(totpText, ImportText.Trim(entry.Folder), otherAddresses, customFields ?? []);
 
         if (name.Length == 0
             && urls.Count == 0
+            && totp is null
             && !extras.HasContent
             && ImportText.IsBlank(entry.Username)
             && ImportText.IsBlank(entry.Password)
@@ -91,8 +109,14 @@ internal static class ImportNormalizer
             }
         }
 
+        if (reason is null && entry.TotpInvalid)
+        {
+            reason = ImportReason.TotpInvalid;
+        }
+
         return new ImportCandidate(
-            entry.Position, name, entry.Username, entry.Password, urls, notes, entry.Favorite, extras, nameWasDerived, httpsAdded, reason);
+            entry.Position, name, entry.Username, entry.Password, urls, notes, entry.Favorite, extras, nameWasDerived, httpsAdded, reason,
+            totp, totpRefusal);
     }
 
     /// <summary>

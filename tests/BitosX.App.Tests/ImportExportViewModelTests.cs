@@ -391,8 +391,10 @@ public sealed class ImportExportViewModelTests : IDisposable
         Assert.Equal("BitosX stores logins only. Not imported — secure notes: 2; cards: 1.", preview.Unsupported);
         Assert.Equal("1 entry is in the trash or recycle bin of the file and is not imported.", preview.InTrash);
         Assert.Equal("1 entry has nothing in it and is passed over.", preview.Empty);
+        Assert.Equal("1 login brings an authenticator key, which is imported with it.", preview.AuthenticatorKeys);
+        Assert.Null(preview.UnreadableKeys);
         Assert.Equal(
-            "BitosX has no field for some of what these logins hold — authenticator keys (TOTP): 1; folder or group names: 1; "
+            "BitosX has no field for some of what these logins hold — folder or group names: 1; "
             + "addresses that are not web addresses: 1; custom fields: 1. It is left out, unless you choose below to copy it into the notes.",
             preview.Extras);
         Assert.Equal("https:// is put in front of 1 address that has no scheme.", preview.HttpsAdded);
@@ -450,7 +452,9 @@ public sealed class ImportExportViewModelTests : IDisposable
         // And what is imported is what the choices ask for: the extras are in the notes.
         await card.Vm.ConfirmImportCommand.ExecuteAsync(null);
         LoginItem mail = Assert.Single(card.Vault.Items.OfType<LoginItem>(), i => i.Name == "Mail");
-        Assert.Equal("Authenticator key (TOTP): FAKEFAKEFAKEFAKE\nFolder: Fake folder", mail.Notes);
+        // The key is a key, stored with the login, and not copied into the notes as text.
+        Assert.Equal("Folder: Fake folder", mail.Notes);
+        Assert.Equal("FAKEFAKEFAKEFAKE", mail.Totp?.Secret);
         Assert.Equal(2, card.Vault.Items.Count);
     }
 
@@ -1021,6 +1025,48 @@ public sealed class ImportExportViewModelTests : IDisposable
         Assert.True(card.Vm.IsExportOpen);
         Assert.Equal(MasterPassword, card.Vm.ExportPassword); // no attempt was made: what was typed is still there
         Assert.True(card.Vm.WriteExportCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ACsvExport_SaysThatItHoldsNoAuthenticatorKeys()
+    {
+        using Card card = await NewCardAsync();
+        await card.Vault.AddLoginAsync(new LoginItem
+        {
+            Name = "With a key", Password = "FAKE-pw-key", Totp = new TotpKey { Secret = "GEZDGNBVGY3TQOJQ" },
+        });
+        string destination = Path.Combine(_directory, "export-keys.csv");
+        card.Files.ExportPath = destination;
+        card.OpenExport(MasterPassword);
+        Assert.Equal(
+            "1 item in this vault has an authenticator key. A CSV file holds no authenticator keys; only the JSON file keeps them.",
+            card.Vm.ExportKeysNote);
+        Assert.DoesNotContain("GEZDGNBV", card.Vm.ExportKeysNote!, StringComparison.Ordinal);
+
+        await card.Vm.WriteExportCommand.ExecuteAsync(null);
+
+        Assert.EndsWith(" 1 item has an authenticator key, which the file does not hold.", card.Vm.ExportStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain("GEZDGNBV", File.ReadAllText(destination), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ThePreview_CountsKeysThatAreRead_AndKeysThatCannotBe()
+    {
+        ImportPlan plan = ImportPlanner.Plan(
+            ImportParser.Parse(System.Text.Encoding.UTF8.GetBytes(
+                "name,password,totp\nOne,FAKE-1,GEZDGNBVGY3TQOJQ\nTwo,FAKE-2,otpauth://hotp/x?secret=GEZDGNBVGY3TQOJQ\nThree,FAKE-3,FAKE-not-a-key\n")),
+            [],
+            ImportOptions.Default);
+        ImportPreview preview = ImportPreview.From(plan);
+
+        Assert.Equal("1 login brings an authenticator key, which is imported with it.", preview.AuthenticatorKeys);
+        Assert.Equal(
+            "2 authenticator keys could not be read. They are left out, unless you choose below to copy what BitosX has no field for into the notes.",
+            preview.UnreadableKeys);
+        Assert.Null(preview.Extras); // the keys are not counted twice
+
+        ImportPreview copied = ImportPreview.From(ImportPlanner.Plan(plan.Source, [], new ImportOptions(CopyExtrasToNotes: true)));
+        Assert.Equal("2 authenticator keys could not be read. Their text is copied into the notes.", copied.UnreadableKeys);
     }
 
     [Fact]

@@ -58,8 +58,12 @@ public sealed class ImportCandidate
         ImportExtras extras,
         bool nameWasDerived,
         int httpsAdded,
-        ImportReason? reason)
+        ImportReason? reason,
+        Domain.TotpKey? totp = null,
+        Authenticator.TotpRefusal? totpRefusal = null)
     {
+        Totp = totp;
+        TotpRefusal = totpRefusal;
         Position = position;
         Name = name;
         Username = username;
@@ -99,6 +103,15 @@ public sealed class ImportCandidate
 
     /// <summary>What the entry holds that BitosX has no field for.</summary>
     public ImportExtras Extras { get; }
+
+    /// <summary>The authenticator key the item gets, if the entry has one that could be read.</summary>
+    public Domain.TotpKey? Totp { get; }
+
+    /// <summary>
+    /// Why the entry's authenticator key could not be read, if it has one that could not. The text
+    /// is then an extra (<see cref="ImportExtras.Totp"/>), or, from a KeePass file, custom fields.
+    /// </summary>
+    public Authenticator.TotpRefusal? TotpRefusal { get; }
 
     /// <summary>Whether the file gave no name, so that one was taken from the address or the username.</summary>
     public bool NameWasDerived { get; }

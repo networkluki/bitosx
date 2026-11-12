@@ -1,3 +1,4 @@
+using BitosX.Core.Authenticator;
 using BitosX.Core.Domain;
 
 namespace BitosX.Core.Validation;
@@ -77,6 +78,27 @@ public static class VaultValidation
         {
             ValidateUrl(url);
         }
+
+        if (login.Totp is not null && !IsValidTotpKey(login.Totp))
+        {
+            // Never quotes the key.
+            throw new VaultValidationException("The authenticator key is not valid.");
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="key"/> is an authenticator key an item may hold (docs/TOTP.md §2): a
+    /// canonical base32 secret of 10 to 128 bytes, a known algorithm, 6 to 8 digits, a period of 1
+    /// to 300 seconds.
+    /// </summary>
+    public static bool IsValidTotpKey(TotpKey key)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        return key.Secret is not null
+            && Base32.IsCanonicalSecret(key.Secret, TotpKeyParser.MinSecretBytes, TotpKeyParser.MaxSecretBytes)
+            && Enum.IsDefined(key.Algorithm)
+            && key.Digits is >= 6 and <= 8
+            && key.Period is >= 1 and <= TotpKeyParser.MaxPeriod;
     }
 
     private static void ValidateName(string name)

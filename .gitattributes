@@ -21,3 +21,8 @@
 # The import fixtures are read byte for byte, by this repository's tests and by the web vault's:
 # their line ends are part of what is tested, and some of them are deliberately not text.
 tests/fixtures/import/** -text
+
+# The authenticator-key fixtures and the web vault's encrypted fixture are compared byte for byte
+# too, here and by the web vault.
+tests/fixtures/totp/** -text
+tests/fixtures/web/** -text

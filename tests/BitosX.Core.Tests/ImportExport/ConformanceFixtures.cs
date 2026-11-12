@@ -66,8 +66,10 @@ internal static class ConformanceFixtures
     /// </summary>
     public static IReadOnlyList<VaultItem> ExportedVault { get; } =
     [
-        Item("Example Mail", "fake.user@example.test", "FAKE-mail-pw-1", "The address book is shared.", favorite: true, created: 0, "https://mail.example.com/login"),
-        Item("Two addresses", "fake.two", "FAKE-two-pw", null, favorite: false, created: 1, "https://first.example.org/", "https://second.example.org/sign-in?next=%2Fhome"),
+        Item("Example Mail", "fake.user@example.test", "FAKE-mail-pw-1", "The address book is shared.", favorite: true, created: 0, "https://mail.example.com/login")
+            with { Totp = new TotpKey { Secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", Algorithm = TotpAlgorithm.Sha1, Digits = 6, Period = 30 } },
+        Item("Two addresses", "fake.two", "FAKE-two-pw", null, favorite: false, created: 1, "https://first.example.org/", "https://second.example.org/sign-in?next=%2Fhome")
+            with { Totp = new TotpKey { Secret = "JBSWY3DPEHPK3PXP", Algorithm = TotpAlgorithm.Sha256, Digits = 8, Period = 60 } },
         Item("Quotes \"and\", commas", "fake,\"user\"", "FAKE \"pw\", with a comma", "line one\nline two\r\nline three, with a \"quote\"", favorite: false, created: 2, "https://example.net/?ids=1,2,3"),
         Item("Caf\u00E9 r\u00E4ksm\u00F6rg\u00E5s \u65E5\u672C", "anv\u00E4ndare@example.test", "FAKE-l\u00F6senord-\uD83D\uDD11", "Notes with an emoji \uD83D\uDE00 and a no-break\u00A0space.", favorite: false, created: 3, "https://xn--bcher-kva.example/"),
         Item("Only a name", null, null, null, favorite: false, created: 4),
@@ -237,6 +239,8 @@ internal static class ConformanceFixtures
         writer.WriteNumber("empty", plan.EmptyEntries);
         writer.WriteNumber("httpsAdded", plan.HttpsAdded);
         writer.WriteNumber("namesDerived", plan.NamesDerived);
+        writer.WriteNumber("totpKeys", plan.TotpKeys);
+        writer.WriteNumber("totpUnreadable", plan.TotpUnreadable);
         writer.WriteNumber("vaultItemsBefore", plan.VaultItemsBefore);
         writer.WriteNumber("vaultItemsAfter", plan.VaultItemsAfter);
         writer.WriteBoolean("exceedsVaultItemLimit", plan.ExceedsVaultItemLimit);
@@ -283,6 +287,28 @@ internal static class ConformanceFixtures
             writer.WriteBoolean("favorite", candidate.Favorite);
             writer.WriteBoolean("nameWasDerived", candidate.NameWasDerived);
             writer.WriteNumber("httpsAdded", candidate.HttpsAdded);
+            if (candidate.Totp is { } totp)
+            {
+                writer.WriteStartObject("totp");
+                writer.WriteString("secret", totp.Secret);
+                writer.WriteString("algorithm", BitosX.Core.Authenticator.TotpTexts.AlgorithmName(totp.Algorithm));
+                writer.WriteNumber("digits", totp.Digits);
+                writer.WriteNumber("period", totp.Period);
+                writer.WriteEndObject();
+            }
+            else
+            {
+                writer.WriteNull("totp");
+            }
+
+            if (candidate.TotpRefusal is { } totpRefusal)
+            {
+                writer.WriteString("totpRefused", BitosX.Core.Authenticator.TotpTexts.Code(totpRefusal));
+            }
+            else
+            {
+                writer.WriteNull("totpRefused");
+            }
 
             writer.WriteStartObject("extras");
             writer.WriteString("totp", candidate.Extras.Totp);

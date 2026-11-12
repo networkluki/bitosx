@@ -122,6 +122,7 @@ public static class ImportTexts
         ImportReason.UrlTooLong => "url_too_long",
         ImportReason.UrlInvalid => "url_invalid",
         ImportReason.NotesTooLongWithExtras => "notes_too_long_with_extras",
+        ImportReason.TotpInvalid => "totp_invalid",
         _ => throw new ArgumentOutOfRangeException(nameof(reason)),
     };
 
@@ -139,6 +140,7 @@ public static class ImportTexts
         ImportReason.UrlInvalid => "A web address is not a valid http or https address.",
         ImportReason.NotesTooLongWithExtras =>
             "With the fields BitosX has no place for copied into them, the notes would be longer than 16384 characters.",
+        ImportReason.TotpInvalid => "The authenticator key in the file is not valid.",
         _ => throw new ArgumentOutOfRangeException(nameof(reason)),
     };
 
@@ -155,7 +157,7 @@ public static class ImportTexts
     /// <summary>What a kind of extra is called, in the plural, in a sentence.</summary>
     public static string Text(ImportExtraKind kind) => kind switch
     {
-        ImportExtraKind.Totp => "authenticator keys (TOTP)",
+        ImportExtraKind.Totp => "authenticator keys that could not be read",
         ImportExtraKind.Folder => "folder or group names",
         ImportExtraKind.OtherAddress => "addresses that are not web addresses",
         ImportExtraKind.CustomField => "custom fields",

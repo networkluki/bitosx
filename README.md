@@ -41,6 +41,12 @@ ever sent. There is intentionally **no subscription, browser extension, or mobil
   BitosX JSON, after a warning, an acknowledgement and the master password. The readers were written
   from the exporters' source code; no file produced by those programs has been imported (see
   [docs/VERIFICATION.md](docs/VERIFICATION.md)). See [docs/IMPORT_EXPORT.md](docs/IMPORT_EXPORT.md).
+- Authenticator codes (TOTP, 0.15.0): a login can hold its authenticator key — typed as base32 or
+  an `otpauth://totp/` link, or imported — and the vault page shows the current code with the
+  seconds left and copies it. The key is masked like the password; locking stops and clears the
+  codes. A vault that holds a key needs desktop 0.15.0 or the web vault 0.9.0 or later: older
+  versions refuse it without changing it. Keeping the key next to the password puts both factors in
+  one vault (see [SECURITY.md](SECURITY.md)). See [docs/TOTP.md](docs/TOTP.md).
 - Add, edit, delete, favorite, and search login items; deleting is asked for and then confirmed.
 - Copy username / password to the clipboard with an automatic timed clear.
 - Show/hide passwords (hidden by default).

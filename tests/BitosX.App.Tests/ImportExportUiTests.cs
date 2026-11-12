@@ -331,8 +331,11 @@ public sealed class ImportExportUiTests : IDisposable
 
         Assert.Equal("Bitwarden (CSV): 4 entries in the file.", Text(view, "ImportSource"));
         Assert.Equal("3 entries cannot be imported.", Text(view, "ImportNotImported"));
+        // The authenticator key of the file is a key (docs/TOTP.md §3), and is imported with its login.
+        Assert.Equal("1 login brings an authenticator key, which is imported with it.", Text(view, "ImportAuthenticatorKeys"));
+        Assert.False(Shown(view, "ImportUnreadableKeys"));
         Assert.Equal(
-            "BitosX has no field for some of what these logins hold — authenticator keys (TOTP): 1; folder or group names: 1; "
+            "BitosX has no field for some of what these logins hold — folder or group names: 1; "
             + "addresses that are not web addresses: 1; custom fields: 1. It is left out, unless you choose below to copy it into the notes.",
             Text(view, "ImportExtras"));
 

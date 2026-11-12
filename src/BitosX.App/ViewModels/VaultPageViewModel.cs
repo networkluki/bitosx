@@ -1,5 +1,6 @@
 using System.Globalization;
 using BitosX.App.Services;
+using BitosX.Core.Authenticator;
 using BitosX.Core.Domain;
 using BitosX.Core.Generation;
 using BitosX.Core.Services;
@@ -10,9 +11,21 @@ using CommunityToolkit.Mvvm.Input;
 namespace BitosX.App.ViewModels;
 
 /// <summary>The vault page: search, list, and manage login items.</summary>
-public sealed partial class VaultPageViewModel : ViewModelBase
+/// <remarks>
+/// Logins with an authenticator key show their current code, which a timer of one second keeps up
+/// to date while the vault is unlocked and such a login is listed. Locking — or the page being let go
+/// of, which the shell does when the vault locks — stops the timer and clears every code shown.
+/// </remarks>
+public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
 {
+    private static readonly TimeSpan CodeTick = TimeSpan.FromSeconds(1);
+
     private readonly IVaultService _vaultService;
+    private readonly TimeProvider _time;
+    private readonly IUiDispatcher? _ui;
+    private readonly object _timerLock = new();
+    private ITimer? _codeTimer;
+    private bool _disposed;
     private readonly IClipboardService _clipboard;
     private readonly IPasswordGenerator _generator;
     private readonly GeneratorSettings _generatorSettings;
@@ -51,12 +64,40 @@ public sealed partial class VaultPageViewModel : ViewModelBase
 
     public string NoMatchesText => $"No logins match “{SearchText.Trim()}”.";
 
-    public VaultPageViewModel(IVaultService vaultService, IClipboardService clipboard, IPasswordGenerator generator, GeneratorSettings? generatorSettings = null)
+    /// <summary>Whether a login of the vault has an authenticator key, so that codes are shown.</summary>
+    [ObservableProperty]
+    public partial bool HasAuthenticatorCodes { get; private set; }
+
+    /// <summary>The note shown with the codes (docs/TOTP.md §4).</summary>
+    public string ClockNote { get; } = TotpTexts.ClockNote;
+
+    /// <summary>Whether the timer that keeps the codes up to date is running.</summary>
+    public bool IsCodeTimerRunning
+    {
+        get
+        {
+            lock (_timerLock)
+            {
+                return _codeTimer is not null;
+            }
+        }
+    }
+
+    public VaultPageViewModel(
+        IVaultService vaultService,
+        IClipboardService clipboard,
+        IPasswordGenerator generator,
+        GeneratorSettings? generatorSettings = null,
+        TimeProvider? time = null,
+        IUiDispatcher? ui = null)
     {
         _vaultService = vaultService;
         _clipboard = clipboard;
         _generator = generator;
         _generatorSettings = generatorSettings ?? new GeneratorSettings();
+        _time = time ?? TimeProvider.System;
+        _ui = ui;
+        _vaultService.StateChanged += OnVaultStateChanged;
     }
 
     /// <summary>Names in the order of the user's language (Å, Ä, Ö after Z in Swedish; É with E), ignoring case, as the web vault sorts.</summary>
@@ -74,10 +115,112 @@ public sealed partial class VaultPageViewModel : ViewModelBase
 
         ApplyFilter();
         AllItems = [.. _all];
+        HasAuthenticatorCodes = _all.Exists(item => item.HasTotp);
+        UpdateCodes();
         return Task.CompletedTask;
     }
 
-    partial void OnSearchTextChanged(string value) => ApplyFilter();
+    /// <summary>
+    /// Shows the current code of every listed login that has a key, and keeps the timer running for
+    /// as long as there is one and the vault is unlocked; otherwise stops it and clears the codes.
+    /// </summary>
+    public void UpdateCodes()
+    {
+        if (_disposed || _vaultService.State != VaultState.Unlocked || !HasAuthenticatorCodes)
+        {
+            StopCodes();
+            return;
+        }
+
+        long now = _time.GetUtcNow().ToUnixTimeSeconds();
+        foreach (LoginItemViewModel item in _all)
+        {
+            if (item.Model.Totp is { } key)
+            {
+                // Only for the cards that are shown; a hidden card shows nothing.
+                item.ShowCode(item.IsMatch ? TotpGenerator.Generate(key, now) : null);
+            }
+        }
+
+        lock (_timerLock)
+        {
+            _codeTimer ??= _time.CreateTimer(_ => OnCodeTick(), null, CodeTick, CodeTick);
+        }
+    }
+
+    private void OnCodeTick()
+    {
+        // The timer calls back on a thread of the pool; the cards change on the UI thread.
+        if (_ui is null)
+        {
+            UpdateCodes();
+        }
+        else
+        {
+            _ui.Run(UpdateCodes);
+        }
+    }
+
+    /// <summary>Stops the timer and clears every code shown.</summary>
+    private void StopCodes()
+    {
+        ITimer? timer;
+        lock (_timerLock)
+        {
+            timer = _codeTimer;
+            _codeTimer = null;
+        }
+
+        timer?.Dispose();
+        foreach (LoginItemViewModel item in _all)
+        {
+            item.ShowCode(null);
+        }
+    }
+
+    private void OnVaultStateChanged(object? sender, VaultState state)
+    {
+        if (state == VaultState.Unlocked)
+        {
+            return;
+        }
+
+        // Stopped at once, on whatever thread the state changed; the cards are cleared on the UI thread.
+        ITimer? timer;
+        lock (_timerLock)
+        {
+            timer = _codeTimer;
+            _codeTimer = null;
+        }
+
+        timer?.Dispose();
+        if (_ui is null)
+        {
+            StopCodes();
+        }
+        else
+        {
+            _ui.Run(StopCodes);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _vaultService.StateChanged -= OnVaultStateChanged;
+        StopCodes();
+    }
+
+    partial void OnSearchTextChanged(string value)
+    {
+        ApplyFilter();
+        UpdateCodes();
+    }
 
     /// <summary>
     /// Marks each login as matching the search or not, in place. A card whose answer does not change
@@ -223,6 +366,22 @@ public sealed partial class VaultPageViewModel : ViewModelBase
         {
             await CopyAsync(password, "Password").ConfigureAwait(true);
         }
+    }
+
+    /// <summary>
+    /// Copies the code of <paramref name="item"/>'s key as it is at this moment — not the one on
+    /// screen, which may be a second old — through the clipboard that clears itself.
+    /// </summary>
+    [RelayCommand]
+    private async Task CopyCodeAsync(LoginItemViewModel item)
+    {
+        if (item.Model.Totp is not { } key || _vaultService.State != VaultState.Unlocked)
+        {
+            return;
+        }
+
+        string code = TotpGenerator.Generate(key, _time.GetUtcNow()).Code;
+        await CopyAsync(code, "Authenticator code").ConfigureAwait(true);
     }
 
     private async Task CopyAsync(string value, string what)

@@ -135,7 +135,8 @@ public sealed class VaultExporterTests
     {
         VaultItem[] items =
         [
-            Item("Example", "fake.user@example.test", "FAKE-pw+<1>&'x'", "first line\nsecond \"line\"", favorite: true, "https://example.com/login", "https://example.org"),
+            Item("Example", "fake.user@example.test", "FAKE-pw+<1>&'x'", "first line\nsecond \"line\"", favorite: true, "https://example.com/login", "https://example.org")
+                with { Totp = new TotpKey { Secret = "GEZDGNBVGY3TQOJQ", Algorithm = TotpAlgorithm.Sha256, Digits = 8, Period = 60 } },
             new LoginItem
             {
                 Name = "Bare",
@@ -160,6 +161,12 @@ public sealed class VaultExporterTests
                     "https://example.com/login",
                     "https://example.org"
                   ],
+                  "totp": {
+                    "secret": "GEZDGNBVGY3TQOJQ",
+                    "algorithm": "SHA256",
+                    "digits": 8,
+                    "period": 60
+                  },
                   "notes": "first line\nsecond \"line\"",
                   "favorite": true,
                   "createdAt": "2025-01-02T03:04:05Z",
@@ -171,6 +178,7 @@ public sealed class VaultExporterTests
                   "username": "",
                   "password": "",
                   "urls": [],
+                  "totp": null,
                   "notes": "",
                   "favorite": false,
                   "createdAt": "2025-01-02T03:04:05.12345Z",
@@ -181,6 +189,25 @@ public sealed class VaultExporterTests
 
             """.ReplaceLineEndings("\n"),
             Text(VaultExporter.ToBitosXJson(items, ExportedAt)));
+    }
+
+    [Fact]
+    public void CountItemsWithAuthenticatorKeys_CountsLoginsWithAKey()
+    {
+        var key = new TotpKey { Secret = "GEZDGNBVGY3TQOJQ" };
+        Assert.Equal(
+            2,
+            VaultExporter.CountItemsWithAuthenticatorKeys(
+                [Item("a", password: "FAKE") with { Totp = key }, Item("b", password: "FAKE"), Item("c", password: "FAKE") with { Totp = key }]));
+    }
+
+    [Fact]
+    public void Json_AKey_ReadsBackAsTheSameKey()
+    {
+        var key = new TotpKey { Secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ", Algorithm = TotpAlgorithm.Sha512, Digits = 7, Period = 300 };
+        ParsedImport parsed = Parse(VaultExporter.ToBitosXJson([Item("Example", password: "FAKE") with { Totp = key }], ExportedAt));
+        Assert.Equal(key, Assert.Single(parsed.Entries).TotpKey);
+        Assert.False(parsed.Entries[0].TotpInvalid);
     }
 
     [Fact]

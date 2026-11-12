@@ -39,6 +39,8 @@ public sealed class ImportPlan
                 case ImportStatus.Add:
                     ToAdd++;
                     HttpsAdded += candidate.HttpsAdded;
+                    TotpKeys += candidate.Totp is null ? 0 : 1;
+                    TotpUnreadable += candidate.TotpRefusal is null ? 0 : 1;
                     NamesDerived += candidate.NameWasDerived ? 1 : 0;
                     foreach (ImportExtraKind kind in Enum.GetValues<ImportExtraKind>())
                     {
@@ -94,6 +96,15 @@ public sealed class ImportPlan
     /// <summary>How many of the logins that would be added had no name, and were given one.</summary>
     public int NamesDerived { get; }
 
+    /// <summary>How many of the logins that would be added bring an authenticator key with them.</summary>
+    public int TotpKeys { get; }
+
+    /// <summary>
+    /// How many of the logins that would be added have an authenticator key that could not be read
+    /// (docs/TOTP.md §3). Its text is left out, or copied into the notes with the other extras.
+    /// </summary>
+    public int TotpUnreadable { get; }
+
     /// <summary>How many items the vault held when the plan was made.</summary>
     public int VaultItemsBefore { get; }
 
@@ -130,6 +141,7 @@ public sealed class ImportPlan
                 Urls = [.. candidate.Urls],
                 Notes = candidate.Notes.Length > 0 ? candidate.Notes : null,
                 Favorite = candidate.Favorite,
+                Totp = candidate.Totp,
                 CreatedAt = importedAt,
                 UpdatedAt = importedAt,
             });
