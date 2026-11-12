@@ -161,3 +161,39 @@ public sealed class TotpKeyParserTests
         }
     }
 }
+
+public sealed class TotpSpecificationTests
+{
+    private static string Specification()
+    {
+        for (DirectoryInfo? dir = new(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            string path = Path.Combine(dir.FullName, "docs", "TOTP.md");
+            if (File.Exists(path))
+            {
+                return File.ReadAllText(path);
+            }
+        }
+
+        throw new FileNotFoundException("docs/TOTP.md was not found above the test's directory.");
+    }
+
+    [Fact]
+    public void EveryRefusal_HasItsCodeAndItsTextInTheSpecification()
+    {
+        string specification = Specification();
+        foreach (TotpRefusal refusal in Enum.GetValues<TotpRefusal>())
+        {
+            Assert.Contains($"| `{TotpTexts.Code(refusal)}` | {TotpTexts.Text(refusal)} |", specification, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void TheFieldAndTheClockNote_AreTheWordsOfTheSpecification()
+    {
+        string specification = Specification();
+        Assert.Contains($"| Label | {TotpTexts.FieldLabel} |", specification, StringComparison.Ordinal);
+        Assert.Contains($"| Hint | {TotpTexts.FieldHint} |", specification, StringComparison.Ordinal);
+        Assert.Contains($"> {TotpTexts.ClockNote}", specification, StringComparison.Ordinal);
+    }
+}

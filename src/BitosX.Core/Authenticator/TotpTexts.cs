@@ -6,6 +6,15 @@ namespace BitosX.Core.Authenticator;
 /// </summary>
 public static class TotpTexts
 {
+    /// <summary>The label of the editor's field.</summary>
+    public const string FieldLabel = "Authenticator key";
+
+    /// <summary>The hint under the editor's field.</summary>
+    public const string FieldHint = "The key or the otpauth:// link a site shows when you set up two-step sign-in.";
+
+    /// <summary>The note shown with a code (docs/TOTP.md §4).</summary>
+    public const string ClockNote = "Codes depend on this device's clock. If they are refused, check that the clock is right.";
+
     /// <summary>The code of a refusal, as the fixtures spell it.</summary>
     public static string Code(TotpRefusal refusal) => refusal switch
     {
