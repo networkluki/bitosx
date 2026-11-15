@@ -688,6 +688,16 @@ public sealed class VaultService : IVaultService, IDisposable
         return item;
     }
 
+    public async Task<NoteItem> AddNoteAsync(NoteItem item, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(item);
+
+        await ApplyAsync(vault => vault.Add(item), cancellationToken).ConfigureAwait(false);
+
+        VaultLog.VaultItemAdded(_logger, item.ItemType);
+        return item;
+    }
+
     public async Task<IReadOnlyList<LoginItem>> AddLoginsAsync(
         Func<IReadOnlyList<VaultItem>, IReadOnlyList<LoginItem>> chooseItems,
         CancellationToken cancellationToken = default)

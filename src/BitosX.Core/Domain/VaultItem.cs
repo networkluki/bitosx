@@ -9,6 +9,7 @@ namespace BitosX.Core.Domain;
 /// </summary>
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "type")]
 [JsonDerivedType(typeof(LoginItem), typeDiscriminator: "login")]
+[JsonDerivedType(typeof(NoteItem), typeDiscriminator: "note")]
 public abstract record VaultItem
 {
     /// <summary>Stable unique identifier.</summary>
@@ -17,7 +18,10 @@ public abstract record VaultItem
     /// <summary>Human-readable display name (required).</summary>
     public string Name { get; init; } = string.Empty;
 
-    /// <summary>Optional free-form notes.</summary>
+    /// <summary>
+    /// Optional free-form notes. For a <see cref="NoteItem"/> this is the note's text, which is as secret
+    /// as a password.
+    /// </summary>
     public string? Notes { get; init; }
 
     /// <summary>Whether the user marked this item as a favorite.</summary>

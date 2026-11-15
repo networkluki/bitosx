@@ -21,8 +21,15 @@ public sealed class Vault
     /// </summary>
     public const int SchemaVersionWithAuthenticatorKeys = 2;
 
+    /// <summary>
+    /// The content schema version of a vault that holds at least one <see cref="NoteItem"/>, with or
+    /// without authenticator keys (docs/NOTES.md §2). Versions up to 0.15 refuse it, and so never save
+    /// over a vault whose notes they would not understand.
+    /// </summary>
+    public const int SchemaVersionWithNotes = 3;
+
     /// <summary>The newest content schema version this build reads.</summary>
-    public const int CurrentSchemaVersion = SchemaVersionWithAuthenticatorKeys;
+    public const int CurrentSchemaVersion = SchemaVersionWithNotes;
 
     private readonly List<VaultItem> _items;
 
@@ -52,11 +59,17 @@ public sealed class Vault
             {
                 VaultValidation.Validate(loaded);
 
-                // A version 1 document cannot hold an authenticator key: the version is what keeps
-                // older builds from opening (and then saving over) a vault that holds one.
+                // A version 1 document cannot hold an authenticator key, and a version 1 or 2 document
+                // cannot hold a note: the version is what keeps older builds from opening (and then
+                // saving over) a vault that holds one.
                 if (schemaVersion < SchemaVersionWithAuthenticatorKeys && HasAuthenticatorKey(loaded))
                 {
                     throw new VaultValidationException("An authenticator key in a version 1 vault.");
+                }
+
+                if (schemaVersion < SchemaVersionWithNotes && loaded is NoteItem)
+                {
+                    throw new VaultValidationException("A note in a version 1 or 2 vault.");
                 }
             }
             catch (VaultValidationException)
@@ -89,12 +102,30 @@ public sealed class Vault
     public int SchemaVersion { get; }
 
     /// <summary>
-    /// The schema version the contents are written with: <see cref="SchemaVersionWithAuthenticatorKeys"/>
-    /// if a login has an authenticator key, otherwise <see cref="SchemaVersionWithoutAuthenticatorKeys"/>,
-    /// so that a vault without keys stays byte for byte what earlier versions wrote and read.
+    /// The schema version the contents are written with: the lowest that can hold them.
+    /// <see cref="SchemaVersionWithNotes"/> if the vault holds a note; otherwise
+    /// <see cref="SchemaVersionWithAuthenticatorKeys"/> if a login has an authenticator key; otherwise
+    /// <see cref="SchemaVersionWithoutAuthenticatorKeys"/>. So a vault without notes stays byte for byte
+    /// what 0.15 wrote, and one without notes and keys what earlier versions wrote and read.
     /// </summary>
     public int RequiredSchemaVersion
-        => _items.Any(HasAuthenticatorKey) ? SchemaVersionWithAuthenticatorKeys : SchemaVersionWithoutAuthenticatorKeys;
+    {
+        get
+        {
+            bool hasKey = false;
+            foreach (VaultItem item in _items)
+            {
+                if (item is NoteItem)
+                {
+                    return SchemaVersionWithNotes;
+                }
+
+                hasKey |= HasAuthenticatorKey(item);
+            }
+
+            return hasKey ? SchemaVersionWithAuthenticatorKeys : SchemaVersionWithoutAuthenticatorKeys;
+        }
+    }
 
     private static bool HasAuthenticatorKey(VaultItem item) => item is LoginItem { Totp: not null };
 

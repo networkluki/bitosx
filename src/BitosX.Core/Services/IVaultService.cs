@@ -105,6 +105,12 @@ public interface IVaultService
     Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Adds a secure note and persists the vault. The first note makes the vault content schema
+    /// version 3 (docs/NOTES.md §2).
+    /// </summary>
+    Task<NoteItem> AddNoteAsync(NoteItem item, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Adds several login items and persists the vault <b>once</b>: either all of them are stored, or
     /// none is. <paramref name="chooseItems"/> is given the items the vault holds at that moment —
     /// nothing else can change them before the write is done — and returns the items to add. If it

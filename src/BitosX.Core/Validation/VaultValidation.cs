@@ -40,6 +40,9 @@ public static class VaultValidation
             case LoginItem login:
                 ValidateLogin(login);
                 break;
+            case NoteItem:
+                // A name and a text, both checked above: a note with only a name is allowed.
+                break;
             default:
                 throw new VaultValidationException($"Unsupported item type '{item.GetType().Name}'.");
         }

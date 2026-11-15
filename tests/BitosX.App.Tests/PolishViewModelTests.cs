@@ -337,6 +337,7 @@ public sealed class PolishViewModelTests : IDisposable
         public Task RotateVaultKeyAsync(string currentPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task StrengthenKeyDerivationAsync(string currentPassword, Argon2Parameters newParameters, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<NoteItem> AddNoteAsync(NoteItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<LoginItem>> AddLoginsAsync(Func<IReadOnlyList<VaultItem>, IReadOnlyList<LoginItem>> chooseItems, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<VaultItem>> VerifyMasterPasswordAsync(string currentPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<VaultItem> UpdateItemAsync(VaultItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();

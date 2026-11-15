@@ -26,7 +26,8 @@ public static class VaultSerializer
 
     /// <summary>
     /// Serializes a vault to UTF-8 JSON bytes, with the schema version its contents need
-    /// (<see cref="Vault.RequiredSchemaVersion"/>): 1 without authenticator keys, 2 with.
+    /// (<see cref="Vault.RequiredSchemaVersion"/>): 1 without authenticator keys and notes, 2 with a
+    /// key and no note, 3 with a note.
     /// </summary>
     public static byte[] SerializeToUtf8Bytes(Vault vault)
     {
@@ -65,9 +66,12 @@ public static class VaultSerializer
             throw new VaultValidationException("The decrypted vault content is empty.");
         }
 
-        // 1 and 2 are read; a version 1 document with an authenticator key is refused when its items
-        // are (Vault). Anything newer was written by a newer build and is never guessed at.
-        if (document.SchemaVersion is not (Vault.SchemaVersionWithoutAuthenticatorKeys or Vault.SchemaVersionWithAuthenticatorKeys))
+        // 1, 2 and 3 are read; a version 1 document with an authenticator key, and a version 1 or 2
+        // document with a note, are refused when their items are (Vault). Anything newer was written
+        // by a newer build and is never guessed at.
+        if (document.SchemaVersion is not (Vault.SchemaVersionWithoutAuthenticatorKeys
+            or Vault.SchemaVersionWithAuthenticatorKeys
+            or Vault.SchemaVersionWithNotes))
         {
             throw new VaultValidationException(
                 $"Unsupported vault schema version {document.SchemaVersion}.");

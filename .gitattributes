@@ -26,3 +26,6 @@ tests/fixtures/import/** -text
 # too, here and by the web vault.
 tests/fixtures/totp/** -text
 tests/fixtures/web/** -text
+
+# The content-schema fixture of secure notes too.
+tests/fixtures/notes/** -text
