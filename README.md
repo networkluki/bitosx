@@ -47,7 +47,14 @@ ever sent. There is intentionally **no subscription, browser extension, or mobil
   codes. A vault that holds a key needs desktop 0.15.0 or the web vault 0.9.0 or later: older
   versions refuse it without changing it. Keeping the key next to the password puts both factors in
   one vault (see [SECURITY.md](SECURITY.md)). See [docs/TOTP.md](docs/TOTP.md).
-- Add, edit, delete, favorite, and search login items; deleting is asked for and then confirmed.
+- Secure notes (0.16.0): a vault holds notes besides logins — a name and a text, nothing else. The
+  text is treated as a password: hidden until Show, masked in the editor, copied through the
+  clipboard that clears itself, never searched (a note is found by its name). Bitwarden's secure
+  notes are imported as notes, and BitosX's JSON export holds them. A vault that holds a note needs
+  desktop 0.16.0 or the web vault 0.10.0 or later: older versions refuse it without changing it. See
+  [docs/NOTES.md](docs/NOTES.md).
+- Add, edit, delete, favorite, and search login items and notes; deleting is asked for and then
+  confirmed.
 - Copy username / password to the clipboard with an automatic timed clear.
 - Show/hide passwords (hidden by default).
 - Cryptographically secure password generator (4 to 256 characters); the login editor's Generate

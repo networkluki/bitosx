@@ -55,6 +55,13 @@ touches the vault master password, which never leaves the device. See [docs/ACCO
   tooltip or accessibility name. See [docs/TOTP.md](docs/TOTP.md) and threat 31 of
   [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
 
+- **A secure note's text is as secret as a password** (since 0.16.0). It is encrypted with the
+  vault, hidden on the vault page and masked in the editor until Show, copied only through the
+  clipboard that clears itself, never searched, logged, or shown in an error, tooltip or
+  accessibility name, and hidden again when the vault locks. Once shown it is on the screen like a
+  revealed password. See [docs/NOTES.md](docs/NOTES.md) and threat 32 of
+  [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md).
+
 - Managed .NET memory cannot be guaranteed to be wiped; secrets in `string` objects may persist
   in process memory. BitosX minimizes secret lifetime and wipes byte buffers on a best-effort basis.
 - Revealed and generated passwords are shown as text that cannot be selected, so that they leave
