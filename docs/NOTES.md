@@ -8,7 +8,8 @@ This document is the specification of that feature: every rule a second implemen
 store the same notes, read the same documents into the same items, and show a note the way the
 other client does. The desktop application (this repository) and the web vault (bitosx-manager)
 both follow it, and the fixture in [`tests/fixtures/notes`](../tests/fixtures/notes) holds the two to
-the same results (§6). How notes are imported and exported is in
+the same results (§6.1), and an encrypted vault in [`tests/fixtures/web`](../tests/fixtures/web)
+lets the web vault open a vault the desktop wrote (§6.2). How notes are imported and exported is in
 [IMPORT_EXPORT.md](IMPORT_EXPORT.md).
 
 Nothing here touches the server or the vault's file format (the v1 envelope); it changes the
@@ -161,7 +162,19 @@ let go of; nothing of a note is on screen while the vault is locked.
 
 ## 4. Import and export
 
-See [IMPORT_EXPORT.md](IMPORT_EXPORT.md).
+[IMPORT_EXPORT.md](IMPORT_EXPORT.md) holds the rules; in short:
+
+- Bitwarden's secure notes — `type` 2 in its JSON (§4.2), `type` `note` in its CSV (§3.5) — and the
+  notes of BitosX's own JSON export (§6) are imported as notes: the name, the text and the favorite
+  mark; the folder and custom fields are extras, as for a login (§7.4). A note without a name is
+  named after the first line of its text that is not blank, or `Untitled` (§7.7). KeePass entries
+  and the rows of any other CSV file are logins, as before.
+- A note is a duplicate of a note with the same name and text, never of a login (§8). The preview
+  counts the notes to add apart from the logins (§9).
+- BitosX's JSON export writes every note (`"type": "note"`, §11.2); the CSV export cannot hold them,
+  leaves them out and says how many (§11.1).
+- An older client (desktop 0.15.0, web 0.9.0) importing a JSON export that holds notes counts them as
+  unsupported (`other`) and imports the logins only.
 
 ## 5. Sync
 
@@ -169,7 +182,9 @@ A note is part of the vault content, which is encrypted before it leaves the dev
 sees the envelope only. A vault with a note is uploaded and downloaded as every vault is
 ([SYNC.md](SYNC.md)); a device with an older client refuses to open it (§2.2).
 
-## 6. The fixture
+## 6. The fixtures
+
+### 6.1 `tests/fixtures/notes/content.json`: the content schema
 
 [`tests/fixtures/notes/content.json`](../tests/fixtures/notes/content.json) holds decrypted vault
 documents and what is read from each. Git does not convert its line ends (`.gitattributes`); the
@@ -213,6 +228,22 @@ git diff tests/fixtures/notes     # look at what changed, and say so here
   case, a type in capitals and `secure_note`, a note and a login with one id.
 
 Every value in it is made up.
+
+### 6.2 `tests/fixtures/web/notes.vault.json`: an encrypted vault
+
+An encrypted vault (envelope v1) for the web vault's tests, **written by this repository's own
+code** (`VaultCryptor`, `EncryptedVaultSerializer`, `VaultSerializer`, `MasterPasswordEncoding`) in
+the way `bitosx-manager/tests/fixtures/README.md` describes for the others: the test profile
+(Argon2id 1 MiB, t=1, p=1), the password `correct horse battery`, content schema version 3, two
+notes — a favorite one whose text has several lines (CR LF and LF), text outside ASCII, an emoji, a
+tab and what looks like markup (`<script>`, `**…**`); one with only a name (no `Notes` member) — and
+two logins, one with an authenticator key and one without. `notes.meta.json` has the members of the
+other `*.meta.json` files and one more, `items`: each item as the desktop reads it, in order (`id`,
+`type`, `name`, `notes` or `null`, `favorite`, and `hasTotp` for a login). The web vault copies both
+files unchanged. A test here (`NotesWebVaultFixtureTests`) opens the vault with the desktop's code
+and checks every member of the meta file, so the two cannot drift apart. The generator itself is not
+kept: the envelope has random nonces and a random salt, and is never written again for a change
+that does not need it.
 
 ## 7. Where the two clients can differ
 
