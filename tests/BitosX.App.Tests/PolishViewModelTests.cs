@@ -149,7 +149,7 @@ public sealed class PolishViewModelTests : IDisposable
 
         Assert.True(page.HasNoMatches);
         Assert.False(page.IsVaultEmpty);
-        Assert.Equal("No logins match “gitlab”.", page.NoMatchesText);
+        Assert.Equal("No logins or notes match “gitlab”.", page.NoMatchesText);
 
         VaultPageViewModel empty = VaultPage();
         Assert.True(empty.IsVaultEmpty);

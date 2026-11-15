@@ -132,6 +132,7 @@ internal static class Program
             Report.Run("Strengthening the key derivation", StrengtheningTheKeyDerivation);
             Report.Run("H-series: the confirmation before a restore", RestoreConfirmation);
             Report.Run("A device without the memory for a new vault", DeviceWithoutTheMemory);
+            Report.Run("Secure notes", SecureNotes);
         }
         finally
         {
@@ -992,6 +993,75 @@ internal static class Program
             app = RunningApp.Start(_executable, directory, limited);
             Unlock(app, MasterPassword);
             Report.Check("The vault opens on the device it was created on", app.Screen() == "main");
+            Report.Check("The window closes normally", app.Close() == 0);
+        }
+        finally
+        {
+            app.Dispose();
+            TryDelete(directory);
+        }
+    }
+
+    // ---- Secure notes (0.16.0, docs/NOTES.md §3) ----
+
+    private static void SecureNotes()
+    {
+        // A vault of its own, so that the steps above find theirs as they left it.
+        const string noteName = Prefix + "Recovery codes";
+        const string noteText = Prefix + "note-text-1234-5678";
+        string directory = _directory + "-notes";
+        string vault = Path.Combine(directory, "vault.bitosx");
+        RunningApp app = RunningApp.Start(_executable, directory);
+        try
+        {
+            app.Type("MasterPasswordBox", MasterPassword);
+            app.Type("ConfirmPasswordBox", MasterPassword);
+            app.Press("CreateButton");
+            app.WaitForScreen("main", TimeSpan.FromSeconds(60));
+
+            app.Press("AddNoteButton");
+            app.WaitForText("EditorTitle", "Add note");
+            app.Type("NameBox", noteName);
+            app.Type("NoteTextBox", noteText);
+            Report.Check(
+                "The editor of a note hands its text out as dots",
+                app.Value("NoteTextBox") == new string('●', noteText.Length),
+                app.Value("NoteTextBox").Length + " characters");
+            app.Press("SaveButton");
+            app.WaitUntil(() => !app.Shows("NameBox"), "the editor closes");
+            app.WaitUntil(() => ItemNames(app).Contains(noteName, StringComparer.Ordinal), "the note is listed");
+            Report.Check(
+                "A note is listed with the label Secure note, its text hidden",
+                app.Text("ItemKind") == "Secure note"
+                && !app.EverythingShown().Any(text => text.Contains(noteText, StringComparison.Ordinal)));
+            Report.Check("Nothing of it is readable in the file", !FileContains(vault, noteText) && !FileContains(vault, noteName));
+
+            app.Press("ShowNoteTextButton");
+            app.WaitForText("ItemNoteText", noteText);
+            Report.Check("Show shows the text", app.Text("ItemNoteText") == noteText);
+
+            if (_useClipboard)
+            {
+                app.Press("CopyNoteTextButton");
+                app.WaitForText("StatusMessage", "Text copied. Clipboard clears in 30s.");
+                Report.Check("Copy text puts the text on the clipboard", NativeClipboard.Text() == noteText);
+            }
+            else
+            {
+                Report.Skip("Copy text puts the text on the clipboard", "the clipboard was to be left alone");
+            }
+
+            app.Press("LockButton");
+            app.WaitForScreen("unlock");
+            Report.Check(
+                "Locking hides the note's name and text",
+                !app.EverythingShown().Any(text => text.Contains(noteText, StringComparison.Ordinal) || text.Contains(noteName, StringComparison.Ordinal)));
+
+            Unlock(app, MasterPassword);
+            Report.Check(
+                "Unlocked again, the note is there, its text hidden",
+                ItemNames(app).Contains(noteName, StringComparer.Ordinal)
+                && !app.EverythingShown().Any(text => text.Contains(noteText, StringComparison.Ordinal)));
             Report.Check("The window closes normally", app.Close() == 0);
         }
         finally

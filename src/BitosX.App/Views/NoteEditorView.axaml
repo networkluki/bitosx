@@ -1,0 +1,58 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BitosX.App.ViewModels"
+             xmlns:controls="using:BitosX.App.Controls"
+             xmlns:conv="using:Avalonia.Data.Converters"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d" d:DesignWidth="460" d:DesignHeight="460"
+             x:Class="BitosX.App.Views.NoteEditorView"
+             x:DataType="vm:NoteEditorViewModel">
+
+    <!-- The editor of a secure note (docs/NOTES.md §3.1). Laid out as the login editor is: the title
+         and the buttons stay in place, the fields between them scroll. -->
+    <Border Classes="card" Width="460">
+        <DockPanel>
+            <TextBlock Name="EditorTitle" DockPanel.Dock="Top" Text="{Binding Title}" Classes="h2" Margin="0,0,0,12" />
+
+            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10"
+                        Margin="0,12,0,0">
+                <Button Name="CancelButton" Content="Cancel" Command="{Binding CancelCommand}" IsCancel="True" />
+                <Button Name="SaveButton" Content="Save" Classes="accent" Command="{Binding SaveCommand}" IsDefault="True" />
+            </StackPanel>
+
+            <TextBlock Name="ErrorMessage" DockPanel.Dock="Bottom" Text="{Binding ErrorMessage}" Classes="error"
+                       AutomationProperties.LiveSetting="Assertive"
+                       Margin="0,12,0,0" TextWrapping="Wrap"
+                       IsVisible="{Binding ErrorMessage, Converter={x:Static conv:StringConverters.IsNotNullOrEmpty}}" />
+
+            <ScrollViewer Name="EditorFields" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Spacing="12" Margin="0,0,14,0">
+                    <StackPanel Spacing="5">
+                        <TextBlock Text="Name *" />
+                        <TextBox Name="NameBox" AutomationProperties.Name="Name" Text="{Binding Name}" PlaceholderText="e.g. Wi-Fi at home" />
+                    </StackPanel>
+
+                    <!-- The text is as secret as a password: masked until Show is pressed, and the box tells
+                         the accessibility interface only what it shows (SecretBox). The error under it is a
+                         fixed text that never quotes it. -->
+                    <StackPanel Spacing="5">
+                        <Grid ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0" Text="Text" VerticalAlignment="Center" />
+                            <Button Name="RevealNoteTextButton" Grid.Column="1" Content="{Binding TextToggleText}"
+                                    Command="{Binding ToggleTextVisibilityCommand}" ToolTip.Tip="Show or hide the text" />
+                        </Grid>
+                        <controls:SecretBox Name="NoteTextBox" AutomationProperties.Name="Text" Text="{Binding Text}"
+                                            RevealPassword="{Binding IsTextVisible}"
+                                            AcceptsReturn="True" TextWrapping="Wrap" Height="160" />
+                        <TextBlock Name="NoteTextError" Text="{Binding TextError}" Classes="error" TextWrapping="Wrap"
+                                   AutomationProperties.LiveSetting="Polite"
+                                   IsVisible="{Binding HasTextError}" />
+                    </StackPanel>
+
+                    <CheckBox Name="FavoriteCheckBox" Content="Favorite" IsChecked="{Binding Favorite}" />
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+    </Border>
+</UserControl>

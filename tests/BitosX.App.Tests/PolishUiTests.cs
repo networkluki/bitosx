@@ -146,7 +146,7 @@ public sealed class PolishUiTests
 
         app.Type("SearchBox", "gitlab");
 
-        await app.WaitForTextAsync("NoMatchesNote", "No logins match “gitlab”.");
+        await app.WaitForTextAsync("NoMatchesNote", "No logins or notes match “gitlab”.");
         Assert.False(app.Shows("EmptyVaultNote"));
     });
 

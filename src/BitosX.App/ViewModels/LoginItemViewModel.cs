@@ -6,10 +6,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace BitosX.App.ViewModels;
 
 /// <summary>Display wrapper for a <see cref="LoginItem"/> in the vault list.</summary>
-public sealed partial class LoginItemViewModel : ViewModelBase
+public sealed partial class LoginItemViewModel : VaultItemViewModel
 {
-    private const string Mask = "••••••••••";
-
     public LoginItemViewModel(LoginItem model)
     {
         Model = model;
@@ -17,18 +15,9 @@ public sealed partial class LoginItemViewModel : ViewModelBase
 
     public LoginItem Model { get; }
 
-    public Guid Id => Model.Id;
-    public string Name => Model.Name;
+    public override VaultItem Item => Model;
+
     public string? Username => Model.Username;
-    public bool Favorite => Model.Favorite;
-    public string FavoriteGlyph => Favorite ? "★" : "☆";
-
-    /// <summary>What pressing the star does, in words: for the tooltip and for a screen reader.</summary>
-    public string FavoriteLabel => Favorite ? "Remove from favorites" : "Add to favorites";
-
-    // What each action button is called for a screen reader: with the item's name, so that thirty
-    // "Edit" buttons can be told apart.
-    public string FavoriteDescription => Favorite ? $"Remove {Name} from favorites" : $"Add {Name} to favorites";
 
     public string PasswordToggleLabel => IsPasswordVisible ? $"Hide the password of {Name}" : $"Show the password of {Name}";
 
@@ -38,13 +27,8 @@ public sealed partial class LoginItemViewModel : ViewModelBase
 
     public string CopyCodeLabel => $"Copy the authenticator code of {Name}";
 
-    public string EditLabel => $"Edit {Name}";
+    public override string DeleteQuestion => "Delete this login? This cannot be undone.";
 
-    public string DeleteLabel => $"Delete {Name}";
-
-    public string KeepLabel => $"Keep {Name}";
-
-    public string ConfirmDeleteLabel => $"Delete {Name} for good";
     public string? PrimaryUrl => Model.Urls.Count > 0 ? Model.Urls[0] : null;
     public bool HasPassword => !string.IsNullOrEmpty(Model.Password);
 
@@ -82,11 +66,9 @@ public sealed partial class LoginItemViewModel : ViewModelBase
 
     public string PasswordToggleGlyph => IsPasswordVisible ? "Hide" : "Show";
 
-    /// <summary>Whether the search matches this item: its card is shown only then.</summary>
-    [ObservableProperty]
-    public partial bool IsMatch { get; internal set; } = true;
-
-    /// <summary>Whether deleting this item has been asked for and is waiting to be confirmed.</summary>
-    [ObservableProperty]
-    public partial bool IsDeletePending { get; set; }
+    /// <summary>A login is found by a part of its name, its username or one of its addresses.</summary>
+    internal override bool Matches(string term)
+        => base.Matches(term)
+            || (Username?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+            || Model.Urls.Any(u => u.Contains(term, StringComparison.OrdinalIgnoreCase));
 }
