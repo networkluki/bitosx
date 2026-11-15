@@ -408,7 +408,7 @@ public sealed class NotesUiTests : IDisposable
 
         // A login's card has no label; a note without a text has no Show and no Copy text.
         Border login = view.GetVisualDescendants().OfType<Border>().Single(b => b.DataContext is LoginItemViewModel);
-        Assert.Empty(login.GetVisualDescendants().OfType<TextBlock>().Where(t => t.Name == "ItemKind"));
+        Assert.DoesNotContain(login.GetVisualDescendants().OfType<TextBlock>(), t => t.Name == "ItemKind");
         Border bare = view.GetVisualDescendants().OfType<Border>()
             .Single(b => b.Classes.Contains("card") && b.DataContext is NoteItemViewModel { Name: "Only a name" });
         Assert.False(HeadlessUi.IsShown(HeadlessUi.Find<Button>(bare, "ShowNoteTextButton")));
