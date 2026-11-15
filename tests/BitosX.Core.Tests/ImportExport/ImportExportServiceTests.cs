@@ -109,7 +109,7 @@ public sealed class ImportExportServiceTests
         public IEnumerable<string> AllLogLines => [.. ImportLog.Lines, .. ExportLog.Lines, .. VaultLog.Lines];
     }
 
-    private static async Task<Setup> UnlockedAsync(params LoginItem[] existing)
+    private static async Task<Setup> UnlockedAsync(params VaultItem[] existing)
     {
         var storage = new InstrumentedVaultStorage();
         var vaultLog = new RecordingLogger<VaultService>();
@@ -117,7 +117,7 @@ public sealed class ImportExportServiceTests
         await vault.CreateVaultAsync(MasterPassword);
         if (existing.Length > 0)
         {
-            await vault.AddLoginsAsync(_ => existing);
+            await vault.AddItemsAsync(_ => existing);
         }
 
         var files = new FakeFiles();
@@ -549,5 +549,94 @@ public sealed class ImportExportServiceTests
         Assert.Equal(0, result.Added);
         Assert.Equal(4, s.Vault.Items.Count);
         Assert.Equal(writesBefore, s.Storage.WriteCount);
+    }
+
+    // ---- Secure notes (0.16.0) ----
+
+    private const string NoteText = "FAKE-NOTE-TEXT line one\nline two <b>not markup</b>";
+
+    private const string BitwardenWithANote =
+        "{\"encrypted\": false, \"folders\": [], \"items\": ["
+        + "{\"type\": 1, \"name\": \"A login\", \"login\": {\"username\": \"fake.user\", \"password\": \"FAKE-pw\"}},"
+        + "{\"type\": 2, \"name\": \"A note\", \"notes\": \"" + "FAKE-NOTE-TEXT line one\\nline two <b>not markup</b>" + "\", \"favorite\": true, \"secureNote\": {\"type\": 0}}"
+        + "]}";
+
+    [Fact]
+    public async Task ANoteIsImportedAsANote_InTheSameWrite_AndTheVaultBecomesVersion3()
+    {
+        Setup s = await UnlockedAsync(Login("Already there"));
+        s.Files.Sources["bitwarden.json"] = Encoding.UTF8.GetBytes(BitwardenWithANote);
+        int writesBefore = s.Storage.WriteCount;
+
+        ImportPlan plan = await s.Import.PreviewAsync(await s.Import.ReadAsync("bitwarden.json"), ImportOptions.Default);
+        Assert.Equal(2, plan.ToAdd);
+        Assert.Equal(1, plan.NotesToAdd);
+        Assert.Equal(1, plan.LoginsToAdd);
+        Assert.Empty(plan.Source.Unsupported);
+
+        ImportResult result = await s.Import.ApplyAsync(plan);
+
+        Assert.Equal(2, result.Added);
+        Assert.Equal(writesBefore + 1, s.Storage.WriteCount);
+        IReadOnlyList<VaultItem> stored = await ItemsAfterReopenAsync(s.Storage);
+        NoteItem note = Assert.IsType<NoteItem>(stored[2]);
+        Assert.Equal("A note", note.Name);
+        Assert.Equal("FAKE-NOTE-TEXT line one\nline two <b>not markup</b>", note.Notes);
+        Assert.True(note.Favorite);
+        Assert.Equal(Now, note.CreatedAt);
+        Assert.IsType<LoginItem>(stored[1]);
+
+        UnlockResult opened = VaultCryptor.CreateDefault().Unlock(s.Storage.Stored!, Encoding.UTF8.GetBytes(MasterPassword));
+        Assert.StartsWith("{\"schemaVersion\":3,", Encoding.UTF8.GetString(opened.Plaintext), StringComparison.Ordinal);
+
+        // Nothing of the note's text is in the log.
+        Assert.DoesNotContain(s.AllLogLines, line => line.Contains("FAKE-NOTE-TEXT", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task TheJsonExport_HoldsTheNotes_AndImportingItIntoTheSameVault_AddsNothing()
+    {
+        Setup s = await UnlockedAsync(
+            Login("One", "fake.one", "FAKE-secret-one", "https://one.example"),
+            new NoteItem { Name = "A note", Notes = NoteText, Favorite = true },
+            new NoteItem { Name = "Only a name" });
+
+        ExportResult exported = await s.Export.ExportAsync("export.json", ExportFormat.BitosXJson, MasterPassword);
+        Assert.Equal(3, exported.ItemCount);
+        Assert.Equal(0, exported.NotesLeftOut);
+
+        string json = Encoding.UTF8.GetString(s.Files.Written[0].Content);
+        Assert.Contains("\"type\": \"note\",\n      \"name\": \"Only a name\",\n      \"notes\": \"\",\n      \"favorite\": false,", json, StringComparison.Ordinal);
+
+        s.Files.Sources["export.json"] = s.Files.Written[0].Content;
+        ImportPlan plan = await s.Import.PreviewAsync(await s.Import.ReadAsync("export.json"), ImportOptions.Default);
+        Assert.Equal(3, plan.Duplicates);
+        Assert.Equal(0, plan.ToAdd);
+
+        // Into an empty vault: the same notes.
+        Setup other = await UnlockedAsync();
+        other.Files.Sources["export.json"] = s.Files.Written[0].Content;
+        await other.Import.ApplyAsync(await other.Import.PreviewAsync(await other.Import.ReadAsync("export.json"), ImportOptions.Default));
+        Assert.Equal(
+            [("One", false, (string?)null), ("A note", true, NoteText), ("Only a name", true, null)],
+            other.Vault.Items.Select(i => (i.Name, i is NoteItem, i is NoteItem ? i.Notes : null)));
+        Assert.True(other.Vault.Items[1].Favorite);
+    }
+
+    [Fact]
+    public async Task TheCsvExport_LeavesTheNotesOut_AndSaysHowMany()
+    {
+        Setup s = await UnlockedAsync(
+            Login("One", "fake.one", "FAKE-secret-one", "https://one.example"),
+            new NoteItem { Name = "A note", Notes = NoteText },
+            new NoteItem { Name = "Another note" });
+
+        ExportResult exported = await s.Export.ExportAsync("export.csv", ExportFormat.Csv, MasterPassword);
+
+        Assert.Equal(1, exported.ItemCount);
+        Assert.Equal(2, exported.NotesLeftOut);
+        string csv = Encoding.UTF8.GetString(s.Files.Written[0].Content);
+        Assert.Equal("name,url,username,password,note\r\n\"One\",\"https://one.example\",\"fake.one\",\"FAKE-secret-one\",\"\"\r\n", csv);
+        Assert.DoesNotContain(s.AllLogLines, line => line.Contains("FAKE-NOTE-TEXT", StringComparison.Ordinal));
     }
 }

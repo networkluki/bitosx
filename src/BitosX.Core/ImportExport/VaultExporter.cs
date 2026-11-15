@@ -77,7 +77,8 @@ public static class VaultExporter
     /// <c>name,url,username,password,note</c>; then one line for each item, every value in double
     /// quotes with a double quote inside it written twice; CR LF after every line, the last one
     /// included. <c>url</c> is the item's first address, and empty if it has none: its other
-    /// addresses are not in the file (<see cref="CountItemsWithSeveralUrls"/>).
+    /// addresses are not in the file (<see cref="CountItemsWithSeveralUrls"/>). Secure notes are not
+    /// in the file at all (<see cref="CountNotes"/>).
     /// </summary>
     public static byte[] ToCsv(IReadOnlyList<VaultItem> items)
     {
@@ -89,7 +90,7 @@ public static class VaultExporter
         {
             if (item is not LoginItem login)
             {
-                continue; // the only kind there is; another kind would have no place in this layout
+                continue; // a note has no place in this layout (CountNotes says how many are left out)
             }
 
             AppendCsvValue(text, login.Name).Append(',');
@@ -112,7 +113,8 @@ public static class VaultExporter
     ///                "notes": "…", "favorite": false, "createdAt": "…", "updatedAt": "…" } ] }
     /// </code>
     /// A value an item does not have is an empty string; <c>totp</c> is <c>null</c> for a login
-    /// without an authenticator key. Times are UTC and end in <c>Z</c>; those of
+    /// without an authenticator key. A secure note is
+    /// <c>{ "type": "note", "name", "notes", "favorite", "createdAt", "updatedAt" }</c>. Times are UTC and end in <c>Z</c>; those of
     /// an item keep their fraction of a second, without trailing zeros.
     /// </summary>
     public static byte[] ToBitosXJson(IReadOnlyList<VaultItem> items, DateTimeOffset exportedAt)
@@ -129,6 +131,12 @@ public static class VaultExporter
             writer.WriteStartArray("items");
             foreach (VaultItem item in items)
             {
+                if (item is NoteItem note)
+                {
+                    WriteNote(writer, note);
+                    continue;
+                }
+
                 if (item is not LoginItem login)
                 {
                     continue;
@@ -173,6 +181,32 @@ public static class VaultExporter
 
         stream.WriteByte((byte)'\n');
         return stream.ToArray();
+    }
+
+    /// <summary>
+    /// A secure note: <c>{ "type": "note", "name", "notes", "favorite", "createdAt", "updatedAt" }</c>,
+    /// none of a login's members. <c>notes</c> is its text, the empty string if it has none.
+    /// </summary>
+    private static void WriteNote(Utf8JsonWriter writer, NoteItem note)
+    {
+        writer.WriteStartObject();
+        writer.WriteString("type", "note");
+        writer.WriteString("name", note.Name);
+        writer.WriteString("notes", note.Notes ?? string.Empty);
+        writer.WriteBoolean("favorite", note.Favorite);
+        writer.WriteString("createdAt", Timestamp(note.CreatedAt));
+        writer.WriteString("updatedAt", Timestamp(note.UpdatedAt));
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// How many secure notes there are. A CSV export does not hold them: this is the number a person
+    /// is told before choosing it.
+    /// </summary>
+    public static int CountNotes(IReadOnlyList<VaultItem> items)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        return items.Count(item => item is NoteItem);
     }
 
     /// <summary>

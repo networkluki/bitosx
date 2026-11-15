@@ -72,10 +72,13 @@ public enum ImportExtraKind
     CustomField = 3,
 }
 
-/// <summary>The kinds of item a file can hold that are not logins. They are counted, not imported.</summary>
+/// <summary>
+/// The kinds of item a file can hold that are neither logins nor secure notes. They are counted, not
+/// imported.
+/// </summary>
 public enum ImportUnsupportedKind
 {
-    SecureNote = 0,
+    // 0 was "secure note" until 0.15.0: a secure note is imported as a note since 0.16.0.
     Card = 1,
     Identity = 2,
     SshKey = 3,

@@ -197,7 +197,7 @@ public sealed partial class ImportSpecificationTests
         ParsedImport parsed = Parse(string.Join(',', header) + "\n" + string.Join(',', values) + "\n");
         if (field == "type")
         {
-            return parsed.Unsupported.ContainsKey(ImportUnsupportedKind.SecureNote);
+            return Assert.Single(parsed.Entries).IsNote;
         }
 
         ImportEntry entry = Assert.Single(parsed.Entries);

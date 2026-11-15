@@ -382,13 +382,14 @@ public sealed class ImportExportViewModelTests : IDisposable
 
         ImportPreview preview = Assert.IsType<ImportPreview>(card.Vm.Preview);
         Assert.Equal("Bitwarden (JSON): 9 entries in the file.", preview.Source);
-        Assert.Equal("2 logins will be added. The vault holds 1 item now and will hold 3.", preview.ToAdd);
+        // Since 0.16.0 the two secure notes are imported as notes, counted apart from the logins.
+        Assert.Equal("2 logins and 2 notes will be added. The vault holds 1 item now and will hold 5.", preview.ToAdd);
         Assert.Equal("1 login is already in the vault, or in the file more than once, and is skipped.", preview.Duplicates);
         Assert.Equal("1 entry cannot be imported.", preview.NotImported);
         ImportPreviewEntry entry = Assert.Single(preview.NotImportedEntries);
         Assert.Equal(new ImportPreviewEntry("Entry 4", "Address that is none", ImportTexts.Text(ImportReason.UrlInvalid)), entry);
         Assert.Null(preview.NotImportedMore);
-        Assert.Equal("BitosX stores logins only. Not imported — secure notes: 2; cards: 1.", preview.Unsupported);
+        Assert.Equal("BitosX stores logins and secure notes only. Not imported — cards: 1.", preview.Unsupported);
         Assert.Equal("1 entry is in the trash or recycle bin of the file and is not imported.", preview.InTrash);
         Assert.Equal("1 entry has nothing in it and is passed over.", preview.Empty);
         Assert.Equal("1 login brings an authenticator key, which is imported with it.", preview.AuthenticatorKeys);
@@ -516,7 +517,7 @@ public sealed class ImportExportViewModelTests : IDisposable
     {
         using Card card = await NewCardAsync();
         DateTimeOffset now = DateTimeOffset.UtcNow;
-        await card.Vault.AddLoginsAsync(_ =>
+        await card.Vault.AddItemsAsync(_ =>
         [
             .. Enumerable.Range(0, ImportLimits.MaxVaultItems - 2).Select(i => new LoginItem
             {
@@ -1462,5 +1463,66 @@ public sealed class ImportExportViewModelTests : IDisposable
         Assert.False(card.Vm.HasImportPreview);
         Assert.False(card.Vm.IsExportOpen);
         Assert.Equal(string.Empty, card.Vm.ExportPassword);
+    }
+
+    // ---- Secure notes (0.16.0) ----
+
+    private const string NotesFile =
+        "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n"
+        + ",,note,Wi-Fi,FAKE-NOTE-TEXT,,0,,,,\n"
+        + ",,login,Forum,,,0,https://forum.example.com,fake.forum,FAKE-pw-forum,\n";
+
+    [Fact]
+    public async Task ImportingNotes_CountsThemApart_AddsThemAsNotes_AndSaysSo()
+    {
+        using Card card = await NewCardAsync();
+        await card.ChooseAsync(Write("notes.csv", NotesFile));
+
+        ImportPreview preview = Assert.IsType<ImportPreview>(card.Vm.Preview);
+        Assert.Equal("1 login and 1 note will be added. The vault holds 1 item now and will hold 3.", preview.ToAdd);
+        Assert.Equal("Import 2 items", preview.ConfirmText);
+        Assert.Null(preview.Unsupported);
+
+        await card.Vm.ConfirmImportCommand.ExecuteAsync(null);
+
+        NoteItem note = Assert.Single(card.Vault.Items.OfType<NoteItem>());
+        Assert.Equal(("Wi-Fi", "FAKE-NOTE-TEXT"), (note.Name, note.Notes));
+        Assert.Equal("1 login and 1 note were added to the vault.", card.Vm.ImportStatus);
+    }
+
+    [Fact]
+    public void ThePreview_OfOnlyNotes_SaysNotes_AndNothingOfTheirText()
+    {
+        ImportPlan plan = ImportPlanner.Plan(
+            ImportParser.Parse(System.Text.Encoding.UTF8.GetBytes(
+                "type,name,notes,password\nnote,One,FAKE-NOTE-TEXT,\nnote,,FAKE-NOTE-TEXT derived,\n")),
+            [],
+            ImportOptions.Default);
+        ImportPreview preview = ImportPreview.From(plan);
+
+        Assert.Equal("2 notes will be added. The vault holds 0 items now and will hold 2.", preview.ToAdd);
+        Assert.Equal("Import 2 items", preview.ConfirmText);
+        string[] shown = [preview.Source, preview.ToAdd, preview.NamesDerived ?? string.Empty, preview.ConfirmText];
+        Assert.DoesNotContain(shown, text => text.Contains("FAKE-NOTE-TEXT", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ACsvExport_SaysThatItHoldsNoNotes()
+    {
+        using Card card = await NewCardAsync();
+        await card.Vault.AddNoteAsync(new NoteItem { Name = "A note", Notes = "FAKE-NOTE-TEXT" });
+        await card.Vault.AddNoteAsync(new NoteItem { Name = "Another note" });
+        string destination = Path.Combine(_directory, "export-notes.csv");
+        card.Files.ExportPath = destination;
+        card.OpenExport(MasterPassword);
+        Assert.Equal("2 notes are not in a CSV file; only the JSON file holds them.", card.Vm.ExportNotesNote);
+
+        await card.Vm.WriteExportCommand.ExecuteAsync(null);
+
+        Assert.StartsWith("1 item was exported as CSV.", card.Vm.ExportStatus, StringComparison.Ordinal);
+        Assert.EndsWith(" 2 notes are not in a CSV file; only the JSON file holds them.", card.Vm.ExportStatus, StringComparison.Ordinal);
+        Assert.DoesNotContain("FAKE-NOTE-TEXT", File.ReadAllText(destination), StringComparison.Ordinal);
+        Assert.Equal("1 note is not in a CSV file; only the JSON file holds it.", ImportExportViewModel.NotesLeftOutOfCsv(1));
+        Assert.Null(ImportExportViewModel.NotesLeftOutOfCsv(0));
     }
 }

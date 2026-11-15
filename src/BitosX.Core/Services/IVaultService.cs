@@ -111,14 +111,14 @@ public interface IVaultService
     Task<NoteItem> AddNoteAsync(NoteItem item, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Adds several login items and persists the vault <b>once</b>: either all of them are stored, or
+    /// Adds several items (logins and secure notes) and persists the vault <b>once</b>: either all of them are stored, or
     /// none is. <paramref name="chooseItems"/> is given the items the vault holds at that moment —
     /// nothing else can change them before the write is done — and returns the items to add. If it
     /// returns none, nothing is written. If it throws, nothing is written and its exception is what
     /// the caller sees. Returns the items that were added.
     /// </summary>
-    Task<IReadOnlyList<LoginItem>> AddLoginsAsync(
-        Func<IReadOnlyList<VaultItem>, IReadOnlyList<LoginItem>> chooseItems,
+    Task<IReadOnlyList<VaultItem>> AddItemsAsync(
+        Func<IReadOnlyList<VaultItem>, IReadOnlyList<VaultItem>> chooseItems,
         CancellationToken cancellationToken = default);
 
     /// <summary>Updates an existing item and persists the vault. Returns the stored (timestamped) item.</summary>

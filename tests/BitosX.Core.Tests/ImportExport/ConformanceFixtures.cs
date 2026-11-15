@@ -76,7 +76,20 @@ internal static class ConformanceFixtures
         Item("Spaces kept", "  fake spaced  ", "  FAKE spaced pw  ", "  notes with spaces around them  ", favorite: false, created: 5, "https://example.com/spaces"),
         Item("=SUM(1,2)", "=fake", "+FAKE-@formula", "@note -x", favorite: true, created: 6, "https://example.com/formula"),
         Item("Backslashes", "DOMAIN\\fake.user", "FAKE\\pw\\\\two", "C:\\Users\\fake\\file.txt", favorite: false, created: 7),
+        Note("Wi-Fi at home", "Network: FAKE-net\nKey: FAKE-wifi-key, \"quoted\"\r\n<b>not markup</b> \u00E5\u00E4\u00F6", favorite: true, created: 8),
+        Note("A note with only a name", null, favorite: false, created: 9),
     ];
+
+    private static NoteItem Note(string name, string? text, bool favorite, int created)
+        => new()
+        {
+            Id = new Guid(0x0B1705E0, 0x0000, 0x4000, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, (byte)(created + 1)),
+            Name = name,
+            Notes = text,
+            Favorite = favorite,
+            CreatedAt = new DateTimeOffset(2025, 3, 4, 5, 6, 7, TimeSpan.Zero).AddDays(created).AddTicks(created * 1_234_567L),
+            UpdatedAt = new DateTimeOffset(2026, 4, 5, 6, 7, 8, TimeSpan.Zero).AddDays(created),
+        };
 
     private static LoginItem Item(string name, string? username, string? password, string? notes, bool favorite, int created, params string[] urls)
         => new()
@@ -160,12 +173,27 @@ internal static class ConformanceFixtures
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    /// <summary>The items of a vault as a case lists them: the four values a duplicate is told by.</summary>
+    /// <summary>
+    /// The items of a vault as a case lists them: of a login the four values a duplicate is told by;
+    /// of a note <c>{ "type": "note", "name", "notes" }</c>, the two.
+    /// </summary>
     public static JsonArray VaultOf(IEnumerable<VaultItem> items)
     {
         var vault = new JsonArray();
-        foreach (LoginItem item in items.Cast<LoginItem>())
+        foreach (VaultItem entry in items)
         {
+            if (entry is NoteItem note)
+            {
+                vault.Add(new JsonObject
+                {
+                    ["type"] = "note",
+                    ["name"] = note.Name,
+                    ["notes"] = note.Notes ?? string.Empty,
+                });
+                continue;
+            }
+
+            var item = (LoginItem)entry;
             vault.Add(new JsonObject
             {
                 ["name"] = item.Name,
@@ -178,13 +206,25 @@ internal static class ConformanceFixtures
         return vault;
     }
 
-    private static LoginItem VaultItemOf(JsonObject item) => new()
+    private static VaultItem VaultItemOf(JsonObject item)
     {
-        Name = item["name"]!.GetValue<string>(),
-        Username = item["username"]!.GetValue<string>(),
-        Password = item["password"]!.GetValue<string>(),
-        Urls = [.. item["urls"]!.AsArray().Select(url => url!.GetValue<string>())],
-    };
+        if (item["type"]?.GetValue<string>() == "note")
+        {
+            return new NoteItem
+            {
+                Name = item["name"]!.GetValue<string>(),
+                Notes = item["notes"]!.GetValue<string>(),
+            };
+        }
+
+        return new LoginItem
+        {
+            Name = item["name"]!.GetValue<string>(),
+            Username = item["username"]!.GetValue<string>(),
+            Password = item["password"]!.GetValue<string>(),
+            Urls = [.. item["urls"]!.AsArray().Select(url => url!.GetValue<string>())],
+        };
+    }
 
     private static void WriteResult(Utf8JsonWriter writer, byte[] file, VaultItem[] vault, ImportOptions options)
     {
@@ -234,6 +274,7 @@ internal static class ConformanceFixtures
 
         writer.WriteStartObject("counts");
         writer.WriteNumber("toAdd", plan.ToAdd);
+        writer.WriteNumber("notesToAdd", plan.NotesToAdd);
         writer.WriteNumber("duplicates", plan.Duplicates);
         writer.WriteNumber("notImported", plan.NotImported.Count);
         writer.WriteNumber("empty", plan.EmptyEntries);
@@ -262,6 +303,7 @@ internal static class ConformanceFixtures
         {
             writer.WriteStartObject();
             writer.WriteNumber("position", candidate.Position);
+            writer.WriteString("type", candidate.IsNote ? "note" : "login");
             writer.WriteString("status", ImportTexts.Code(candidate.Status));
             writer.WriteBoolean("duplicate", candidate.IsDuplicate);
             if (candidate.Reason is ImportReason reason)

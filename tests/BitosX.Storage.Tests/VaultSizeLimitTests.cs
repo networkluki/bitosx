@@ -59,7 +59,7 @@ public sealed class VaultSizeLimitTests : IDisposable
 
         // 900 items of 16 KiB are 14 MiB of content, which is more than 16 MiB once encrypted and encoded
         // (the file holds the content as base64, with every '+' written as an escape: 44 % more).
-        await Assert.ThrowsAsync<VaultTooLargeException>(() => service.AddLoginsAsync(_ => ItemsWithFullNotes(900)));
+        await Assert.ThrowsAsync<VaultTooLargeException>(() => service.AddItemsAsync(_ => ItemsWithFullNotes(900)));
 
         Assert.Equal(before, await File.ReadAllBytesAsync(_vaultPath)); // not one of them was written
         Assert.Equal(["Kept"], service.Items.Select(i => i.Name));
@@ -67,7 +67,7 @@ public sealed class VaultSizeLimitTests : IDisposable
         Assert.Equal(["vault.bitosx"], Directory.EnumerateFiles(_tempDir).Select(Path.GetFileName));
 
         // The session is intact: a smaller addition is stored, and the vault opens again.
-        await service.AddLoginsAsync(_ => ItemsWithFullNotes(100));
+        await service.AddItemsAsync(_ => ItemsWithFullNotes(100));
         Assert.Equal(101, service.Items.Count);
 
         VaultService reopen = NewService();
@@ -80,7 +80,7 @@ public sealed class VaultSizeLimitTests : IDisposable
     {
         VaultService service = NewService();
         await service.CreateVaultAsync(MasterPassword);
-        await service.AddLoginsAsync(_ => ItemsWithFullNotes(690)); // just under 16 MiB as a file
+        await service.AddItemsAsync(_ => ItemsWithFullNotes(690)); // just under 16 MiB as a file
         byte[] before = await File.ReadAllBytesAsync(_vaultPath);
         Assert.InRange(before.Length, 15 * 1024 * 1024, FileLocalVaultStorage.MaxFileSizeBytes);
 

@@ -132,7 +132,7 @@ transitions happened. Handlers must not block waiting on another thread.
 Importing is three steps, and only the last one writes: `VaultImportService.ReadAsync` reads the
 file (at most 16 MiB) and parses it; `PreviewAsync` compares it with the unlocked vault and returns
 an `ImportPlan` — what would be added, what is a duplicate, what is not imported and why;
-`ApplyAsync` adds the items through `IVaultService.AddLoginsAsync`, which is **one** write of the
+`ApplyAsync` adds the items through `IVaultService.AddItemsAsync`, which is **one** write of the
 vault: all of them are stored, or none is. The comparison is made again at that moment, under the
 gate every change goes through, so what is added is right for the vault as it is then.
 

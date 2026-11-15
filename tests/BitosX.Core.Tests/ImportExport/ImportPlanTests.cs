@@ -310,7 +310,7 @@ public sealed class ImportPlanTests
         Assert.Equal(string.Empty, candidate.Notes); // nothing is copied: the key is not an extra
         Assert.Equal(1, plan.TotpKeys);
         Assert.Equal(0, plan.TotpUnreadable);
-        Assert.Equal(candidate.Totp, Assert.Single(plan.CreateItems(DateTimeOffset.UnixEpoch)).Totp);
+        Assert.Equal(candidate.Totp, Assert.IsType<LoginItem>(Assert.Single(plan.CreateItems(DateTimeOffset.UnixEpoch))).Totp);
     }
 
     [Fact]
@@ -618,7 +618,7 @@ public sealed class ImportPlanTests
             "folder,favorite,type,name,notes,fields,reprompt,login_uri,login_username,login_password,login_totp\n" +
             "Work,1,login,Added,,PIN: 0000,0,example.com,u,FAKE-1,FAKEFAKE\n" +                         // added: https, a folder, a field, a key
             ",,login,,,,0,\"https://derived.example,android://x@app/\",u,FAKE-2,\n" +                    // added: name derived, one other address
-            ",,note,A note,text,,0,,,,\n" +                                                              // not a login
+            ",,note,A note,text,,0,,,,\n" +                                                              // added: a note
             ",,login,In the vault,,,0,,u,FAKE-3,\n" +                                                    // a duplicate
             ",,login,Too long,,,0,,u," + new string('p', 4097) + ",FAKEFAKE\n" +                         // not imported
             ",,login,,,,0,,,,\n" +                                                                       // nothing in it
@@ -628,11 +628,13 @@ public sealed class ImportPlanTests
 
         Assert.Equal("Bitwarden (CSV)", plan.Source.Label);
         Assert.Equal(7, plan.Source.RecordCount);
-        Assert.Equal(1, plan.Source.Unsupported[ImportUnsupportedKind.SecureNote]);
+        Assert.Empty(plan.Source.Unsupported); // the note is a note since 0.16.0
         Assert.Equal(["reprompt"], plan.Source.IgnoredColumns);
 
-        Assert.Equal(5, plan.Candidates.Count);
-        Assert.Equal(2, plan.ToAdd);
+        Assert.Equal(6, plan.Candidates.Count);
+        Assert.Equal(3, plan.ToAdd);
+        Assert.Equal(1, plan.NotesToAdd);
+        Assert.Equal(2, plan.LoginsToAdd);
         Assert.Equal(2, plan.Duplicates);
         Assert.Equal("Too long", Assert.Single(plan.NotImported).Name);
         Assert.Equal(1, plan.EmptyEntries);
@@ -646,7 +648,7 @@ public sealed class ImportPlanTests
         Assert.Equal(1, plan.Extras[ImportExtraKind.CustomField]);
 
         Assert.Equal(2, plan.VaultItemsBefore);
-        Assert.Equal(4, plan.VaultItemsAfter);
+        Assert.Equal(5, plan.VaultItemsAfter);
         Assert.False(plan.ExceedsVaultItemLimit);
         Assert.Same(ImportOptions.Default, plan.Options);
     }
@@ -702,7 +704,7 @@ public sealed class ImportPlanTests
             "Bare,,,,,\n" +
             "Second,,,FAKE-2,,\n");
 
-        IReadOnlyList<LoginItem> items = plan.CreateItems(importedAt);
+        IReadOnlyList<LoginItem> items = [.. plan.CreateItems(importedAt).Cast<LoginItem>()];
 
         Assert.Collection(
             items,
@@ -764,7 +766,7 @@ public sealed class ImportPlanTests
         }
 
         ImportPlan plan = Plan(Parse(file.ToString()), new ImportOptions(ImportDuplicates: true));
-        IReadOnlyList<LoginItem> items = plan.CreateItems(DateTimeOffset.UtcNow);
+        IReadOnlyList<LoginItem> items = [.. plan.CreateItems(DateTimeOffset.UtcNow).Cast<LoginItem>()];
 
         Assert.True(items.Count > 300, $"{items.Count} items");
         Assert.True(plan.NotImported.Count > 100, $"{plan.NotImported.Count} not imported");

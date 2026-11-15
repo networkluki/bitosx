@@ -4,7 +4,7 @@ using BitosX.Core.Domain;
 namespace BitosX.Core.ImportExport;
 
 /// <summary>
-/// What importing a file into a vault would do: every login of the file with what becomes of it, and
+/// What importing a file into a vault would do: every login and note of the file with what becomes of it, and
 /// the counts a preview shows. Nothing has been written. Holds the secrets of the file.
 /// </summary>
 public sealed class ImportPlan
@@ -38,6 +38,7 @@ public sealed class ImportPlan
                     break;
                 case ImportStatus.Add:
                     ToAdd++;
+                    NotesToAdd += candidate.IsNote ? 1 : 0;
                     HttpsAdded += candidate.HttpsAdded;
                     TotpKeys += candidate.Totp is null ? 0 : 1;
                     TotpUnreadable += candidate.TotpRefusal is null ? 0 : 1;
@@ -68,8 +69,14 @@ public sealed class ImportPlan
     /// <summary>Every login of the file that has anything in it, in the order of the file, with what becomes of it.</summary>
     public IReadOnlyList<ImportCandidate> Candidates { get; }
 
-    /// <summary>How many items would be added.</summary>
+    /// <summary>How many items would be added: logins and notes.</summary>
     public int ToAdd { get; }
+
+    /// <summary>How many of <see cref="ToAdd"/> are secure notes; the others are logins.</summary>
+    public int NotesToAdd { get; }
+
+    /// <summary>How many of <see cref="ToAdd"/> are logins.</summary>
+    public int LoginsToAdd => ToAdd - NotesToAdd;
 
     /// <summary>
     /// How many logins equal an item of the vault or an earlier entry of the file. They are skipped,
@@ -118,17 +125,31 @@ public sealed class ImportPlan
     public bool ExceedsVaultItemLimit => VaultItemsAfter > ImportLimits.MaxVaultItems;
 
     /// <summary>
-    /// The items to add, in the order of the file: each with a new identifier, and created and last
-    /// changed at <paramref name="importedAt"/>. An empty username, password or notes is stored the
-    /// way the editor stores it, as none.
+    /// The items to add, in the order of the file: logins and notes, each with a new identifier, and
+    /// created and last changed at <paramref name="importedAt"/>. An empty username, password or
+    /// notes is stored the way the editor stores it, as none.
     /// </summary>
-    public IReadOnlyList<LoginItem> CreateItems(DateTimeOffset importedAt)
+    public IReadOnlyList<VaultItem> CreateItems(DateTimeOffset importedAt)
     {
-        var items = new List<LoginItem>(ToAdd);
+        var items = new List<VaultItem>(ToAdd);
         foreach (ImportCandidate candidate in Candidates)
         {
             if (candidate.Status != ImportStatus.Add)
             {
+                continue;
+            }
+
+            if (candidate.IsNote)
+            {
+                items.Add(new NoteItem
+                {
+                    Id = Guid.NewGuid(),
+                    Name = candidate.Name,
+                    Notes = candidate.Notes.Length > 0 ? candidate.Notes : null,
+                    Favorite = candidate.Favorite,
+                    CreatedAt = importedAt,
+                    UpdatedAt = importedAt,
+                });
                 continue;
             }
 
@@ -159,11 +180,13 @@ public static class ImportPlanner
     /// <paramref name="existing"/>. Changes nothing.
     /// </summary>
     /// <remarks>
-    /// An entry is a duplicate if an item of the vault, or an earlier entry of the file that is
-    /// itself importable, has the same name, username, password and web addresses: compared
-    /// character by character, an absent value being equal to an empty one, the addresses in the
-    /// same order. Names and addresses of the vault's items are trimmed for the comparison, as
-    /// those of the file are. Notes and the favorite mark are not compared.
+    /// A login is a duplicate if a login of the vault, or an earlier login of the file that is itself
+    /// importable, has the same name, username, password and web addresses: compared character by
+    /// character, an absent value being equal to an empty one, the addresses in the same order.
+    /// Names and addresses of the vault's items are trimmed for the comparison, as those of the file
+    /// are. Notes and the favorite mark are not compared. A note is a duplicate if a note of the vault
+    /// or an earlier importable note of the file has the same name (trimmed, likewise) and the same
+    /// text as it would be stored. A note is never a duplicate of a login, nor a login of a note.
     /// </remarks>
     public static ImportPlan Plan(ParsedImport source, IReadOnlyList<VaultItem> existing, ImportOptions options)
     {
@@ -179,6 +202,10 @@ public static class ImportPlanner
             {
                 seen.Add(KeyOf(key, ImportText.Trim(login.Name), login.Username ?? string.Empty, login.Password ?? string.Empty, login.Urls, trimUrls: true));
             }
+            else if (item is NoteItem note)
+            {
+                seen.Add(NoteKeyOf(key, ImportText.Trim(note.Name), note.Notes ?? string.Empty));
+            }
         }
 
         var candidates = new List<ImportCandidate>(source.Entries.Count);
@@ -193,7 +220,9 @@ public static class ImportPlanner
             }
 
             if (candidate.Status == ImportStatus.Add
-                && !seen.Add(KeyOf(key, candidate.Name, candidate.Username, candidate.Password, candidate.Urls, trimUrls: false)))
+                && !seen.Add(candidate.IsNote
+                    ? NoteKeyOf(key, candidate.Name, candidate.Notes)
+                    : KeyOf(key, candidate.Name, candidate.Username, candidate.Password, candidate.Urls, trimUrls: false)))
             {
                 candidate.IsDuplicate = true;
                 if (!options.ImportDuplicates)
@@ -209,13 +238,15 @@ public static class ImportPlanner
     }
 
     /// <summary>
-    /// The four values as one string that no other four values give: each one preceded by its
-    /// length, so that no character has to be kept out of the values to serve as a separator.
+    /// The four values of a login as one string that no other four values give: each one preceded by
+    /// its length, so that no character has to be kept out of the values to serve as a separator.
+    /// It starts with <c>L</c>, the key of a note with <c>N</c>, so the two never equal each other.
     /// </summary>
     private static string KeyOf(
         StringBuilder key, string name, string username, string password, IReadOnlyList<string> urls, bool trimUrls)
     {
         key.Clear();
+        key.Append('L');
         Append(key, name);
         Append(key, username);
         Append(key, password);
@@ -225,6 +256,16 @@ public static class ImportPlanner
             Append(key, trimUrls ? ImportText.Trim(url) : url);
         }
 
+        return key.ToString();
+    }
+
+    /// <summary>The name and the text of a note as one string, as <see cref="KeyOf"/> does for a login.</summary>
+    private static string NoteKeyOf(StringBuilder key, string name, string text)
+    {
+        key.Clear();
+        key.Append('N');
+        Append(key, name);
+        Append(key, text);
         return key.ToString();
     }
 

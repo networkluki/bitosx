@@ -167,7 +167,6 @@ public static class ImportTexts
     /// <summary>The stable code of a kind of item that is not imported.</summary>
     public static string Code(ImportUnsupportedKind kind) => kind switch
     {
-        ImportUnsupportedKind.SecureNote => "secure_note",
         ImportUnsupportedKind.Card => "card",
         ImportUnsupportedKind.Identity => "identity",
         ImportUnsupportedKind.SshKey => "ssh_key",
@@ -181,7 +180,6 @@ public static class ImportTexts
     /// <summary>What a kind of item that is not imported is called, in the plural, in a sentence.</summary>
     public static string Text(ImportUnsupportedKind kind) => kind switch
     {
-        ImportUnsupportedKind.SecureNote => "secure notes",
         ImportUnsupportedKind.Card => "cards",
         ImportUnsupportedKind.Identity => "identities",
         ImportUnsupportedKind.SshKey => "SSH keys",

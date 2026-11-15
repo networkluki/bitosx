@@ -41,7 +41,7 @@ public sealed class ImportExtras
 }
 
 /// <summary>
-/// One login of a file, as it would be stored: normalised, checked against the limits of the vault,
+/// One login or secure note of a file, as it would be stored: normalised, checked against the limits of the vault,
 /// and compared with what the vault holds. Holds secrets. A preview shows the name and the reason,
 /// and never <see cref="Password"/>, the values of <see cref="Extras"/> or <see cref="Notes"/>.
 /// </summary>
@@ -60,8 +60,10 @@ public sealed class ImportCandidate
         int httpsAdded,
         ImportReason? reason,
         Domain.TotpKey? totp = null,
-        Authenticator.TotpRefusal? totpRefusal = null)
+        Authenticator.TotpRefusal? totpRefusal = null,
+        bool isNote = false)
     {
+        IsNote = isNote;
         Totp = totp;
         TotpRefusal = totpRefusal;
         Position = position;
@@ -80,6 +82,12 @@ public sealed class ImportCandidate
 
     /// <summary>Which record of the file this is, counted from 1 (see <see cref="ImportEntry.Position"/>).</summary>
     public int Position { get; }
+
+    /// <summary>
+    /// Whether it becomes a secure note (docs/NOTES.md). A note has an empty <see cref="Username"/>
+    /// and <see cref="Password"/>, no <see cref="Urls"/> and no key; its text is <see cref="Notes"/>.
+    /// </summary>
+    public bool IsNote { get; }
 
     /// <summary>The name: trimmed, or derived if the file gave none.</summary>
     public string Name { get; }
@@ -113,7 +121,10 @@ public sealed class ImportCandidate
     /// </summary>
     public Authenticator.TotpRefusal? TotpRefusal { get; }
 
-    /// <summary>Whether the file gave no name, so that one was taken from the address or the username.</summary>
+    /// <summary>
+    /// Whether the file gave no name, so that one was taken from the address or the username (a
+    /// login), or from the first line of the text (a note).
+    /// </summary>
     public bool NameWasDerived { get; }
 
     /// <summary>How many of <see cref="Urls"/> were given <c>https://</c> in front.</summary>

@@ -139,7 +139,7 @@ public sealed class CsvImportTests
         Assert.Equal("Bitwarden (CSV)", parsed.Label);
         Assert.Equal(["reprompt", "archivedDate"], parsed.IgnoredColumns);
         Assert.Equal(3, parsed.RecordCount);
-        Assert.Equal(1, parsed.Unsupported[ImportUnsupportedKind.SecureNote]);
+        Assert.Empty(parsed.Unsupported); // a secure note is read as a note since 0.16.0
 
         Assert.Collection(
             parsed.Entries,
@@ -166,6 +166,15 @@ public sealed class CsvImportTests
                         Assert.Equal("Recovery", recovery.Name);
                         Assert.Equal("FAKE-recovery", recovery.Value);
                     });
+            },
+            note =>
+            {
+                Assert.Equal(2, note.Position);
+                Assert.True(note.IsNote);
+                Assert.Equal("A secure note", note.Name);
+                Assert.Equal("the text of the note", note.Notes);
+                Assert.Equal(string.Empty, note.Password);
+                Assert.Empty(note.Addresses);
             },
             third =>
             {
@@ -480,8 +489,11 @@ public sealed class CsvImportTests
     {
         ParsedImport parsed = Parse($"type,name,password\n{type},A note,\nlogin,A login,FAKE-pw\n");
 
-        Assert.Equal("A login", Assert.Single(parsed.Entries).Name);
-        Assert.Equal(1, parsed.Unsupported[ImportUnsupportedKind.SecureNote]);
+        Assert.Collection(
+            parsed.Entries,
+            note => Assert.True(note.IsNote && note.Name == "A note" && note.Position == 1),
+            login => Assert.True(!login.IsNote && login.Name == "A login" && login.Position == 2));
+        Assert.Empty(parsed.Unsupported);
         Assert.Equal(2, parsed.RecordCount);
     }
 
@@ -565,7 +577,7 @@ public sealed class CsvImportTests
     }
 
     [Fact]
-    public void RowsThatAreNotLogins_CountTowardsTheLimit_AndEmptyLinesDoNot()
+    public void RowsOfNotesAndLogins_CountTowardsTheLimit_AndEmptyLinesDoNot()
     {
         var text = new StringBuilder("type,name,password\n");
         for (int i = 1; i <= 10_000; i++)
@@ -574,7 +586,8 @@ public sealed class CsvImportTests
         }
 
         ParsedImport parsed = Parse(text.ToString());
-        Assert.Equal(5_000, parsed.Entries.Count);
+        Assert.Equal(10_000, parsed.Entries.Count); // since 0.16.0 a note is an entry too
+        Assert.Equal(5_000, parsed.Entries.Count(entry => entry.IsNote));
         Assert.Equal(10_000, parsed.RecordCount);
 
         text.Append("note,One more,\n");

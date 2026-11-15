@@ -18,6 +18,11 @@ internal static class ImportNormalizer
     /// </summary>
     public static ImportCandidate? Normalize(ImportEntry entry, bool copyExtrasToNotes)
     {
+        if (entry.IsNote)
+        {
+            return NormalizeNote(entry, copyExtrasToNotes);
+        }
+
         string name = ImportText.Trim(entry.Name);
 
         // Addresses: one value may hold several, one on each line. Each is trimmed, empty ones are
@@ -51,15 +56,7 @@ internal static class ImportNormalizer
             }
         }
 
-        // A custom field without a value has nothing that could be lost.
-        List<ImportCustomField>? customFields = null;
-        foreach (ImportCustomField field in entry.CustomFields)
-        {
-            if (!ImportText.IsBlank(field.Value))
-            {
-                (customFields ??= []).Add(field);
-            }
-        }
+        List<ImportCustomField>? customFields = CustomFieldsWithValues(entry);
 
         // The authenticator key: read already, or read now from its text (docs/TOTP.md §3). Text that
         // is not a key stays an extra, as it was before keys were stored.
@@ -117,6 +114,88 @@ internal static class ImportNormalizer
         return new ImportCandidate(
             entry.Position, name, entry.Username, entry.Password, urls, notes, entry.Favorite, extras, nameWasDerived, httpsAdded, reason,
             totp, totpRefusal);
+    }
+
+    /// <summary>
+    /// A secure note (docs/IMPORT_EXPORT.md §7.7): a name, a text, a favorite mark, and as extras its
+    /// folder and custom fields. Empty if it has no name, a blank text and no custom field with a
+    /// value; without a name, it is named after the first line of its text.
+    /// </summary>
+    private static ImportCandidate? NormalizeNote(ImportEntry entry, bool copyExtrasToNotes)
+    {
+        string name = ImportText.Trim(entry.Name);
+        List<ImportCustomField>? customFields = CustomFieldsWithValues(entry);
+        var extras = new ImportExtras(string.Empty, ImportText.Trim(entry.Folder), [], customFields ?? []);
+
+        if (name.Length == 0 && !extras.HasContent && ImportText.IsBlank(entry.Notes))
+        {
+            return null; // nothing but, at most, the name of a folder
+        }
+
+        bool nameWasDerived = false;
+        if (name.Length == 0)
+        {
+            name = DeriveNoteName(entry.Notes);
+            nameWasDerived = true;
+        }
+
+        ImportReason? reason = entry.Problem;
+        if (reason is null && name.Length > VaultValidation.MaxNameLength)
+        {
+            reason = ImportReason.NameTooLong;
+        }
+
+        if (reason is null && entry.Notes.Length > VaultValidation.MaxNotesLength)
+        {
+            reason = ImportReason.NotesTooLong;
+        }
+
+        string notes = entry.Notes;
+        if (copyExtrasToNotes)
+        {
+            notes = WithExtras(notes, extras);
+            if (reason is null && notes.Length > VaultValidation.MaxNotesLength)
+            {
+                reason = ImportReason.NotesTooLongWithExtras;
+            }
+        }
+
+        return new ImportCandidate(
+            entry.Position, name, string.Empty, string.Empty, [], notes, entry.Favorite, extras, nameWasDerived, httpsAdded: 0, reason,
+            isNote: true);
+    }
+
+    /// <summary>
+    /// The name of a note that has none: the first line of its text that is not blank, trimmed, if it
+    /// is 1 to 200 long; otherwise "Untitled".
+    /// </summary>
+    private static string DeriveNoteName(string text)
+    {
+        foreach (string line in ImportText.SplitLines(text))
+        {
+            string trimmed = ImportText.Trim(line);
+            if (trimmed.Length > 0)
+            {
+                return trimmed.Length <= VaultValidation.MaxNameLength ? trimmed : ImportTexts.UntitledName;
+            }
+        }
+
+        return ImportTexts.UntitledName;
+    }
+
+    /// <summary>The custom fields that have a value: a field without one has nothing that could be lost.</summary>
+    private static List<ImportCustomField>? CustomFieldsWithValues(ImportEntry entry)
+    {
+        List<ImportCustomField>? customFields = null;
+        foreach (ImportCustomField field in entry.CustomFields)
+        {
+            if (!ImportText.IsBlank(field.Value))
+            {
+                (customFields ??= []).Add(field);
+            }
+        }
+
+        return customFields;
     }
 
     /// <summary>

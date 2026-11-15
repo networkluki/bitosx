@@ -137,6 +137,9 @@ public sealed class ConformanceFixtureTests
         var formatsWithKeys = new HashSet<string>(StringComparer.Ordinal);
         var formatsWithUnreadableKeys = new HashSet<string>(StringComparer.Ordinal);
         var totpRefusals = new HashSet<string>(StringComparer.Ordinal);
+        var formatsWithNotes = new HashSet<string>(StringComparer.Ordinal);
+        var noteReasons = new HashSet<string>(StringComparer.Ordinal);
+        bool noteDuplicate = false, noteNameDerived = false, noteUntitled = false, noteIntoAVaultWithNotes = false;
         bool copied = false, duplicatesImported = false, intoAVault = false, inTrash = false, empty = false,
             httpsAdded = false, nameDerived = false, ignoredColumns = false, line = false;
 
@@ -165,9 +168,30 @@ public sealed class ConformanceFixtureTests
                 ignoredColumns |= result["ignoredColumns"]!.AsArray().Count > 0;
                 extras.UnionWith(result["extras"]!.AsObject().Select(pair => pair.Key));
                 unsupported.UnionWith(result["unsupported"]!.AsObject().Select(pair => pair.Key));
+                noteIntoAVaultWithNotes |= testCase["vault"]!.AsArray().Any(item => item!["type"]?.GetValue<string>() == "note");
+                Assert.Equal(
+                    result["candidates"]!.AsArray().Count(c => c!["type"]!.GetValue<string>() == "note" && c["status"]!.GetValue<string>() == "add"),
+                    result["counts"]!["notesToAdd"]!.GetValue<int>());
                 foreach (JsonNode? candidate in result["candidates"]!.AsArray())
                 {
                     statuses.Add(candidate!["status"]!.GetValue<string>());
+                    if (candidate["type"]!.GetValue<string>() == "note")
+                    {
+                        formatsWithNotes.Add(result["format"]!.GetValue<string>());
+                        noteDuplicate |= candidate["duplicate"]!.GetValue<bool>();
+                        noteNameDerived |= candidate["nameWasDerived"]!.GetValue<bool>();
+                        noteUntitled |= candidate["name"]!.GetValue<string>() == ImportTexts.UntitledName;
+                        if (candidate["reason"] is JsonValue noteReason)
+                        {
+                            noteReasons.Add(noteReason.GetValue<string>());
+                        }
+
+                        // A note has none of a login's values.
+                        Assert.Equal(string.Empty, candidate["username"]!.GetValue<string>());
+                        Assert.Equal(string.Empty, candidate["password"]!.GetValue<string>());
+                        Assert.Empty(candidate["urls"]!.AsArray());
+                        Assert.Null(candidate["totp"]);
+                    }
                     if (candidate["totp"] is JsonObject)
                     {
                         formatsWithKeys.Add(result["format"]!.GetValue<string>());
@@ -213,6 +237,14 @@ public sealed class ConformanceFixtureTests
         Assert.Superset(
             new HashSet<string>(["hotp_not_supported", "steam_not_supported", "secret_too_short", "invalid_secret", "missing_secret", "unsupported_algorithm", "unsupported_digits", "unsupported_period"]),
             totpRefusals);
+
+        // Secure notes (0.16.0) are read from Bitwarden's two formats and BitosX's own, and every
+        // outcome a note can have is shown.
+        Assert.Equal(["bitosx_json", "bitwarden_json", "csv"], formatsWithNotes.Order(StringComparer.Ordinal));
+        Assert.Equal(
+            ["name_too_long", "notes_too_long", "notes_too_long_with_extras", "row_has_extra_values"],
+            noteReasons.Order(StringComparer.Ordinal));
+        Assert.True(noteDuplicate && noteNameDerived && noteUntitled && noteIntoAVaultWithNotes);
 
         Assert.True(copied, "no case copies extras into the notes");
         Assert.True(duplicatesImported, "no case imports duplicates");

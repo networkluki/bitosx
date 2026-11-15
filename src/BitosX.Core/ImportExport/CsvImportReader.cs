@@ -128,16 +128,30 @@ internal static class CsvImportReader
                 throw new ImportRefusedException(ImportRefusal.TooManyEntries);
             }
 
-            // The one value of a type column that is known to mean "not a login": Bitwarden's notes.
+            string favorite = ImportText.ToLowerAscii(ImportText.Trim(Cell(values, favoriteColumn)));
+            ImportReason? problem = HasValueBeyond(values, columnCount) ? ImportReason.RowHasExtraValues : null;
+
+            // The one value of a type column that is known to mean "not a login": Bitwarden's secure
+            // notes. A note has a name, a text, a favorite mark, a folder and custom fields; its
+            // username, password, address and key cells are not read (Bitwarden leaves them empty,
+            // and its own importer does not read them for a note).
             if (ImportText.ToLowerAscii(ImportText.Trim(Cell(values, typeColumn))) == "note")
             {
-                unsupported[ImportUnsupportedKind.SecureNote] =
-                    unsupported.GetValueOrDefault(ImportUnsupportedKind.SecureNote) + 1;
+                entries.Add(new ImportEntry
+                {
+                    Position = records,
+                    IsNote = true,
+                    Name = Cell(values, nameColumn),
+                    Notes = Cell(values, notesColumn),
+                    Favorite = favorite is "1" or "true",
+                    Folder = Cell(values, folderColumn),
+                    CustomFields = ReadCustomFields(Cell(values, customFieldColumn)),
+                    Problem = problem,
+                });
                 continue;
             }
 
             string addressCell = Cell(values, urlColumn);
-            string favorite = ImportText.ToLowerAscii(ImportText.Trim(Cell(values, favoriteColumn)));
 
             entries.Add(new ImportEntry
             {
@@ -153,7 +167,7 @@ internal static class CsvImportReader
                 Totp = Cell(values, totpColumn),
                 Folder = Cell(values, folderColumn),
                 CustomFields = ReadCustomFields(Cell(values, customFieldColumn)),
-                Problem = HasValueBeyond(values, columnCount) ? ImportReason.RowHasExtraValues : null,
+                Problem = problem,
             });
         }
 
