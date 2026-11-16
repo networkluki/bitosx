@@ -268,7 +268,7 @@ public sealed class VaultExporterTests
 
         Assert.Equal(items.Length, plan.ToAdd);
         Assert.Empty(plan.NotImported);
-        IReadOnlyList<LoginItem> readBack = plan.CreateItems(ExportedAt);
+        IReadOnlyList<LoginItem> readBack = [.. plan.CreateItems(ExportedAt).Cast<LoginItem>()];
         foreach ((LoginItem written, LoginItem read) in items.Cast<LoginItem>().Zip(readBack))
         {
             Assert.Equal(written.Name, read.Name);
@@ -315,7 +315,7 @@ public sealed class VaultExporterTests
         ImportPlan plan = Plan(Parse(VaultExporter.ToCsv(items)), ImportOptions.Default, items);
 
         Assert.Equal(0, plan.Duplicates);
-        Assert.Equal(["https://first.example"], Assert.Single(plan.CreateItems(ExportedAt)).Urls);
+        Assert.Equal(["https://first.example"], Assert.IsType<LoginItem>(Assert.Single(plan.CreateItems(ExportedAt))).Urls);
     }
 
     [Fact]

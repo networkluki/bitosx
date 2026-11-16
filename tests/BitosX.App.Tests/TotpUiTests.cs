@@ -84,9 +84,9 @@ public sealed class TotpUiTests
         return (page, vault, clipboard, clock);
     }
 
-    private static LoginItemViewModel WithKey(VaultPageViewModel page) => page.AllItems.Single(i => i.Name == "With a key");
+    private static LoginItemViewModel WithKey(VaultPageViewModel page) => page.AllItems.OfType<LoginItemViewModel>().Single(i => i.Name == "With a key");
 
-    private static LoginItemViewModel Without(VaultPageViewModel page) => page.AllItems.Single(i => i.Name == "Without");
+    private static LoginItemViewModel Without(VaultPageViewModel page) => page.AllItems.OfType<LoginItemViewModel>().Single(i => i.Name == "Without");
 
     // ---- The editor ----
 

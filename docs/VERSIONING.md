@@ -38,7 +38,25 @@ human-facing version stays three-part: the product/informational version is `0.1
 
 ## Current version
 
-**`0.15.0`** — authenticator codes (TOTP) in logins. A login can hold one authenticator key: typed
+**`0.16.0`** — secure notes. A vault can hold a second kind of item besides logins: a note, a name
+and a text (at most 16,384 characters), nothing else. "+ Add note" opens an editor whose text is
+masked until Show; on the vault page a note has the label "Secure note", its text hidden until Show
+and copied through the clipboard that clears itself; the search finds a note by its name only; the
+Security Center leaves notes alone; locking hides every text that was shown. Bitwarden's secure
+notes (JSON and CSV) and the notes of BitosX's own JSON export are imported as notes; the JSON
+export writes them, the CSV export cannot hold them and says how many it leaves out. The rules are
+a specification both clients follow, with shared fixtures: [NOTES.md](NOTES.md); the import and
+export changes are in [IMPORT_EXPORT.md](IMPORT_EXPORT.md). **The content schema inside the
+encryption changes again:** a vault that holds a note is written as `schemaVersion` 3; one without
+notes exactly as 0.15.0 wrote it (version 2 with an authenticator key, 1 without), byte for byte.
+**Desktop 0.15.0 and older, and the web vault 0.9.0 and older, refuse a vault that holds a note**
+("unsupported vault schema version"), and so never save over it; they read a vault without notes as
+before. Importing a JSON export of 0.16.0 into an older version leaves the notes out. The vault file
+format (the v1 envelope) and the server are unchanged. `IVaultService.AddLoginsAsync` became
+`AddItemsAsync`, and `AddNoteAsync` was added. **Not verified:** nothing was run on Windows or
+macOS, and not in a real window; see [VERIFICATION.md](VERIFICATION.md).
+
+Builds on `0.15.0` — authenticator codes (TOTP) in logins. A login can hold one authenticator key: typed
 into the editor as base32 or an `otpauth://totp/` link, or read from an import (CSV, Bitwarden,
 KeePassXC's `otp`, KeePass 2's `TimeOtp-*`, BitosX's own JSON). The vault page shows the current
 code with the seconds it has left and copies it through the clipboard that clears itself; locking

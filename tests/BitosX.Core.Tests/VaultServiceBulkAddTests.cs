@@ -49,7 +49,7 @@ public sealed class VaultServiceBulkAddTests
         int writesBefore = storage.WriteCount;
         List<LoginItem> items = Logins(250);
 
-        IReadOnlyList<LoginItem> added = await service.AddLoginsAsync(_ => items);
+        IReadOnlyList<VaultItem> added = await service.AddItemsAsync(_ => items);
 
         Assert.Equal(writesBefore + 1, storage.WriteCount); // one write for 250 items
         Assert.Equal(250, added.Count);
@@ -70,7 +70,7 @@ public sealed class VaultServiceBulkAddTests
         int writesBefore = storage.WriteCount;
         storage.FailNextWrite = true;
 
-        await Assert.ThrowsAsync<IOException>(() => service.AddLoginsAsync(_ => Logins(40)));
+        await Assert.ThrowsAsync<IOException>(() => service.AddItemsAsync(_ => Logins(40)));
 
         Assert.Same(before, storage.Stored);                  // the stored vault is the one from before
         Assert.Equal(writesBefore, storage.WriteCount);
@@ -79,7 +79,7 @@ public sealed class VaultServiceBulkAddTests
         Assert.Single(await ItemsAfterReopenAsync(storage));
 
         // The session is still usable: the next attempt goes through, as one write.
-        await service.AddLoginsAsync(_ => Logins(40));
+        await service.AddItemsAsync(_ => Logins(40));
         Assert.Equal(writesBefore + 1, storage.WriteCount);
         Assert.Equal(41, service.Items.Count);
     }
@@ -92,7 +92,7 @@ public sealed class VaultServiceBulkAddTests
         List<LoginItem> items = Logins(10);
         items[7] = items[7] with { Name = "   " }; // not a valid item
 
-        await Assert.ThrowsAsync<VaultValidationException>(() => service.AddLoginsAsync(_ => items));
+        await Assert.ThrowsAsync<VaultValidationException>(() => service.AddItemsAsync(_ => items));
 
         Assert.Equal(writesBefore, storage.WriteCount);
         Assert.Single(service.Items);
@@ -107,7 +107,7 @@ public sealed class VaultServiceBulkAddTests
         List<LoginItem> items = Logins(5);
         items[4] = items[4] with { Id = items[1].Id };
 
-        await Assert.ThrowsAsync<DuplicateItemException>(() => service.AddLoginsAsync(_ => items));
+        await Assert.ThrowsAsync<DuplicateItemException>(() => service.AddItemsAsync(_ => items));
 
         Assert.Equal(writesBefore, storage.WriteCount);
         Assert.Single(service.Items);
@@ -121,7 +121,7 @@ public sealed class VaultServiceBulkAddTests
         List<LoginItem> items = Logins(5);
         items[2] = items[2] with { Id = service.Items[0].Id };
 
-        await Assert.ThrowsAsync<DuplicateItemException>(() => service.AddLoginsAsync(_ => items));
+        await Assert.ThrowsAsync<DuplicateItemException>(() => service.AddItemsAsync(_ => items));
 
         Assert.Equal(writesBefore, storage.WriteCount);
         Assert.Single(service.Items);
@@ -134,7 +134,7 @@ public sealed class VaultServiceBulkAddTests
         int writesBefore = storage.WriteCount;
 
         var failure = await Assert.ThrowsAsync<InvalidDataException>(
-            () => service.AddLoginsAsync(_ => throw new InvalidDataException("refused")));
+            () => service.AddItemsAsync(_ => throw new InvalidDataException("refused")));
 
         Assert.Equal("refused", failure.Message);
         Assert.Equal(writesBefore, storage.WriteCount);
@@ -148,7 +148,7 @@ public sealed class VaultServiceBulkAddTests
         EncryptedVault before = storage.Stored!;
         int writesBefore = storage.WriteCount;
 
-        IReadOnlyList<LoginItem> added = await service.AddLoginsAsync(_ => []);
+        IReadOnlyList<VaultItem> added = await service.AddItemsAsync(_ => []);
 
         Assert.Empty(added);
         Assert.Equal(writesBefore, storage.WriteCount);
@@ -161,7 +161,7 @@ public sealed class VaultServiceBulkAddTests
         (VaultService service, _) = await UnlockedAsync(existing: 3);
         IReadOnlyList<VaultItem>? seen = null;
 
-        await service.AddLoginsAsync(current =>
+        await service.AddItemsAsync(current =>
         {
             seen = current;
             return Logins(2);
@@ -185,7 +185,7 @@ public sealed class VaultServiceBulkAddTests
 
         // ...and several items added while it is: they wait for it, and decide on what it left.
         IReadOnlyList<VaultItem>? seen = null;
-        Task<IReadOnlyList<LoginItem>> bulk = service.AddLoginsAsync(current =>
+        Task<IReadOnlyList<VaultItem>> bulk = service.AddItemsAsync(current =>
         {
             seen = current;
             return Logins(2);
@@ -210,7 +210,7 @@ public sealed class VaultServiceBulkAddTests
         int writesBefore = storage.WriteCount;
         bool asked = false;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AddLoginsAsync(_ =>
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AddItemsAsync(_ =>
         {
             asked = true;
             return Logins(3);
@@ -229,7 +229,7 @@ public sealed class VaultServiceBulkAddTests
         await other.AddLoginAsync(Login("Added elsewhere"));
         EncryptedVault before = storage.Stored!;
 
-        await Assert.ThrowsAsync<VaultChangedExternallyException>(() => stale.AddLoginsAsync(_ => Logins(5)));
+        await Assert.ThrowsAsync<VaultChangedExternallyException>(() => stale.AddItemsAsync(_ => Logins(5)));
 
         Assert.Same(before, storage.Stored);
         Assert.Single(stale.Items);
@@ -242,7 +242,7 @@ public sealed class VaultServiceBulkAddTests
         (VaultService service, InstrumentedVaultStorage storage) = await UnlockedAsync(existing: 1);
         storage.ReplaceThenThrowNextWrite = true;
 
-        await service.AddLoginsAsync(_ => Logins(6)); // reconciled against storage: it is the new vault
+        await service.AddItemsAsync(_ => Logins(6)); // reconciled against storage: it is the new vault
 
         Assert.Equal(7, service.Items.Count);
         Assert.Equal(7, (await ItemsAfterReopenAsync(storage)).Count);
@@ -254,7 +254,7 @@ public sealed class VaultServiceBulkAddTests
         (VaultService service, InstrumentedVaultStorage storage) = await UnlockedAsync(existing: 1);
         storage.OnWrite = service.Lock;
 
-        await service.AddLoginsAsync(_ => Logins(3));
+        await service.AddItemsAsync(_ => Logins(3));
 
         Assert.Equal(VaultState.Locked, service.State);
         Assert.False(service.HoldsKeyMaterial);
@@ -269,8 +269,8 @@ public sealed class VaultServiceBulkAddTests
         (VaultService service, InstrumentedVaultStorage storage) = await UnlockedAsync();
         int writesBefore = storage.WriteCount;
 
-        await Assert.ThrowsAsync<ArgumentNullException>(() => service.AddLoginsAsync(null!));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AddLoginsAsync(_ => null!));
+        await Assert.ThrowsAsync<ArgumentNullException>(() => service.AddItemsAsync(null!));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.AddItemsAsync(_ => null!));
 
         Assert.Equal(writesBefore, storage.WriteCount);
     }

@@ -10,11 +10,12 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace BitosX.App.ViewModels;
 
-/// <summary>The vault page: search, list, and manage login items.</summary>
+/// <summary>The vault page: search, list, and manage logins and secure notes.</summary>
 /// <remarks>
 /// Logins with an authenticator key show their current code, which a timer of one second keeps up
 /// to date while the vault is unlocked and such a login is listed. Locking — or the page being let go
-/// of, which the shell does when the vault locks — stops the timer and clears every code shown.
+/// of, which the shell does when the vault locks — stops the timer and clears every code shown, and
+/// hides the text of every note that was shown (docs/NOTES.md §3.5).
 /// </remarks>
 public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
 {
@@ -29,40 +30,54 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
     private readonly IClipboardService _clipboard;
     private readonly IPasswordGenerator _generator;
     private readonly GeneratorSettings _generatorSettings;
-    private readonly List<LoginItemViewModel> _all = [];
+    private readonly List<VaultItemViewModel> _all = [];
 
     /// <summary>
-    /// Every login of the vault, in the order of the list: what the list builds its cards from. It
-    /// changes only when the vault does; a search shows and hides the cards
-    /// (<see cref="LoginItemViewModel.IsMatch"/>) instead of building the list again.
+    /// Every login and note of the vault, in the order of the list: what the list builds its cards
+    /// from. It changes only when the vault does; a search shows and hides the cards
+    /// (<see cref="VaultItemViewModel.IsMatch"/>) instead of building the list again.
     /// </summary>
     [ObservableProperty]
-    public partial IReadOnlyList<LoginItemViewModel> AllItems { get; private set; } = [];
+    public partial IReadOnlyList<VaultItemViewModel> AllItems { get; private set; } = [];
 
-    /// <summary>The logins the search matches, in the order of the list.</summary>
-    public IReadOnlyList<LoginItemViewModel> Items { get; private set; } = [];
+    /// <summary>The logins and notes the search matches, in the order of the list.</summary>
+    public IReadOnlyList<VaultItemViewModel> Items { get; private set; } = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(NoMatchesText))]
     public partial string SearchText { get; set; } = string.Empty;
 
+    /// <summary>The editor of a login, while one is open.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEditorOpen))]
+    [NotifyPropertyChangedFor(nameof(OpenEditor))]
     public partial LoginEditorViewModel? Editor { get; set; }
+
+    /// <summary>The editor of a secure note, while one is open.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEditorOpen))]
+    [NotifyPropertyChangedFor(nameof(OpenEditor))]
+    public partial NoteEditorViewModel? NoteEditor { get; set; }
+
+    /// <summary>Whichever editor is open, for the overlay in front of the list; at most one is.</summary>
+    public ViewModelBase? OpenEditor => (ViewModelBase?)Editor ?? NoteEditor;
 
     [ObservableProperty]
     public partial string? StatusMessage { get; set; }
 
-    public bool IsEditorOpen => Editor is not null;
+    public bool IsEditorOpen => Editor is not null || NoteEditor is not null;
     public bool IsEmpty => Items.Count == 0;
 
-    /// <summary>The vault holds no logins at all.</summary>
+    /// <summary>The vault holds no logins and no notes at all.</summary>
     public bool IsVaultEmpty => _all.Count == 0;
 
-    /// <summary>The vault has logins, and the search matches none of them.</summary>
+    /// <summary>The words shown while the vault is empty (docs/NOTES.md §3.3).</summary>
+    public string EmptyVaultText { get; } = "No logins or notes yet. Click “Add login” or “Add note” to create your first entry.";
+
+    /// <summary>The vault has items, and the search matches none of them.</summary>
     public bool HasNoMatches => _all.Count > 0 && Items.Count == 0;
 
-    public string NoMatchesText => $"No logins match “{SearchText.Trim()}”.";
+    public string NoMatchesText => $"No logins or notes match “{SearchText.Trim()}”.";
 
     /// <summary>Whether a login of the vault has an authenticator key, so that codes are shown.</summary>
     [ObservableProperty]
@@ -106,16 +121,20 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
     public Task RefreshAsync()
     {
         _all.Clear();
-        foreach (LoginItem login in _vaultService.Items.OfType<LoginItem>()
+
+        // Logins and notes in one list: favorites first, then by name (docs/NOTES.md §3.3). A card
+        // that is built again shows nothing secret until it is asked to.
+        foreach (VaultItem item in _vaultService.Items
+                     .Where(i => i is LoginItem or NoteItem)
                      .OrderByDescending(i => i.Favorite)
                      .ThenBy(i => i.Name, NameOrder))
         {
-            _all.Add(new LoginItemViewModel(login));
+            _all.Add(item is NoteItem note ? new NoteItemViewModel(note) : new LoginItemViewModel((LoginItem)item));
         }
 
         ApplyFilter();
         AllItems = [.. _all];
-        HasAuthenticatorCodes = _all.Exists(item => item.HasTotp);
+        HasAuthenticatorCodes = _all.Exists(item => item is LoginItemViewModel { HasTotp: true });
         UpdateCodes();
         return Task.CompletedTask;
     }
@@ -133,7 +152,7 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
         }
 
         long now = _time.GetUtcNow().ToUnixTimeSeconds();
-        foreach (LoginItemViewModel item in _all)
+        foreach (LoginItemViewModel item in _all.OfType<LoginItemViewModel>())
         {
             if (item.Model.Totp is { } key)
             {
@@ -172,10 +191,26 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
         }
 
         timer?.Dispose();
-        foreach (LoginItemViewModel item in _all)
+        foreach (LoginItemViewModel item in _all.OfType<LoginItemViewModel>())
         {
             item.ShowCode(null);
         }
+    }
+
+    /// <summary>Hides the text of every note that is shown.</summary>
+    private void HideNoteTexts()
+    {
+        foreach (NoteItemViewModel note in _all.OfType<NoteItemViewModel>())
+        {
+            note.IsTextVisible = false;
+        }
+    }
+
+    /// <summary>Stops the codes and hides every note's text: what locking does to the page.</summary>
+    private void HideSecrets()
+    {
+        StopCodes();
+        HideNoteTexts();
     }
 
     private void OnVaultStateChanged(object? sender, VaultState state)
@@ -196,11 +231,11 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
         timer?.Dispose();
         if (_ui is null)
         {
-            StopCodes();
+            HideSecrets();
         }
         else
         {
-            _ui.Run(StopCodes);
+            _ui.Run(HideSecrets);
         }
     }
 
@@ -213,7 +248,7 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
 
         _disposed = true;
         _vaultService.StateChanged -= OnVaultStateChanged;
-        StopCodes();
+        HideSecrets();
     }
 
     partial void OnSearchTextChanged(string value)
@@ -223,20 +258,18 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Marks each login as matching the search or not, in place. A card whose answer does not change
-    /// is not touched, so a keystroke costs a pass over the logins and the cards that appear or
+    /// Marks each item as matching the search or not, in place. A card whose answer does not change
+    /// is not touched, so a keystroke costs a pass over the items and the cards that appear or
     /// disappear, not a new card for every match (which took seconds with a few thousand logins).
+    /// A note is matched by its name only, never by its text.
     /// </summary>
     private void ApplyFilter()
     {
         string term = SearchText.Trim();
-        var matches = new List<LoginItemViewModel>(_all.Count);
-        foreach (LoginItemViewModel item in _all)
+        var matches = new List<VaultItemViewModel>(_all.Count);
+        foreach (VaultItemViewModel item in _all)
         {
-            bool match = term.Length == 0
-                || item.Name.Contains(term, StringComparison.OrdinalIgnoreCase)
-                || (item.Username?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
-                || item.Model.Urls.Any(u => u.Contains(term, StringComparison.OrdinalIgnoreCase));
+            bool match = term.Length == 0 || item.Matches(term);
             item.IsMatch = match;
             if (match)
             {
@@ -289,16 +322,57 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
         StatusMessage = "Saved.";
     }
 
-    private void CloseEditor() => Editor = null;
+    private void CloseEditor()
+    {
+        Editor = null;
+        NoteEditor = null;
+    }
+
+    [RelayCommand]
+    private void AddNote() => NoteEditor = new NoteEditorViewModel(existing: null, onSave: SaveNoteEditorAsync, onCancel: CloseEditor);
+
+    [RelayCommand]
+    private void EditNote(NoteItemViewModel item)
+        => NoteEditor = new NoteEditorViewModel(item.Model, onSave: SaveNoteEditorAsync, onCancel: CloseEditor);
+
+    private async Task SaveNoteEditorAsync(NoteItem item)
+    {
+        if (_vaultService.Items.Any(i => i.Id == item.Id))
+        {
+            await _vaultService.UpdateItemAsync(item).ConfigureAwait(true);
+        }
+        else
+        {
+            await _vaultService.AddNoteAsync(item).ConfigureAwait(true);
+        }
+
+        CloseEditor();
+        await RefreshAsync().ConfigureAwait(true);
+        StatusMessage = "Saved.";
+    }
+
+    /// <summary>Shows the text of a note, or hides it again.</summary>
+    [RelayCommand]
+    private static void ToggleNoteText(NoteItemViewModel item) => item.IsTextVisible = item.HasText && !item.IsTextVisible;
+
+    /// <summary>Copies the text of a note, exactly as stored, through the clipboard that clears itself.</summary>
+    [RelayCommand]
+    private async Task CopyNoteTextAsync(NoteItemViewModel item)
+    {
+        if (item.Model.Notes is { Length: > 0 } text && _vaultService.State == VaultState.Unlocked)
+        {
+            await CopyAsync(text, "Text").ConfigureAwait(true);
+        }
+    }
 
     /// <summary>
     /// Asks for an item to be deleted. Nothing is deleted yet: deleting cannot be undone, so the
     /// item shows a question that has to be answered first.
     /// </summary>
     [RelayCommand]
-    private void RequestDelete(LoginItemViewModel item)
+    private void RequestDelete(VaultItemViewModel item)
     {
-        foreach (LoginItemViewModel other in _all)
+        foreach (VaultItemViewModel other in _all)
         {
             other.IsDeletePending = false; // one question at a time
         }
@@ -307,10 +381,11 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private static void CancelDelete(LoginItemViewModel item) => item.IsDeletePending = false;
+    private static void CancelDelete(VaultItemViewModel item) => item.IsDeletePending = false;
 
+    /// <summary>Deletes a login or a note whose deletion was asked for and confirmed.</summary>
     [RelayCommand]
-    private async Task DeleteLoginAsync(LoginItemViewModel item)
+    private async Task DeleteItemAsync(VaultItemViewModel item)
     {
         // Enforced here and not only by what the view shows: nothing is deleted that was not asked
         // for and then confirmed.
@@ -333,7 +408,7 @@ public sealed partial class VaultPageViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
-    private async Task ToggleFavoriteAsync(LoginItemViewModel item)
+    private async Task ToggleFavoriteAsync(VaultItemViewModel item)
     {
         try
         {

@@ -432,7 +432,9 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
     {
         if (result.Added == previewed.ToAdd)
         {
-            return ImportPreview.Count(result.Added, "login was", "logins were") + " added to the vault.";
+            return result.Applied.NotesToAdd == 0
+                ? ImportPreview.Count(result.Added, "login was", "logins were") + " added to the vault."
+                : ImportPreview.LoginsAndNotes(result.Applied.LoginsToAdd, result.Applied.NotesToAdd) + (result.Added == 1 ? " was" : " were") + " added to the vault.";
         }
 
         // The vault changed between the preview and the write; the file was compared with it again.
@@ -441,7 +443,7 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
             ? Changed + "nothing was added, because everything in the file is in the vault already."
             : string.Create(
                 CultureInfo.CurrentCulture,
-                $"{Changed}{ImportPreview.Count(result.Added, "login was", "logins were")} added, not {previewed.ToAdd:N0}.");
+                $"{Changed}{(result.Applied.NotesToAdd == 0 ? ImportPreview.Count(result.Added, "login was", "logins were") : ImportPreview.Count(result.Added, "item was", "items were"))} added, not {previewed.ToAdd:N0}.");
     }
 
     /// <summary>
@@ -488,6 +490,10 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
     /// <summary>How many items have an authenticator key, and that only the JSON file holds keys.</summary>
     [ObservableProperty]
     public partial string? ExportKeysNote { get; private set; }
+
+    /// <summary>How many secure notes the vault holds, and that only the JSON file holds them.</summary>
+    [ObservableProperty]
+    public partial string? ExportNotesNote { get; private set; }
 
     /// <summary>The acknowledgement that the file is not encrypted. Without it nothing is written.</summary>
     [ObservableProperty]
@@ -684,7 +690,18 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
             1 => "1 item in this vault has an authenticator key." + KeysOnlyJson,
             _ => string.Create(CultureInfo.CurrentCulture, $"{keys:N0} items in this vault have an authenticator key.{KeysOnlyJson}"),
         };
+
+        // Secure notes have no place in Chrome's layout (docs/IMPORT_EXPORT.md §11.1).
+        ExportNotesNote = NotesLeftOutOfCsv(VaultExporter.CountNotes(_vault.Items));
     }
+
+    /// <summary>The words of docs/IMPORT_EXPORT.md §11.1 for <paramref name="notes"/> notes, or none.</summary>
+    public static string? NotesLeftOutOfCsv(int notes) => notes switch
+    {
+        0 => null,
+        1 => "1 note is not in a CSV file; only the JSON file holds it.",
+        _ => string.Create(CultureInfo.CurrentCulture, $"{notes:N0} notes are not in a CSV file; only the JSON file holds them."),
+    };
 
     private static string Extension(ExportFormat format) => format == ExportFormat.BitosXJson ? "json" : "csv";
 
@@ -709,6 +726,11 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
                 : string.Create(
                     CultureInfo.CurrentCulture,
                     $" {result.ItemsWithAuthenticatorKeys:N0} items have an authenticator key, which the file does not hold.");
+        }
+
+        if (NotesLeftOutOfCsv(result.NotesLeftOut) is { } notes)
+        {
+            text += " " + notes;
         }
 
         return text;
@@ -758,6 +780,7 @@ public sealed partial class ImportExportViewModel : ViewModelBase, IDisposable
         CloseExport();
         ExportStatus = null;
         ExportSeveralUrlsNote = null;
+        ExportNotesNote = null;
         ExportKeysNote = null;
     }
 

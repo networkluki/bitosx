@@ -105,7 +105,8 @@ public sealed class TotpVaultContentTests
     public static TheoryData<string, string> Refused => new()
     {
         { "a key in version 1", Document(1, Login(ValidTotp)) },
-        { "version 3", Document(3, Login(string.Empty)) },
+        // Version 3 (notes, 0.16.0) is read; 4 is the first this build does not know.
+        { "version 4", Document(4, Login(string.Empty)) },
         { "version 0", Document(0, Login(string.Empty)) },
         { "Totp null", Document(2, Login("\"Totp\":null")) },
         { "Totp a string", Document(2, Login("\"Totp\":\"" + Secret + "\"")) },

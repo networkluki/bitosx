@@ -67,6 +67,9 @@ The decrypted document has `schemaVersion`. From 0.15.0 on (web: 0.9.0):
   generic "invalid item" refusal). A version 2 document without any key is read, and written back
   as version 1. Every other version is refused ("unsupported schema version").
 - Unknown members stay refused, as before.
+- Since 0.16.0 (web: 0.10.0) there is also version 3, for a vault that holds a secure note, with or
+  without keys; version 3 is read, and a key in it is read as in version 2. A vault is written with
+  the lowest version that holds it. See [NOTES.md](NOTES.md) §2.2.
 
 **What this does to older clients.** Desktop 0.14.1 and older and the web vault 0.8.1 and older
 read only version 1. They refuse a vault that holds a key with their existing "unsupported vault

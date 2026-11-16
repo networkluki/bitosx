@@ -21,11 +21,19 @@ public sealed class ImportCustomField
 }
 
 /// <summary>
-/// One login as a file holds it, before anything is normalised: every value is as it was read.
-/// Holds secrets; it exists only in memory, between reading a file and adding its items.
+/// One login or secure note as a file holds it, before anything is normalised: every value is as it
+/// was read. Holds secrets; it exists only in memory, between reading a file and adding its items.
 /// </summary>
 public sealed class ImportEntry
 {
+    /// <summary>
+    /// Whether the entry is a secure note (docs/NOTES.md): then only <see cref="Name"/>,
+    /// <see cref="Notes"/> (its text), <see cref="Favorite"/>, <see cref="Folder"/>,
+    /// <see cref="CustomFields"/> and <see cref="Problem"/> are read, and the readers leave the
+    /// rest empty.
+    /// </summary>
+    public bool IsNote { get; init; }
+
     /// <summary>
     /// Which record of the file this is, counted from 1 over every record the file holds, whatever
     /// its kind: the rows of a CSV file below the header, the elements of <c>items</c>, the entries
@@ -116,13 +124,13 @@ public sealed class ParsedImport
     /// <summary>What the file is called in the preview, for example "Firefox (CSV)". Informational.</summary>
     public string Label { get; }
 
-    /// <summary>The logins of the file, in the order they are in it.</summary>
+    /// <summary>The logins and secure notes of the file, in the order they are in it.</summary>
     public IReadOnlyList<ImportEntry> Entries { get; }
 
-    /// <summary>How many records the file holds in all: logins, items of other kinds, and deleted ones.</summary>
+    /// <summary>How many records the file holds in all: logins, notes, items of other kinds, and deleted ones.</summary>
     public int RecordCount { get; }
 
-    /// <summary>How many items of each kind that is not a login the file holds. Kinds with none are absent.</summary>
+    /// <summary>How many items of each kind that is neither a login nor a note the file holds. Kinds with none are absent.</summary>
     public IReadOnlyDictionary<ImportUnsupportedKind, int> Unsupported { get; }
 
     /// <summary>How many records are in the trash of a Bitwarden export or the recycle bin of a KeePass file.</summary>

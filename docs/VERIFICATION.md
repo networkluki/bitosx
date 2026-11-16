@@ -638,6 +638,29 @@ On these figures new vaults are created with 256 MiB since this release; see
 | The file dialogs of Linux and macOS | The application has not been started there |
 | That Windows keeps a copied secret out of its clipboard history, for this release | `tools/BitosX.ClipboardProbe` ran on Windows Server 2025, where the history is turned off: its 16 other checks passed and the two of the history were left out. They were last made on a desktop with the history turned on for 0.6.0; the code they exercise is unchanged |
 
+## Secure notes (0.16.0) — automated tested on Linux; not run in a real window
+
+Plainly: **nothing of this was run on Windows or macOS here**, nobody looked at a window, and the
+application was not started. The suite ran on Linux only, in a container, as root. GitHub Actions
+runs jobs again since 2026-11-13, so the CI runs the suite on the three systems — and
+`tools/BitosX.GuiCheck` on Windows — when this branch is pushed; that had not happened when this was
+written.
+
+| Item | Status | Evidence |
+|---|---|---|
+| The stored form and the content schema: no note → byte for byte what 0.15.0 wrote (version 1, or 2 with a key; pinned to bytes and to the plaintext of the phase 12 web fixture); a note → version 3, exactly the six members, `Notes` left out without a text; 1, 2 and 3 read; a note in version 1 or 2, version 0 and 4, a login's member or an unknown one on a note, a member twice or in another case, a text over 16,384, a bad name, `Note` and `secure_note` as a type — all refused without quoting the content | AUTOMATED TESTED | `NoteVaultContentTests`, `VaultLoadValidationTests`, `TotpVaultContentTests`. |
+| The shared fixture of the schema rules (`tests/fixtures/notes/content.json`, 41 cases) is what the library produces | AUTOMATED TESTED | `NoteFixtureTests`. Not checked against a second implementation: the web vault's tests are that. |
+| Import: Bitwarden's secure notes (JSON type 2, CSV type `note`) and BitosX's JSON notes become notes; their extras, derived names, empty notes, limits and duplicates; a note never a duplicate of a login; the preview counts notes apart | AUTOMATED TESTED | `NoteImportTests`, `CsvImportTests`, `JsonImportTests`, `ImportPlanTests`, `ImportExportServiceTests`, the three new fixtures and all 51 expected files written again (`ConformanceFixtureTests`). Bitwarden's format was read from its source code for 0.14.0; **no export made by Bitwarden with a secure note was imported**. |
+| Export: the JSON export writes each note (six members), and reads back into the same vault as duplicates; the CSV export leaves notes out, and the dialog and the result say how many | AUTOMATED TESTED | `NoteImportTests`, `ImportExportServiceTests`, `ImportExportViewModelTests.ACsvExport_SaysThatItHoldsNoNotes`, `bitosx-export.json`. |
+| The encrypted vault fixture for the web vault (`tests/fixtures/web/notes.vault.json`) opens with the desktop's code and is what its meta file says | AUTOMATED TESTED | `NotesWebVaultFixtureTests`. |
+| The editor: masked until Show for a new and an existing note, several lines (Enter starts a line), a name needed, a text too long refused in fixed words, a blank text saved as none, the text saved exactly | AUTOMATED TESTED (headless) | `NotesUiTests` (view models and the real views without a display). |
+| The vault page: notes and logins in one list, favorites first; the label "Secure note"; the text as dots until Show; Copy text through the sensitive clipboard, nothing while locked; delete asked first in a note's words; the search by name only; a rebuilt list, locking and letting go of the page hide every text; no text, tooltip, accessible name or value of the window holds the text while it is hidden, and nothing but the shown text block once it is shown; the Security Center finds nothing in notes | AUTOMATED TESTED (headless) | `NotesUiTests`, and the existing page tests, which pass with the list of two kinds. |
+| Two devices against the real API and database: a note added on one syncs to the other exactly, an edit comes back, deleting it writes version 1 again | AUTOMATED TESTED (live) | `NotesLiveTests`, run on 2026-11-15 against the local stack of bitosx-api (`main` at `96f32a6`), together with the other sixteen live tests: all 17 passed. |
+| The whole suite, once at the end (2026-11-15, Linux, .NET 10.0.113) | AUTOMATED TESTED | `dotnet build BitosX.slnx -c Release -warnaserror` (without incremental compilation) and the GuiCheck build: 0 warnings, 0 errors. `dotnet test BitosX.slnx -c Release`: Crypto 152, Core 1397, Platform 35, ApiClient 210, App 511 passed; the 17 live tests skipped there (run separately, above); Storage 111 passed, 5 skipped (other platforms), 1 failed — `FileLocalVaultStorageTests.FailedWrite_DoesNotDestroyExistingVault`, which takes away write permission and cannot when the tests run as root, as they did here: the known failure of this container, as for 0.15.0. |
+| **Windows and macOS** | **NOT VERIFIED** | Not run here (see above). |
+| **A real window** | **NOT VERIFIED** | Headless only. `tools/BitosX.GuiCheck` has a new section, "Secure notes", on a data directory of its own (add a note, its text as dots in the editor and hidden on the page, Show, Copy text, lock, unlock), written with the mechanics of its existing steps. It compiles; it is Windows-only and **has not been run**. Its existing steps are unchanged. |
+| The web vault arriving at the same results | Not in this repository | `tests/fixtures/notes`, `tests/fixtures/import` and `tests/fixtures/web` are what it is held to. |
+
 ## Authenticator codes (0.15.0) — automated tested on Linux; not run in a real window
 
 Plainly: **nothing of this was run on Windows or macOS.** GitHub Actions has started no jobs for

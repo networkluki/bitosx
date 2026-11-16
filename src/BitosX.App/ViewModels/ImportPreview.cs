@@ -47,15 +47,17 @@ public sealed class ImportPreview
         }
         else if (overLimit)
         {
+            string toAdd = plan.NotesToAdd == 0 ? Count(plan.ToAdd, "login is", "logins are") : Count(plan.ToAdd, "item is", "items are");
             ToAdd = string.Create(
                 Culture,
-                $"{Count(plan.ToAdd, "login is", "logins are")} in this file to add. The vault holds {Count(plan.VaultItemsBefore, "item", "items")} now and would hold {Number(plan.VaultItemsAfter)}.");
+                $"{toAdd} in this file to add. The vault holds {Count(plan.VaultItemsBefore, "item", "items")} now and would hold {Number(plan.VaultItemsAfter)}.");
         }
         else
         {
+            // Notes are counted apart from logins (docs/IMPORT_EXPORT.md §9): "2 logins and 1 note".
             ToAdd = string.Create(
                 Culture,
-                $"{Count(plan.ToAdd, "login", "logins")} will be added. The vault holds {Count(plan.VaultItemsBefore, "item", "items")} now and will hold {Number(plan.VaultItemsAfter)}.");
+                $"{LoginsAndNotes(plan.LoginsToAdd, plan.NotesToAdd)} will be added. The vault holds {Count(plan.VaultItemsBefore, "item", "items")} now and will hold {Number(plan.VaultItemsAfter)}.");
         }
 
         OverLimit = overLimit ? ImportTexts.Text(ImportRefusal.VaultItemLimit) : null;
@@ -99,7 +101,7 @@ public sealed class ImportPreview
 
         if (file.Unsupported.Count > 0)
         {
-            Unsupported = "BitosX stores logins only. Not imported — "
+            Unsupported = "BitosX stores logins and secure notes only. Not imported — "
                 + string.Join("; ", Enum.GetValues<ImportUnsupportedKind>()
                     .Where(file.Unsupported.ContainsKey)
                     .Select(kind => string.Create(Culture, $"{ImportTexts.Text(kind)}: {Number(file.Unsupported[kind])}")))
@@ -174,7 +176,9 @@ public sealed class ImportPreview
         }
 
         CanBeImported = plan.ToAdd > 0 && !overLimit;
-        ConfirmText = CanBeImported ? "Import " + Count(plan.ToAdd, "login", "logins") : "Import";
+        ConfirmText = !CanBeImported
+            ? "Import"
+            : "Import " + (plan.NotesToAdd == 0 ? Count(plan.ToAdd, "login", "logins") : Count(plan.ToAdd, "item", "items"));
     }
 
     private static CultureInfo Culture => CultureInfo.CurrentCulture;
@@ -239,6 +243,18 @@ public sealed class ImportPreview
 
     /// <summary>What the button that imports says.</summary>
     public string ConfirmText { get; }
+
+    /// <summary>
+    /// "3 logins", "1 note", or "3 logins and 1 note": what is counted, with the notes apart from the
+    /// logins, and a kind that has none left out.
+    /// </summary>
+    internal static string LoginsAndNotes(int logins, int notes)
+        => (logins, notes) switch
+        {
+            (_, 0) => Count(logins, "login", "logins"),
+            (0, _) => Count(notes, "note", "notes"),
+            _ => Count(logins, "login", "logins") + " and " + Count(notes, "note", "notes"),
+        };
 
     /// <summary>"1 login" or "12 logins", with the number as this user's language writes it.</summary>
     internal static string Count(int count, string one, string many)

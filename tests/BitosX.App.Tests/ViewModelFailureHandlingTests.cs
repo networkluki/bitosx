@@ -82,7 +82,7 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
         vault.OperationThrow = failure;
 
         vm.RequestDeleteCommand.Execute(vm.Items[0]);
-        await vm.DeleteLoginCommand.ExecuteAsync(vm.Items[0]);
+        await vm.DeleteItemCommand.ExecuteAsync(vm.Items[0]);
 
         Assert.False(string.IsNullOrWhiteSpace(vm.StatusMessage));
         Assert.NotEqual("Item deleted.", vm.StatusMessage);
@@ -109,7 +109,7 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
         vault.OperationThrow = new VaultChangedExternallyException();
 
         vm.RequestDeleteCommand.Execute(vm.Items[0]);
-        await vm.DeleteLoginCommand.ExecuteAsync(vm.Items[0]);
+        await vm.DeleteItemCommand.ExecuteAsync(vm.Items[0]);
 
         Assert.Contains("changed on disk", vm.StatusMessage!, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("reopen", vm.StatusMessage!, StringComparison.OrdinalIgnoreCase);
@@ -122,7 +122,7 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
         vault.OperationThrow = new NotSupportedException("internal detail: C:\\secret\\path");
 
         vm.RequestDeleteCommand.Execute(vm.Items[0]);
-        await vm.DeleteLoginCommand.ExecuteAsync(vm.Items[0]);
+        await vm.DeleteItemCommand.ExecuteAsync(vm.Items[0]);
 
         Assert.DoesNotContain("internal detail", vm.StatusMessage!, StringComparison.Ordinal);
         Assert.DoesNotContain("secret", vm.StatusMessage!, StringComparison.Ordinal);
@@ -134,7 +134,7 @@ public sealed class ViewModelFailureHandlingTests : IDisposable
         (VaultPageViewModel vm, _, _) = NewVaultPage();
 
         vm.RequestDeleteCommand.Execute(vm.Items[0]);
-        await vm.DeleteLoginCommand.ExecuteAsync(vm.Items[0]);
+        await vm.DeleteItemCommand.ExecuteAsync(vm.Items[0]);
 
         Assert.Equal("Item deleted.", vm.StatusMessage);
         Assert.Empty(vm.Items);

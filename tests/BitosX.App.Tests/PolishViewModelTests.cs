@@ -149,7 +149,7 @@ public sealed class PolishViewModelTests : IDisposable
 
         Assert.True(page.HasNoMatches);
         Assert.False(page.IsVaultEmpty);
-        Assert.Equal("No logins match “gitlab”.", page.NoMatchesText);
+        Assert.Equal("No logins or notes match “gitlab”.", page.NoMatchesText);
 
         VaultPageViewModel empty = VaultPage();
         Assert.True(empty.IsVaultEmpty);
@@ -337,7 +337,8 @@ public sealed class PolishViewModelTests : IDisposable
         public Task RotateVaultKeyAsync(string currentPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task StrengthenKeyDerivationAsync(string currentPassword, Argon2Parameters newParameters, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<LoginItem> AddLoginAsync(LoginItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<LoginItem>> AddLoginsAsync(Func<IReadOnlyList<VaultItem>, IReadOnlyList<LoginItem>> chooseItems, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<NoteItem> AddNoteAsync(NoteItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<VaultItem>> AddItemsAsync(Func<IReadOnlyList<VaultItem>, IReadOnlyList<VaultItem>> chooseItems, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<VaultItem>> VerifyMasterPasswordAsync(string currentPassword, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<VaultItem> UpdateItemAsync(VaultItem item, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task DeleteItemAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();

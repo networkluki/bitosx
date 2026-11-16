@@ -1,7 +1,7 @@
 # Import and export
 
-BitosX reads the logins another password manager exported, and writes its own vault out
-unencrypted for another password manager to read. This document is the specification of both: every
+BitosX reads the logins and secure notes another password manager exported, and writes its own
+vault out unencrypted for another password manager to read. This document is the specification of both: every
 rule a second implementation needs to arrive at exactly the same items. The desktop application
 (this repository) and the web vault (bitosx-manager) both follow it, and the fixtures in
 [`tests/fixtures/import`](../tests/fixtures/import) hold the two to the same results (§14).
@@ -9,15 +9,17 @@ rule a second implementation needs to arrive at exactly the same items. The desk
 Nothing here touches the server or the vault's file format (the v1 envelope). An import adds
 ordinary items; an export writes a new file. Since 0.15.0 (web: 0.9.0) a login can hold an
 authenticator key (TOTP), which an import reads and the JSON export writes; how a key is read from
-text, and how it is stored, is [TOTP.md](TOTP.md), which this document refers to.
+text, and how it is stored, is [TOTP.md](TOTP.md), which this document refers to. Since 0.16.0
+(web: 0.10.0) a vault holds secure notes ([NOTES.md](NOTES.md)): Bitwarden's secure notes are
+imported as notes, and BitosX's JSON export writes them (§7.7, §8, §11).
 
 Where it is in the code:
 
 | What | Where |
 |---|---|
-| Bytes in, logins out; the plan against a vault; the exporters. No file, no vault. | `src/BitosX.Core/ImportExport` |
+| Bytes in, logins and notes out; the plan against a vault; the exporters. No file, no vault. | `src/BitosX.Core/ImportExport` |
 | The three steps of an import, and an export behind the master password | `src/BitosX.Core/Services/VaultImportService.cs`, `VaultExportService.cs` |
-| Adding several items in one write; verifying the master password | `IVaultService.AddLoginsAsync`, `VerifyMasterPasswordAsync` |
+| Adding several items in one write; verifying the master password | `IVaultService.AddItemsAsync` (until 0.15.0 `AddLoginsAsync`), `VerifyMasterPasswordAsync` |
 | Reading an import file within its size limit; writing an export atomically | `src/BitosX.Storage/FileImportExportFiles.cs` |
 
 Sources are named where a rule comes from one, with the commit that was read; §15 lists them and
@@ -190,10 +192,14 @@ numbered from 1 in the order of the file (*position*), whatever becomes of them.
   imported: `row_has_extra_values`. That is what a comma inside a value that was not quoted looks
   like — every value after it has moved one column, and the password may be half of what it was.
   Empty values to the right of the last column mean nothing.
-- **type**: if the row's type, trimmed and in lower case, is `note`, the row is a secure note. It
-  is counted as unsupported (`secure_note`) and is not an entry. Every other value, and no value,
-  is a login. (`note` is what Bitwarden writes for a secure note, and its importer treats
-  everything else as a login. What other exporters put in a column of that name is not known.)
+- **type**: if the row's type, trimmed and in lower case, is `note`, the row is a **secure note**
+  (since 0.16.0; until then it was counted as unsupported, `secure_note`): an entry of which only
+  the name, the notes (its text), the favorite mark, the folder and the custom fields are read, by
+  the rules below; its address, username, password and authenticator-key cells are **not read**
+  (Bitwarden leaves them empty, and its own importer does not read them for a note). §7.7 says what
+  becomes of it. Every other value, and no value, is a login. (`note` is what Bitwarden writes for a
+  secure note, and its importer treats everything else as a login. What other exporters put in a
+  column of that name is not known.)
 - **name**, **username**, **password**, **notes**: the value as it is.
 - **favorite**: the value, trimmed and in lower case, is `1` or `true`. (Bitwarden writes `1` or
   nothing.)
@@ -265,7 +271,7 @@ For each element of `items`, in this order:
    | `type` | Kind | Code |
    |---|---|---|
    | 1 | login | — |
-   | 2 | secure note | `secure_note` |
+   | 2 | secure note | — (§4.2, 5.; until 0.15.0 `secure_note`) |
    | 3 | card | `card` |
    | 4 | identity | `identity` |
    | 5 | SSH key | `ssh_key` |
@@ -274,7 +280,7 @@ For each element of `items`, in this order:
    | 8 | passport | `passport` |
    | anything else | | `other` |
 
-   (`cipher-type.ts`.) Everything but a login is counted by its kind and left out.
+   (`cipher-type.ts`.) Everything but a login and a secure note is counted by its kind and left out.
 4. A login is an entry:
    - name: `name`. notes: `notes`. favorite: `favorite` is `true`.
    - username, password, authenticator key: `login.username`, `login.password`, `login.totp`
@@ -286,6 +292,9 @@ For each element of `items`, in this order:
      `value`. The field's `type` is not looked at; a linked field has no value, and is therefore
      dropped later (§7.4).
    - folder: the `name` of the folder whose `id` equals `folderId` exactly, if there is one.
+5. A secure note is an entry (§7.7) of which only these are read: name `name`, its text `notes`,
+   favorite `favorite` is `true`, custom fields `fields` and the folder, as for a login. A `login`
+   member, if a note has one, is not read; nor is `secureNote`.
 
 An archived item (`archivedDate`) is an ordinary item.
 
@@ -428,8 +437,12 @@ The file §11.2 describes, read back.
   refused, `unsupported_version`.
 - `items` has to be an array; otherwise `not_recognised`. More than 10,000 elements:
   `too_many_entries`.
-- An element that is not an object, or whose `type` is not the string `login`: unsupported,
-  `other`.
+- An element that is not an object, or whose `type` is neither the string `login` nor the string
+  `note`: unsupported, `other`.
+- A note (`type` is `note`, since 0.16.0) is an entry (§7.7): `name`, `notes` (its text) and
+  `favorite` (`true`), read as for a login. Nothing else of it is read: `username`, `password`,
+  `urls` and `totp`, if a note has them, are members this version does not know for a note, and are
+  ignored — a `totp` that is not a key does **not** make a note `totp_invalid`.
 - A login is an entry: `name`, `username`, `password`, `notes` (strings), `favorite` (`true`),
   and `urls`: each element that is a string is an address.
 - `totp`: absent or `null` is no key. An object is a key if it has exactly the members `secret`,
@@ -449,7 +462,9 @@ not: see above).
 
 Every format arrives at the same thing: an entry with a name, a username, a password, notes, a
 favorite mark, address values, an authenticator key (as text, or already read: KeePass, BitosX), a
-folder and custom fields. What follows is the same for all of them.
+folder and custom fields. What follows is the same for all of them. A secure note is an entry too,
+with a name, a text (its notes), a favorite mark, a folder and custom fields; §7.7 says where it
+differs.
 
 ### 7.1 Name, username, password, notes
 
@@ -601,9 +616,33 @@ is then **not imported**, and listed with its name and that reason.
 A name the file gives is never replaced by a derived one, even if it is too long. Only web
 addresses count towards the 64.
 
+### 7.7 A secure note
+
+Since 0.16.0 (web: 0.10.0). A note from Bitwarden's CSV (§3.5) or JSON (§4.2) or from BitosX's own
+export (§6) becomes a note of the vault ([NOTES.md](NOTES.md)). KeePass entries are always logins,
+and so is a row of any other CSV file whose `type` is not `note`.
+
+- **Name**: trimmed (§7.1). **Text**: the notes of the file, exactly as they are. **Favorite**: as
+  for a login.
+- **Extras**: its folder and its custom fields, exactly as §7.4 says for a login — left out by
+  default, or appended to the text with the choice to copy them, in the same lines. A note has no
+  address, username, password or authenticator key, and therefore no extra of those kinds.
+- **Empty**: a note is empty if its name is empty (after trimming), its text is blank and it has no
+  custom field with a value (a folder alone does not make an entry). It is counted, and passed
+  over.
+- **No name**: the first line of its text that is not blank — the text split into lines, each line
+  trimmed (§2.1) — is the name if it is 1 to 200 long. Otherwise (that line is longer, or there is
+  none) the name is `Untitled`; the next line is not tried. The name was derived (§9).
+- **Limits**, the first that fails is the reason: `row_has_extra_values` (a CSV row, §3.5),
+  `name_too_long`, `notes_too_long` (the text of the file), `notes_too_long_with_extras`. Nothing
+  else of §7.6 applies to a note.
+- **Stored**: a note, with a new identifier and the time of the import, as a login is (§10); an
+  empty text as none. A vault that gets its first note is written with content schema version 3
+  from then on ([NOTES.md](NOTES.md) §2.2).
+
 ## 8. Duplicates
 
-An entry that passed §7.6 is a **duplicate** if an item of the vault, or an earlier entry of the
+A login that passed §7.6 is a **duplicate** if a login of the vault, or an earlier login of the
 same file that itself passed §7.6, has
 
 - the same name,
@@ -618,6 +657,12 @@ favorite mark, the authenticator key and extras are not compared.
 The comparison is of what would be stored: a derived name and an added `https://` are part of it.
 An entry that is not imported is nobody's duplicate, and nothing is a duplicate of it.
 
+A **note** that passed §7.7 is a duplicate if a note of the vault, or an earlier note of the file
+that itself passed §7.7, has the same name (a vault note's name trimmed, as a login's is) and the
+same text **as it would be stored** — with the extras, if they are copied — compared ordinally, an
+absent text equal to an empty one. The favorite mark is not compared. A note is never a duplicate of
+a login, nor a login of a note, whatever their names and texts.
+
 Duplicates are **skipped** by default. With the choice "Import duplicates too" (off unless chosen)
 they are added like any other entry; they are still counted as duplicates.
 
@@ -629,11 +674,11 @@ Reading a file and comparing it with a vault changes nothing. The result is a pl
 |---|---|
 | format, label | `csv`, `bitwarden_json`, `keepass_xml`, `bitosx_json`; the label of §3.3, or `Bitwarden (JSON)`, `KeePass 2 (XML)`, `BitosX (JSON)` |
 | records | every record of the file, whatever became of it |
-| unsupported | how many records of each kind that is not a login |
+| unsupported | how many records of each kind that is neither a login nor a note |
 | in the trash | Bitwarden items with a `deletedDate`; KeePass entries in the recycle bin |
 | ignored columns | §3.2 |
-| candidates | every entry that is not empty, in the order of the file, each with its position, its status (`add`, `duplicate`, `not_imported`), whether it is a duplicate, its reason, and its values as they would be stored |
-| to add | candidates with the status `add` |
+| candidates | every entry that is not empty, in the order of the file, each with its position, whether it is a login or a note, its status (`add`, `duplicate`, `not_imported`), whether it is a duplicate, its reason, and its values as they would be stored |
+| to add | candidates with the status `add`; of them, how many are notes |
 | duplicates | candidates that are duplicates, skipped or not |
 | not imported | candidates with a reason |
 | empty | entries with nothing in them |
@@ -641,8 +686,9 @@ Reading a file and comparing it with a vault changes nothing. The result is a pl
 | authenticator keys, keys that could not be read | counted over the candidates with the status `add` only: those that bring a key, and those whose key could not be read (§5.3, §7.4) |
 | items before, items after, over the limit | the vault's items, that number plus *to add*, and whether that is more than 10,000 |
 
-A preview shows names, counts and reasons. It never shows a password, an authenticator key (or
-the text of one), the value of a custom field or notes. (The types that hold them are classes, not records, so that
+A preview shows names, counts and reasons, and counts the notes to add apart from the logins
+("2 logins and 1 note will be added"). It never shows a password, an authenticator key (or the text
+of one), the value of a custom field, notes, or the text of a note. (The types that hold them are classes, not records, so that
 nothing prints their content by accident.)
 
 ## 10. Applying an import (desktop)
@@ -655,8 +701,8 @@ Nothing is written before the user confirms. Then:
   result says what that was.
 - If the vault would hold more than 10,000 items, the import is refused as a whole:
   `vault_item_limit`.
-- All items are added in **one write** of the vault file (`IVaultService.AddLoginsAsync`): every
-  item is stored, or none is. If the write fails, the vault and the session are as they were.
+- All items, logins and notes, are added in **one write** of the vault file
+  (`IVaultService.AddItemsAsync`): every item is stored, or none is. If the write fails, the vault and the session are as they were.
 - If the vault file would be larger than 16 MiB, the write is refused before anything is written
   (`VaultTooLargeException`), and nothing was imported. 16 MiB is what this application, the web
   vault and the server read. The limit is on the encrypted file, which is about 44 % larger than
@@ -697,6 +743,11 @@ Chrome's layout, which most password managers read.
   written as it is.
 - CR LF ends every line, the last one included.
 
+**Secure notes are not in the file**: the layout has no place for them. The number of notes is
+known beforehand (`VaultExporter.CountNotes`), and the dialog says that they are only in the JSON
+file: "N notes are not in a CSV file; only the JSON file holds them." ("1 note is not in a CSV file;
+only the JSON file holds it.").
+
 Only the first address of an item is in the file. The number of items with more than one is
 known beforehand (`VaultExporter.CountItemsWithSeveralUrls`), and the dialog says that only JSON
 keeps them all. **Authenticator keys are not in the file** either (the columns are Chrome's); the
@@ -735,6 +786,11 @@ and the dialog says that, like further addresses, they are only in the JSON file
 ```
 
 - UTF-8, no byte order mark. The members in this order. Everything a vault holds is in it.
+- A **secure note** (since 0.16.0) is
+  `{ "type": "note", "name": "…", "notes": "…", "favorite": false, "createdAt": "…", "updatedAt": "…" }`,
+  in this order: none of a login's members; `notes` is its text, the empty string if it has none.
+  `version` stays 1. **Importing such a file into desktop 0.15.0 or older, or the web vault 0.9.0 or
+  older, leaves the notes out**: they count them as unsupported, `other`, and import the logins.
 - A value an item does not have is the empty string; `urls` is an array, empty if there are none.
 - `totp` comes after `urls`: the item's authenticator key with the members of its stored form in
   camelCase ([TOTP.md](TOTP.md) §2.1), or `null` when it has none. `version` stays 1: the member is
@@ -875,7 +931,6 @@ quote a file.
 
 | Unsupported | In a sentence |
 |---|---|
-| `secure_note` | secure notes |
 | `card` | cards |
 | `identity` | identities |
 | `ssh_key` | SSH keys |
@@ -883,6 +938,8 @@ quote a file.
 | `drivers_license` | driver's licences |
 | `passport` | passports |
 | `other` | other items |
+
+(`secure_note`, secure notes, was a kind until 0.15.0; since 0.16.0 a secure note is imported, §7.7.)
 
 The name of an entry that has none and from which none can be derived is `Untitled`.
 
@@ -903,6 +960,14 @@ git diff tests/fixtures/import     # look at what changed, and say so here
 ```
 
 A new fixture starts as an expected file that has its `input` and its `cases` and no `result`.
+
+**0.16.0 (secure notes).** Every expected file was written again: each candidate gained `type`
+(`login` or `note`, after `position`) and `counts` gained `notesToAdd` (after `toAdd`, which stays
+the total). The secure notes of `bitwarden.csv` and `bitwarden.json` are now imported as notes, and
+are no longer counted as `secure_note`. `ConformanceFixtures.ExportedVault` gained two notes, so
+`bitosx-export.json` holds them and its expected file adds them (and, into the vault it came from,
+finds them duplicates); `bitosx-export.csv` is unchanged, as notes are not in a CSV file. The new
+fixtures are `bitwarden-notes.json`, `bitwarden-notes.csv` and `bitosx-export-notes.json`.
 
 **0.15.0 (authenticator keys).** Every expected file was written again: `counts` gained `totpKeys`
 and `totpUnreadable`, and every candidate `totp` and `totpRefused`. Where a fixture held a key that
@@ -932,8 +997,10 @@ fixtures are `totp.csv`, `bitwarden-totp.json`, `keepass-totp.xml` and `bitosx-e
 - `input` is `{ "file": "<a file in the directory>" }`, or
   `{ "parts": [ { "text": "…", "repeat": n }, … ] }` for an input too large or too dull to keep:
   the UTF-8 bytes of each text repeated that many times, one after the other.
-- `vault` is the vault a case imports into: each item's `name`, `username`, `password` (empty
-  strings if it has none) and `urls` — the four things a duplicate is told by.
+- `vault` is the vault a case imports into: each login's `name`, `username`, `password` (empty
+  strings if it has none) and `urls` — the four things a duplicate is told by; each note as
+  `{ "type": "note", "name": "…", "notes": "…" }` (its text, empty if it has none). An item without
+  `type` is a login.
 - `result` of a file that is refused: `{ "refused": "<code>" }`, with `"line"` for `invalid_csv`.
 - `result` otherwise:
 
@@ -944,16 +1011,18 @@ fixtures are `totp.csv`, `bitwarden-totp.json`, `keepass-totp.xml` and `bitosx-e
   | `unsupported` | an object, code → number; a kind with none is absent |
   | `inTrash` | a number |
   | `ignoredColumns` | an array of names |
-  | `counts` | `toAdd`, `duplicates`, `notImported`, `empty`, `httpsAdded`, `namesDerived`, `totpKeys`, `totpUnreadable`, `vaultItemsBefore`, `vaultItemsAfter`, `exceedsVaultItemLimit` |
+  | `counts` | `toAdd`, `notesToAdd`, `duplicates`, `notImported`, `empty`, `httpsAdded`, `namesDerived`, `totpKeys`, `totpUnreadable`, `vaultItemsBefore`, `vaultItemsAfter`, `exceedsVaultItemLimit` |
   | `extras` | an object, code → number, over the candidates that are added; a kind with none is absent |
   | `candidates` | every entry that is not empty, in the order of the file |
 
-  and each candidate: `position`, `status`, `duplicate`, `reason` (a code or `null`), `name`,
+  and each candidate: `position`, `type` (`login` or `note`), `status`, `duplicate`, `reason` (a code or `null`), `name`,
   `username`, `password`, `urls`, `notes` (as they would be stored: with the extras, if they are
   copied), `favorite`, `nameWasDerived`, `httpsAdded` (how many of its addresses), `totp` (the
   key the item gets, as `{ "secret", "algorithm", "digits", "period" }`, or `null`), `totpRefused`
   (the code of [TOTP.md](TOTP.md) §6 for a key that could not be read, or `null`), and `extras`:
-  `totp`, `folder`, `otherAddresses`, `customFields` (each a `name` and a `value`).
+  `totp`, `folder`, `otherAddresses`, `customFields` (each a `name` and a `value`). A note's
+  `username` and `password` are empty, `urls` and `otherAddresses` empty, `totp` and `totpRefused`
+  `null`, `httpsAdded` 0, and its text is `notes`.
 
 There are no identifiers and no times in an expected file: an imported item gets both when it is
 added.
@@ -966,21 +1035,24 @@ Every value in the fixtures is made up.
 |---|---|
 | `chrome.csv` | Chrome's layout; a note of several lines, quotes and commas, text outside ASCII, an `android://` address, a duplicate inside the file, a password that is too long, a row whose values moved. Three cases: an empty vault; a vault that holds one of the logins; the same with duplicates imported. |
 | `firefox.csv` | Firefox's layout, CR LF, every value quoted; no names, so all are derived; a `chrome://` address; an HTTP address with an IP host. |
-| `bitwarden.csv` | Bitwarden's layout; a folder, a favorite, custom fields, two addresses in one cell, an authenticator key; a secure note; a row with nothing in it; notes that are too long, and notes that are too long only with the extras copied in. |
+| `bitwarden.csv` | Bitwarden's layout; a folder, a favorite, custom fields, two addresses in one cell, an authenticator key; a secure note (a note since 0.16.0); a row with nothing in it; notes that are too long, and notes that are too long only with the extras copied in. |
 | `keepassxc.csv` | KeePassXC's layout; groups, an authenticator key, an entry that is only a note, an entry with nothing in it, a username that is too long. |
 | `keepass1.csv` | KeePass CSV (1.x) with its backslashes. |
 | `generic.csv` | A header no exporter is known by, with a byte order mark: other names for the columns, ignored columns, a name with spaces around it, hosts without a scheme, several addresses in one cell, and the four limits on names and addresses. |
 | `addresses.csv` | 151 address values, one to a row: what is a web address, what is given `https://`, what is an other address, and what fails §7.3 or the vault's rule. |
 | `columns.csv` | A header that offers more than one column for a field (§3.2): the first name of the field's list decides, not the first column; of two columns with one name, the left one; the others are ignored and named; a column without a name is not. A row whose column is empty does not fall back on another column, and a row that ends early has empty values. |
 | `text-rules.csv` | The text operations of §2.1, where the two runtimes' own functions differ: every character that is trimmed, around a column name, a name, an address, an authenticator key and a folder, and two that are not; a lone CR between addresses, between custom fields and between records; a record of nothing but characters that are trimmed, and an entry of nothing but such values and a folder; a favorite mark and a type in capitals with such characters around them; a control character in an address; a name of 200 and one of 202 UTF-16 code units, both of characters outside the Basic Multilingual Plane; two names that differ only in how an accent is encoded, which are not duplicates. And the names that are derived (§7.5): from an address with a user name and a port, with an IPv6 host, with a bracket that is never closed, with a capital outside ASCII, in Punycode, with a port that is not a number, without a host, with a host longer than a name may be; from the first address that is a web address; from a host that was given `https://`; from a username, trimmed; and `Untitled` where the username is too long to be a name. Two cases: the choices as they are at first, and the extras copied into the notes. |
-| `bitwarden.json` | Bitwarden's unencrypted export: a login with everything, one item of every other kind, an item in the trash, a duplicate, an item with only a name, hosts without a scheme, an item without a name, a passkey, an archived item. |
+| `bitwarden.json` | Bitwarden's unencrypted export: a login with everything, one item of every other kind (the secure note is a note since 0.16.0), an item in the trash, a duplicate, an item with only a name, hosts without a scheme, an item without a name, a passkey, an archived item. |
 | `keepass.xml` | A KeePassXC export: nested groups, the recycle bin, a history, custom strings, values marked `ProtectInMemory`, CDATA and character references, a password of three spaces, a field twice, an entry with nothing in it, a duplicate in another group. |
 | `keepass-line-ends.xml` | Line ends inside the values of a KeePass file (§5.2): written as they are — CR LF and a lone CR, which an XML processor turns into LF — written as character references, which stay what they are, and in a CDATA section. The file itself has CR LF line ends, as one written on Windows has. |
-| `bitosx-export.csv`, `bitosx-export.json` | The desktop's own two exports of one vault of eight items (`ConformanceFixtures.ExportedVault`): quotes, commas, line ends, text outside ASCII, spaces that have to stay, values that look like formulas, backslashes, two addresses, two authenticator keys. Each is read back into an empty vault, and into the vault it came from: the JSON adds nothing; the CSV adds the item that has two addresses, because it holds only the first, and holds no keys. |
+| `bitosx-export.csv`, `bitosx-export.json` | The desktop's own two exports of one vault of ten items (`ConformanceFixtures.ExportedVault`): quotes, commas, line ends, text outside ASCII, spaces that have to stay, values that look like formulas, backslashes, two addresses, two authenticator keys, and two secure notes (one of several lines with what looks like markup, one with only a name). Each is read back into an empty vault, and into the vault it came from: the JSON adds nothing; the CSV adds the item that has two addresses, because it holds only the first, and holds no keys and no notes. |
 | `totp.csv` | Authenticator keys in a `totp` column: base32 in capitals and in lower-case groups, `otpauth://` links with other algorithms, digits and periods and in capitals with spaces around, and keys that cannot be read (HOTP, Steam, too short, not base32, a link without a secret, a period of 0); a cell of white space; an entry with nothing but a key; a duplicate with another key. Three cases: as at first, with the extras copied, with duplicates imported. |
 | `bitwarden-totp.json` | Bitwarden's authenticator keys (`totp` of a login): a link as Bitwarden writes it, a base32 key in groups, `steam://`, `null`, a number, a link with a period of 301. |
 | `keepass-totp.xml` | KeePassXC's `otp` (SHA512 and 7 digits, HOTP, Steam with 5 digits), KeePass 2's `TimeOtp-*` (with every parameter, with the defaults, with 5 digits, with an algorithm spelled the way a link spells it), secrets KeePass keeps in hexadecimal or UTF-8 (not read), Base64 after Base32, KeePassXC's legacy strings (not read), `otp` and `TimeOtp-*` together, `otp` twice, a blank `otp`, an entry without a title. |
 | `bitosx-export-totp.json` | BitosX's own export with `totp` members: keys, `null`, absent, numbers written as 7.0 and 3e1, and every kind of member that is not a key (`totp_invalid`). |
+| `bitwarden-notes.json` | Bitwarden's secure notes (`type` 2): one with a folder, custom fields (one without a value) and a favorite mark, and a text of several lines with what looks like markup; one with only a name; nameless ones, named after the first line that is not blank, `Untitled` because that line is too long, and `Untitled` because only a custom field has a value; one with nothing but a folder (empty); one in the trash; one with a `login` member (not read); a duplicate in the file, and one of the same name with another text; a login and a note of the same name and text (not duplicates); a name of 201; texts of 16,384 and 16,385, and of 16,384 with a folder (too long only with the extras copied); `type` written as the number 2.0. Four cases: as at first; the extras copied; a vault that holds two of the notes (one with spaces around its name), a login and a note with another text; the same with duplicates imported. |
+| `bitwarden-notes.csv` | Bitwarden's CSV with `note` rows: a folder, a favorite, custom fields; a nameless note whose text starts with a CR LF and spaces; a note whose login cells are filled (not read); `type` ` NOTE `; a note with nothing but a folder (empty); a duplicate of the first note, and a login with the same name and text (not one); a note with only a name; a note row whose values moved (`row_has_extra_values`). Two cases: as at first, the extras copied. |
+| `bitosx-export-notes.json` | BitosX's own export with notes: a note of several lines, without `notes`, with `notes` `null` and `favorite` `"true"` (not `true`), with a login's members and a `totp` that is not a key (ignored), with a blank name (derived), with nothing in it (empty), `type` `Note` (`other`), a duplicate, a login with the same name and text (not one), a name too long, a name that is a number (derived). Two cases: an empty vault, a vault that holds the first note. |
 | `refused-*` | One file for each refusal that a file of ordinary size can end in: both encrypted Bitwarden exports, a document type declaration (external, and with entities), protected values, XML that is damaged, XML that is not KeePass's, JSON that is damaged, has a name twice, has half a surrogate pair, or is neither format, a BitosX export of a newer version, UTF-16, bytes that are not UTF-8, a quote that is not closed, text after a closing quote, no known columns, no password column, an empty file, a file of white space. |
 | `generated-*` | Inputs given as parts: 10,001 CSV rows, JSON items and KeePass entries; 16 MiB and 27 bytes; a value of 8 MiB in an ignored column; groups 64 and 65 deep; elements 101 deep; JSON 64 and 65 levels deep. |
 
@@ -1068,7 +1140,8 @@ PapaParse `1fcb83c64acf61ae636b556b0eadeebaca0aea33`; KeePassXC
 
 Besides what §7.4 counts: an entry's history and earlier passwords, passkeys, attachments, tags,
 icons, expiry dates, auto-type settings, the match setting of an address, the times an entry was
-created and changed, and every item that is not a login. An authenticator key that §5.3 or §7.4
+created and changed, and every item that is neither a login nor a secure note (§7.7). Of a secure
+note, the cells and members of a login it may have. An authenticator key that §5.3 or §7.4
 cannot read is kept only as text, if the user asks for the extras to be copied into the notes.
 
 ## 17. The desktop's user interface (0.14.0)
@@ -1103,6 +1176,13 @@ by the specification:
 authenticator key, which is imported with them.") and how many keys could not be read, and what
 becomes of their text. A key that could not be read from text is not listed again among the
 extras.
+
+**Secure notes (0.16.0).** The preview counts the notes apart from the logins ("2 logins and 1 note
+will be added.", "1 note will be added."), the button says "Import N items" when notes are among
+them, and the result "2 logins and 1 note were added to the vault."; a file without notes is
+described as before. The unsupported kinds are introduced with "BitosX stores logins and secure notes
+only.". The export dialog says how many notes a CSV file leaves out (§11.1), and so does the result
+of a CSV export. Nothing of a note's text is on the page.
 
 **Export.** "Export unencrypted…" opens the warning and the box of §11.3, the choice of format
 (CSV at first), the number of items with more than one address, the number of items with an

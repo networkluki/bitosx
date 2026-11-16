@@ -155,9 +155,8 @@ public sealed class JsonImportTests
         Assert.Equal(4, parsed.RecordCount);
         Assert.Equal(0, parsed.InTrash);
         Assert.Empty(parsed.IgnoredColumns);
-        Assert.Equal(1, parsed.Unsupported[ImportUnsupportedKind.SecureNote]);
-        Assert.Equal(1, parsed.Unsupported[ImportUnsupportedKind.Card]);
-        Assert.Equal(2, parsed.Unsupported.Count);
+        // Since 0.16.0 a secure note is read as a note; only the card is not imported.
+        Assert.Equal(1, Assert.Single(parsed.Unsupported, pair => pair.Key == ImportUnsupportedKind.Card).Value);
 
         Assert.Collection(
             parsed.Entries,
@@ -176,6 +175,16 @@ public sealed class JsonImportTests
                     [("PIN", "0000"), ("Newsletter", "true"), ("Linked", "")],
                     first.CustomFields.Select(f => (f.Name, f.Value)));
                 Assert.Null(first.Problem);
+                Assert.False(first.IsNote);
+            },
+            note =>
+            {
+                Assert.Equal(2, note.Position);
+                Assert.True(note.IsNote);
+                Assert.Equal("A secure note", note.Name);
+                Assert.Equal("the note", note.Notes);
+                Assert.False(note.Favorite);
+                Assert.Equal(string.Empty, note.Folder);
             },
             second =>
             {
@@ -192,7 +201,6 @@ public sealed class JsonImportTests
     }
 
     [Theory]
-    [InlineData(2, ImportUnsupportedKind.SecureNote)]
     [InlineData(3, ImportUnsupportedKind.Card)]
     [InlineData(4, ImportUnsupportedKind.Identity)]
     [InlineData(5, ImportUnsupportedKind.SshKey)]

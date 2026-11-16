@@ -24,7 +24,7 @@ public interface IVaultExportService
 
 /// <summary>What an export wrote.</summary>
 /// <param name="Format">The format.</param>
-/// <param name="ItemCount">How many items are in the file.</param>
+/// <param name="ItemCount">How many items are in the file (a CSV export: the logins).</param>
 /// <param name="ItemsWithSeveralUrls">
 /// How many of them have more than one address. In a CSV export only the first address of each is
 /// in the file.
@@ -32,4 +32,9 @@ public interface IVaultExportService
 /// <param name="ItemsWithAuthenticatorKeys">
 /// How many of them have an authenticator key. A CSV export holds none of the keys.
 /// </param>
-public sealed record ExportResult(ExportFormat Format, int ItemCount, int ItemsWithSeveralUrls, int ItemsWithAuthenticatorKeys = 0);
+/// <param name="NotesLeftOut">
+/// How many secure notes the vault holds that are not in the file: a CSV export holds none of them;
+/// a JSON export holds them all, and this is 0.
+/// </param>
+public sealed record ExportResult(
+    ExportFormat Format, int ItemCount, int ItemsWithSeveralUrls, int ItemsWithAuthenticatorKeys = 0, int NotesLeftOut = 0);

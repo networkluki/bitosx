@@ -27,7 +27,11 @@ BitosX.ApiClient ──> Core                                     (the BitosX se
   `Authenticator` (0.15.0) reads an authenticator key from text (`TotpKeyParser`) and makes its
   codes (`TotpGenerator`, RFC 6238); the key is `LoginItem.Totp` (`TotpKey`), stored strictly by
   `TotpKeyJsonConverter`, and a vault that holds one is written with content schema version 2
-  (`Vault.RequiredSchemaVersion`); see [TOTP.md](TOTP.md).
+  (`Vault.RequiredSchemaVersion`); see [TOTP.md](TOTP.md). A vault also holds secure notes
+  (`NoteItem`, 0.16.0: a name and a text, `"type": "note"`), added through
+  `IVaultService.AddNoteAsync`; a vault that holds one is written with content schema version 3,
+  the lowest version that can hold the contents always being the one written; see
+  [NOTES.md](NOTES.md).
 - **BitosX.Storage** — `FileLocalVaultStorage`, an atomic file implementation of
   `ILocalVaultStorage`, plus `FileVaultBackup` (`IVaultBackup`) for byte-for-byte encrypted
   export and recovery-copy-protected atomic restore, and `FileImportExportFiles`
@@ -52,7 +56,10 @@ BitosX.ApiClient ──> Core                                     (the BitosX se
   (fails closed when a fault reaches the user interface), and `SecretBox` (the password field, and
   since 0.15.0 the authenticator key's). `VaultPageViewModel` keeps the authenticator codes of the
   listed logins up to date with one timer of one second (`TimeProvider`), which runs only while the
-  vault is unlocked; locking stops it and clears the codes.
+  vault is unlocked; locking stops it and clears the codes. Since 0.16.0 the list holds logins and
+  secure notes (`VaultItemViewModel`, with `LoginItemViewModel` and `NoteItemViewModel` and a
+  template for each), and a note has its own editor (`NoteEditorViewModel`, `NoteEditorView`);
+  locking hides every note text that was shown.
 
 ## How the application is put together
 
@@ -132,7 +139,7 @@ transitions happened. Handlers must not block waiting on another thread.
 Importing is three steps, and only the last one writes: `VaultImportService.ReadAsync` reads the
 file (at most 16 MiB) and parses it; `PreviewAsync` compares it with the unlocked vault and returns
 an `ImportPlan` — what would be added, what is a duplicate, what is not imported and why;
-`ApplyAsync` adds the items through `IVaultService.AddLoginsAsync`, which is **one** write of the
+`ApplyAsync` adds the items — logins and secure notes — through `IVaultService.AddItemsAsync`, which is **one** write of the
 vault: all of them are stored, or none is. The comparison is made again at that moment, under the
 gate every change goes through, so what is added is right for the vault as it is then.
 

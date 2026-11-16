@@ -119,7 +119,7 @@ internal static class JsonImportReader
                 continue;
             }
 
-            ImportUnsupportedKind? kind = BitwardenKind(item);
+            ImportUnsupportedKind? kind = BitwardenKind(item, out bool isNote);
             if (kind is not null)
             {
                 Count(unsupported, kind.Value);
@@ -130,7 +130,9 @@ internal static class JsonImportReader
             string username = string.Empty;
             string password = string.Empty;
             string totp = string.Empty;
-            if (item.TryGetProperty("login", out JsonElement login) && login.ValueKind == JsonValueKind.Object)
+
+            // A secure note has no login; one that has a "login" member anyway does not have it read.
+            if (!isNote && item.TryGetProperty("login", out JsonElement login) && login.ValueKind == JsonValueKind.Object)
             {
                 username = Text(login, "username");
                 password = Text(login, "password");
@@ -162,6 +164,7 @@ internal static class JsonImportReader
             entries.Add(new ImportEntry
             {
                 Position = position,
+                IsNote = isNote,
                 Name = Text(item, "name"),
                 Username = username,
                 Password = password,
@@ -178,9 +181,13 @@ internal static class JsonImportReader
             ImportFormat.BitwardenJson, ImportTexts.LabelBitwardenJson, entries, position, unsupported, inTrash, ignoredColumns: []);
     }
 
-    /// <summary>What an item is, if it is not a login: Bitwarden numbers its kinds, and a login is 1.</summary>
-    private static ImportUnsupportedKind? BitwardenKind(JsonElement item)
+    /// <summary>
+    /// What an item is, if it is neither a login nor a secure note: Bitwarden numbers its kinds, a
+    /// login is 1 and a secure note 2 (<paramref name="isNote"/>).
+    /// </summary>
+    private static ImportUnsupportedKind? BitwardenKind(JsonElement item, out bool isNote)
     {
+        isNote = false;
         if (!item.TryGetProperty("type", out JsonElement type)
             || type.ValueKind != JsonValueKind.Number
             || !type.TryGetDouble(out double number))
@@ -188,10 +195,10 @@ internal static class JsonImportReader
             return ImportUnsupportedKind.Other;
         }
 
+        isNote = number == 2;
         return number switch
         {
-            1 => null,
-            2 => ImportUnsupportedKind.SecureNote,
+            1 or 2 => null,
             3 => ImportUnsupportedKind.Card,
             4 => ImportUnsupportedKind.Identity,
             5 => ImportUnsupportedKind.SshKey,
@@ -228,7 +235,24 @@ internal static class JsonImportReader
         foreach (JsonElement item in items.EnumerateArray())
         {
             position++;
-            if (item.ValueKind != JsonValueKind.Object || Text(item, "type") != "login")
+            string type = item.ValueKind == JsonValueKind.Object ? Text(item, "type") : string.Empty;
+            if (type == "note")
+            {
+                // A note is read for its name, its text and its favorite mark. Other members — the
+                // members of a login among them, a "totp" too — are not read, as any member this
+                // version does not know (docs/IMPORT_EXPORT.md §6).
+                entries.Add(new ImportEntry
+                {
+                    Position = position,
+                    IsNote = true,
+                    Name = Text(item, "name"),
+                    Notes = Text(item, "notes"),
+                    Favorite = IsTrue(item, "favorite"),
+                });
+                continue;
+            }
+
+            if (type != "login")
             {
                 Count(unsupported, ImportUnsupportedKind.Other);
                 continue;

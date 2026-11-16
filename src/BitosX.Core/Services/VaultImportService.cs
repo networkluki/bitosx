@@ -10,7 +10,7 @@ namespace BitosX.Core.Services;
 /// <summary>
 /// Default <see cref="IVaultImportService"/>: reads the file through <see cref="IImportExportFiles"/>,
 /// parses and plans with the import library, and adds the items through
-/// <see cref="IVaultService.AddLoginsAsync"/>.
+/// <see cref="IVaultService.AddItemsAsync"/>.
 /// </summary>
 /// <remarks>
 /// The file's bytes are wiped once they are parsed. What was parsed (<see cref="ParsedImport"/>, and
@@ -81,12 +81,12 @@ public sealed class VaultImportService : IVaultImportService
 
         DateTimeOffset importedAt = _time.GetUtcNow();
         ImportPlan? applied = null;
-        IReadOnlyList<LoginItem> added;
+        IReadOnlyList<VaultItem> added;
         try
         {
             // Off the caller's thread: planning, and then serializing and encrypting the whole vault.
             added = await Task.Run(
-                () => _vault.AddLoginsAsync(
+                () => _vault.AddItemsAsync(
                     existing =>
                     {
                         // Decided again on what the vault holds now, where nothing else can change it

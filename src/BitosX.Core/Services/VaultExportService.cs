@@ -65,9 +65,15 @@ public sealed class VaultExportService : IVaultExportService
 
             await _files.WriteExportFileAsync(destinationPath, content, cancellationToken).ConfigureAwait(false);
 
-            VaultLog.UnencryptedExportWritten(_logger, format.ToString(), items.Count);
+            int notesLeftOut = format == ExportFormat.Csv ? VaultExporter.CountNotes(items) : 0;
+            int written = items.Count - notesLeftOut;
+            VaultLog.UnencryptedExportWritten(_logger, format.ToString(), written);
             return new ExportResult(
-                format, items.Count, VaultExporter.CountItemsWithSeveralUrls(items), VaultExporter.CountItemsWithAuthenticatorKeys(items));
+                format,
+                written,
+                VaultExporter.CountItemsWithSeveralUrls(items),
+                VaultExporter.CountItemsWithAuthenticatorKeys(items),
+                notesLeftOut);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

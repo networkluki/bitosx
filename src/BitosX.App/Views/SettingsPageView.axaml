@@ -306,6 +306,8 @@
                                        IsVisible="{Binding ExportSeveralUrlsNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                             <TextBlock Name="ExportKeysNote" Text="{Binding ExportKeysNote}" TextWrapping="Wrap"
                                        IsVisible="{Binding ExportKeysNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Name="ExportNotesNote" Text="{Binding ExportNotesNote}" TextWrapping="Wrap"
+                                       IsVisible="{Binding ExportNotesNote, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
 
                             <CheckBox Name="ExportAcknowledgeCheckBox" IsChecked="{Binding ExportAcknowledged}"
                                       Content="{Binding ExportAcknowledgementText}" />
